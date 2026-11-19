@@ -50,6 +50,8 @@ export default function Home() {
   const [seconds, setSeconds] = useState(0);
   const [listening, setListening] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const remoteVideoRef = useRef<HTMLVideoElement>(null);
+  const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
@@ -81,6 +83,53 @@ export default function Home() {
       .catch(e => { if (!cancelled) setError(e instanceof Error ? e.message : "Could not load invitation."); });
     return () => { cancelled = true; };
   }, []);
+
+  useEffect(() => {
+    if (phase !== "interview" || mode !== "live" || !cameraOn || !sessionId || !inviteToken || !streamRef.current) return;
+    let stopped = false;
+    let cursor = "";
+    const peer = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
+    peerConnectionRef.current = peer;
+    peer.addEventListener("track", event => {
+      if (remoteVideoRef.current) remoteVideoRef.current.srcObject = event.streams[0];
+    });
+    streamRef.current.getTracks().forEach(track => peer.addTrack(track, streamRef.current!));
+    peer.onicecandidate = event => {
+      if (event.candidate && !stopped) void fetch(`/api/sessions/${sessionId}/signals`, {
+        method: "POST", headers: { "Content-Type": "application/json", "x-interview-invite": inviteToken },
+        body: JSON.stringify({ kind: "ice", payload: JSON.stringify(event.candidate.toJSON()) })
+      });
+    };
+    const sendOffer = async () => {
+      const offer = await peer.createOffer();
+      await peer.setLocalDescription(offer);
+      await fetch(`/api/sessions/${sessionId}/signals`, {
+        method: "POST", headers: { "Content-Type": "application/json", "x-interview-invite": inviteToken },
+        body: JSON.stringify({ kind: "offer", payload: JSON.stringify(peer.localDescription) })
+      });
+    };
+    const poll = async () => {
+      if (stopped) return;
+      try {
+        const response = await fetch(`/api/sessions/${sessionId}/signals?since=${encodeURIComponent(cursor)}`, { headers: { "x-interview-invite": inviteToken }, cache: "no-store" });
+        if (!response.ok) return;
+        const data = await response.json();
+        for (const signal of data.signals || []) {
+          cursor = signal.createdAt;
+          if (signal.kind === "answer" && peer.signalingState === "have-local-offer") await peer.setRemoteDescription(JSON.parse(signal.payload));
+          if (signal.kind === "ice" && peer.remoteDescription) await peer.addIceCandidate(JSON.parse(signal.payload)).catch(() => {});
+          if (signal.kind === "hangup") { peer.close(); setError("Employer ended the live video connection."); }
+        }
+      } catch { /* retry on next poll */ }
+    };
+    void sendOffer().then(poll);
+    const timer = window.setInterval(() => void poll(), 1200);
+    return () => {
+      stopped = true; window.clearInterval(timer); peer.close();
+      if (peerConnectionRef.current === peer) peerConnectionRef.current = null;
+      if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
+    };
+  }, [phase, mode, cameraOn, sessionId, inviteToken]);
 
   useEffect(() => {
     if (phase !== "interview") return;
@@ -288,7 +337,7 @@ export default function Home() {
           <div className="session-footer"><span>✳ AI-generated questions · Job-related evaluation only</span><button onClick={() => finishInterview() } disabled={busy}>End interview & generate report</button></div>
         </div>
         <aside className="side-panel">
-          <div className="side-card"><div className="side-card-head"><b>Candidate camera</b><span className={cameraOn ? "live-tag" : "muted-tag"}>{cameraOn ? "CAMERA ON" : "NOT CONNECTED"}</span></div><div className="video-wrap">{cameraOn ? <video ref={videoRef} autoPlay muted playsInline /> : <div className="camera-placeholder">◉<small>Camera preview</small></div>}</div><button className="outline-btn" onClick={enableCamera}>{cameraOn ? "Reconnect camera" : "Enable camera & mic"}</button>{mode === "recorded" && <button className={recording ? "record-btn recording" : "record-btn"} onClick={toggleRecording}>{recording ? "■ Stop & save recording" : "● Start video recording"}</button>}{uploadingRecording && <p className="privacy-note">Saving recording to the interview server…</p>}{recordingSaved && <p className="privacy-note">✓ Recording saved for employer review.</p>}</div>
+          <div className="side-card"><div className="side-card-head"><b>Candidate camera</b><span className={cameraOn ? "live-tag" : "muted-tag"}>{cameraOn ? "CAMERA ON" : "NOT CONNECTED"}</span></div><div className="video-wrap">{cameraOn ? <video ref={videoRef} autoPlay muted playsInline /> : <div className="camera-placeholder">◉<small>Camera preview</small></div>}</div>{mode === "live" && <div className="video-wrap remote-video-wrap"><video ref={remoteVideoRef} autoPlay playsInline /><small>Employer live video · connects when employer joins</small></div>}<button className="outline-btn" onClick={enableCamera}>{cameraOn ? "Reconnect camera" : "Enable camera & mic"}</button>{mode === "recorded" && <button className={recording ? "record-btn recording" : "record-btn"} onClick={toggleRecording}>{recording ? "■ Stop & save recording" : "● Start video recording"}</button>}{uploadingRecording && <p className="privacy-note">Saving recording to the interview server…</p>}{recordingSaved && <p className="privacy-note">✓ Recording saved for employer review.</p>}</div>
           <div className="side-card"><b>Interview structure</b><div className="timeline"><div className="timeline-item done"><i />Introduction & background<small>Getting to know the candidate</small></div><div className="timeline-item current"><i />Resume & project deep dive<small>Validating experience and ownership</small></div><div className="timeline-item"><i />Technical & problem solving<small>Role-specific knowledge</small></div><div className="timeline-item"><i />Wrap-up<small>Candidate questions and closing</small></div></div></div>
           <div className="fairness-note"><b>Fair evaluation</b><p>Assessment is based on answer content and job-related evidence—not facial appearance, accent or voice characteristics.</p></div>
         </aside>
