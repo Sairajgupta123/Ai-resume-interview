@@ -12,6 +12,7 @@ A resume- and job-description-aware interview application powered by xAI Grok.
 - Employer login and dashboard with interview search, candidate review, report and transcript
 - Employer-created candidate invitations with 72-hour expiring, hashed tokens and protected candidate API access
 - Employer review recommendation is advisory; hiring decisions remain human-led
+- Employer can record shortlist, review or reject decisions with notes and an immutable decision history
 
 ## Technology
 - Next.js 15, React 19, TypeScript
