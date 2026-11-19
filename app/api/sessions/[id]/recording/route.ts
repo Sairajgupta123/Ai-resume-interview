@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { db } from "@/lib/db";
 import { isEmployerAuthenticated } from "@/lib/auth";
@@ -37,18 +38,38 @@ export async function POST(request: NextRequest, context: Context) {
       return NextResponse.json({ error: "Recording must be smaller than 100 MB." }, { status: 413 });
     }
 
+    const bytes = Buffer.from(await file.arrayBuffer());
+    const isWebm = bytes.length >= 4 && bytes.subarray(0, 4).equals(Buffer.from([0x1a, 0x45, 0xdf, 0xa3]));
+    const isMp4 = bytes.length >= 12 && bytes.toString("ascii", 4, 8) === "ftyp";
+    if ((mimeType === "video/webm" && !isWebm) || (mimeType !== "video/webm" && !isMp4)) {
+      return NextResponse.json({ error: "Recording file content does not match its declared video format." }, { status: 415 });
+    }
+
     const directory = join(process.cwd(), "data", "recordings");
     await mkdir(directory, { recursive: true });
     const extension = mimeType === "video/mp4" ? ".mp4" : mimeType === "video/quicktime" ? ".mov" : ".webm";
-    const filename = `${id}-${Date.now()}${extension}`;
+    const filename = `${randomUUID()}${extension}`;
+    const relativePath = `data/recordings/${filename}`;
     const absolutePath = join(directory, filename);
-    await writeFile(absolutePath, Buffer.from(await file.arrayBuffer()));
+    await writeFile(absolutePath, bytes, { flag: "wx" });
+
+    // Atomically refuse a late upload if the report completed while the file was uploading.
+    const saved = await db.interview.updateMany({
+      where: { id, status: { not: "completed" } },
+      data: { recordingPath: relativePath }
+    });
+    if (saved.count !== 1) {
+      await unlink(absolutePath).catch(() => undefined);
+      return NextResponse.json({ error: "This interview has ended; the recording was not changed." }, { status: 409 });
+    }
 
     if (interview.recordingPath) {
-      const oldPath = join(process.cwd(), interview.recordingPath);
-      await unlink(oldPath).catch(() => undefined);
+      const oldName = interview.recordingPath.replace(/\\\\/g, "/").split("/").pop();
+      if (oldName && oldName === interview.recordingPath.replace(/\\\\/g, "/").split("/").pop()) {
+        const oldPath = join(directory, oldName);
+        if (oldPath !== absolutePath) await unlink(oldPath).catch(() => undefined);
+      }
     }
-    await db.interview.update({ where: { id }, data: { recordingPath: `data/recordings/${filename}` } });
     return NextResponse.json({ ok: true, message: "Recording saved securely on this server." });
   } catch {
     return NextResponse.json({ error: "Could not save recording on the server." }, { status: 500 });
@@ -61,9 +82,14 @@ export async function GET(_request: NextRequest, context: Context) {
   const interview = await db.interview.findUnique({ where: { id }, select: { recordingPath: true } });
   if (!interview?.recordingPath) return NextResponse.json({ error: "No recording is available." }, { status: 404 });
   try {
-    const absolutePath = join(process.cwd(), interview.recordingPath);
+    const storedPath = interview.recordingPath.replace(/\\\\/g, "/");
+    const filename = storedPath.split("/").pop() || "";
+    if (storedPath !== `data/recordings/${filename}` || !/^[a-f0-9-]+\\.(webm|mp4|mov)$/i.test(filename)) {
+      return NextResponse.json({ error: "Recording storage reference is invalid." }, { status: 500 });
+    }
+    const absolutePath = join(process.cwd(), "data", "recordings", filename);
     const file = await readFile(absolutePath);
-    const contentType = interview.recordingPath.endsWith(".mp4") ? "video/mp4" : interview.recordingPath.endsWith(".mov") ? "video/quicktime" : "video/webm";
+    const contentType = filename.endsWith(".mp4") ? "video/mp4" : filename.endsWith(".mov") ? "video/quicktime" : "video/webm";
     return new NextResponse(file, { headers: { "Content-Type": contentType, "Content-Length": String(file.byteLength), "Content-Disposition": "inline", "Cache-Control": "private, no-store" } });
   } catch {
     return NextResponse.json({ error: "Recording file is missing from server storage." }, { status: 404 });
