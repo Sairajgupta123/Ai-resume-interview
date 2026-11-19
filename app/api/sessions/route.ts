@@ -4,20 +4,32 @@ import { isEmployerAuthenticated } from "@/lib/auth";
 import { createInvitationToken, hashInvitationToken } from "@/lib/invitation";
 
 export async function POST(request: NextRequest) {
+  // Legacy candidate-session creation endpoint: only an authenticated employer may
+  // create an interview and receive its one-time invitation token.
+  if (!(await isEmployerAuthenticated())) {
+    return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+  }
   try {
     const body = await request.json();
-    if (!body.candidateName || !body.role || !body.resume || !body.jobDescription) {
+    const candidateName = typeof body.candidateName === "string" ? body.candidateName.trim() : "";
+    const role = typeof body.role === "string" ? body.role.trim() : "";
+    const resume = typeof body.resume === "string" ? body.resume.trim() : "";
+    const jobDescription = typeof body.jobDescription === "string" ? body.jobDescription.trim() : "";
+    if (!candidateName || !role || !resume || !jobDescription) {
       return NextResponse.json({ error: "Candidate name, role, resume and job description are required." }, { status: 400 });
+    }
+    if (candidateName.length > 160 || role.length > 160 || resume.length > 20000 || jobDescription.length > 16000) {
+      return NextResponse.json({ error: "One or more interview fields exceed the allowed length." }, { status: 413 });
     }
     const candidateToken = createInvitationToken();
     const interview = await db.interview.create({
       data: {
-        candidateName: String(body.candidateName).slice(0, 160),
-        role: String(body.role).slice(0, 160),
+        candidateName,
+        role,
         mode: body.mode === "recorded" ? "recorded" : "live",
-        status: "in_progress",
-        resumeText: String(body.resume).slice(0, 20000),
-        jobDescription: String(body.jobDescription).slice(0, 16000),
+        status: "invited",
+        resumeText: resume,
+        jobDescription,
         invitationTokenHash: hashInvitationToken(candidateToken),
         inviteExpiresAt: new Date(Date.now() + 72 * 60 * 60 * 1000)
       },
