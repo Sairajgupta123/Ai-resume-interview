@@ -24,6 +24,7 @@ model Interview {
   inviteExpiresAt DateTime?
   inviteUsedAt    DateTime?
   startedAt       DateTime?
+  startLockAt     DateTime?
   consentAcceptedAt DateTime?
   consentVersion    String?
   employerDecision String?
