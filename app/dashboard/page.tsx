@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { getInterviewIceServers } from "@/lib/webrtc";
 
 type Item = { id: string; candidateName: string; role: string; mode: string; status: string; overallScore: number | null; recommendation: string | null; employerDecision: string | null; durationSeconds: number; createdAt: string };
 type Detail = Item & { resumeText: string; jobDescription: string; recordingPath: string | null; reportJson: string | null; employerNotes: string | null; decisionAt: string | null; decisionHistory: { id: string; decision: string; notes: string | null; createdAt: string }[]; messages: { role: string; content: string }[] };
@@ -29,7 +30,7 @@ export default function Dashboard() {
     let cursor = "";
     let localStream: MediaStream | null = null;
     const pendingIce: RTCIceCandidateInit[] = [];
-    const peer = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
+    const peer = new RTCPeerConnection({ iceServers: getInterviewIceServers() });
     peer.ontrack = event => {
       if (employerVideoRef.current) employerVideoRef.current.srcObject = event.streams[0];
       setLiveCallState("Connected · live video and audio");
