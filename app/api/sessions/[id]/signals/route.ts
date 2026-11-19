@@ -45,7 +45,7 @@ export async function POST(request: NextRequest, context: Context) {
     const interview = await db.interview.findUnique({ where: { id }, select: { mode: true, status: true } });
     if (!interview) return NextResponse.json({ error: "Interview not found." }, { status: 404 });
     if (interview.mode !== "live") return NextResponse.json({ error: "Live video is only enabled for live interviews." }, { status: 409 });
-    if (interview.status === "completed") return NextResponse.json({ error: "This interview has ended." }, { status: 409 });
+    if (interview.status === "completed" && body.kind !== "hangup") return NextResponse.json({ error: "This interview has ended." }, { status: 409 });
     const signal = await db.interviewSignal.create({ data: { interviewId: id, sender, kind: body.kind, payload: body.payload } });
     return NextResponse.json({ ok: true, id: signal.id }, { status: 201 });
   } catch {
