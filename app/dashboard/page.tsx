@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type Item = { id: string; candidateName: string; role: string; mode: string; status: string; overallScore: number | null; recommendation: string | null; employerDecision: string | null; durationSeconds: number; createdAt: string };
 type Detail = Item & { resumeText: string; jobDescription: string; recordingPath: string | null; reportJson: string | null; employerNotes: string | null; decisionAt: string | null; decisionHistory: { id: string; decision: string; notes: string | null; createdAt: string }[]; messages: { role: string; content: string }[] };
@@ -16,6 +16,82 @@ export default function Dashboard() {
   const [query, setQuery] = useState("");
   const [decisionNotes, setDecisionNotes] = useState("");
   const [decisionBusy, setDecisionBusy] = useState(false);
+  const employerVideoRef = useRef<HTMLVideoElement>(null);
+  const employerLocalRef = useRef<HTMLVideoElement>(null);
+  const [liveCallState, setLiveCallState] = useState("Waiting for candidate…");
+
+  useEffect(() => {
+    if (!authenticated || !selected || selected.mode !== "live" || selected.status === "completed") {
+      setLiveCallState("Live call is not active.");
+      return;
+    }
+    let stopped = false;
+    let cursor = "";
+    let localStream: MediaStream | null = null;
+    const pendingIce: RTCIceCandidateInit[] = [];
+    const peer = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
+    peer.ontrack = event => {
+      if (employerVideoRef.current) employerVideoRef.current.srcObject = event.streams[0];
+      setLiveCallState("Connected · live video and audio");
+    };
+    peer.onconnectionstatechange = () => {
+      if (peer.connectionState === "connecting") setLiveCallState("Connecting to candidate…");
+      if (peer.connectionState === "failed") setLiveCallState("Connection failed. A TURN server may be required on restrictive networks.");
+      if (peer.connectionState === "disconnected") setLiveCallState("Candidate connection interrupted.");
+    };
+    const postSignal = (kind: string, payload: string) => fetch(`/api/sessions/${selected.id}/signals`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind, payload })
+    });
+    peer.onicecandidate = event => {
+      if (event.candidate && !stopped) void postSignal("ice", JSON.stringify(event.candidate.toJSON()));
+    };
+    const poll = async () => {
+      if (stopped) return;
+      try {
+        const response = await fetch(`/api/sessions/${selected.id}/signals?since=${encodeURIComponent(cursor)}`, { cache: "no-store" });
+        if (!response.ok) return;
+        const data = await response.json();
+        for (const signal of data.signals || []) {
+          cursor = signal.createdAt;
+          if (signal.kind === "offer" && peer.signalingState === "stable") {
+            await peer.setRemoteDescription(JSON.parse(signal.payload));
+            for (const candidate of pendingIce.splice(0)) await peer.addIceCandidate(candidate).catch(() => {});
+            const answer = await peer.createAnswer();
+            await peer.setLocalDescription(answer);
+            await postSignal("answer", JSON.stringify(peer.localDescription));
+            setLiveCallState("Answer sent · connecting…");
+          } else if (signal.kind === "ice") {
+            const candidate = JSON.parse(signal.payload) as RTCIceCandidateInit;
+            if (peer.remoteDescription) await peer.addIceCandidate(candidate).catch(() => {});
+            else pendingIce.push(candidate);
+          } else if (signal.kind === "hangup") {
+            setLiveCallState("Candidate ended the call.");
+            peer.close();
+          }
+        }
+      } catch { /* transient network errors are retried */ }
+    };
+    const start = async () => {
+      try {
+        setLiveCallState("Requesting employer camera and microphone…");
+        localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+        if (stopped) { localStream.getTracks().forEach(t => t.stop()); return; }
+        if (employerLocalRef.current) employerLocalRef.current.srcObject = localStream;
+        localStream.getTracks().forEach(track => peer.addTrack(track, localStream!));
+        setLiveCallState("Waiting for candidate to join…");
+      } catch {
+        setLiveCallState("Allow camera and microphone to join the live interview.");
+      }
+    };
+    void start();
+    const timer = window.setInterval(() => void poll(), 1000);
+    return () => {
+      stopped = true; window.clearInterval(timer); peer.close();
+      localStream?.getTracks().forEach(t => t.stop());
+      if (employerVideoRef.current) employerVideoRef.current.srcObject = null;
+      if (employerLocalRef.current) employerLocalRef.current.srcObject = null;
+    };
+  }, [authenticated, selected?.id, selected?.mode, selected?.status]);
 
   const load = async () => {
     const r = await fetch("/api/sessions", { cache: "no-store" });
@@ -80,7 +156,7 @@ export default function Dashboard() {
     {selected && <div className="detail-backdrop" onClick={()=>setSelected(null)}><section className="detail-drawer" onClick={e=>e.stopPropagation()}><button className="drawer-close" onClick={()=>setSelected(null)}>×</button><div className="eyebrow">CANDIDATE REVIEW</div><h2>{selected.candidateName}</h2><p className="drawer-sub">{selected.role} · {selected.mode} interview</p>
       {selected.reportJson ? <ReportView json={selected.reportJson}/> : <p className="drawer-sub">No completed report is available for this interview.</p>}
       <div className="employer-decision"><div className="eyebrow">EMPLOYER DECISION</div><p>AI recommendation is advisory. Record your independent hiring decision.</p><textarea rows={3} value={decisionNotes} onChange={e=>setDecisionNotes(e.target.value)} placeholder="Optional notes for the hiring team…" /><div className="decision-actions"><button disabled={decisionBusy} onClick={()=>saveDecision("shortlist")}>Shortlist</button><button disabled={decisionBusy} onClick={()=>saveDecision("review")}>Needs review</button><button disabled={decisionBusy} onClick={()=>saveDecision("reject")}>Reject</button></div>{selected.employerDecision && <small>Current decision: <b>{selected.employerDecision}</b>{selected.decisionAt ? ` · ${date(selected.decisionAt)}` : ""}</small>}{selected.decisionHistory?.length > 0 && <div className="decision-history"><b>Decision history</b>{selected.decisionHistory.map(item=><div key={item.id}><span>{item.decision}</span><small>{date(item.createdAt)}</small>{item.notes && <p>{item.notes}</p>}</div>)}</div>}</div>
-      {selected.recordingPath && <div className="drawer-video"><h3>Candidate video recording</h3><video controls playsInline src={`/api/sessions/${selected.id}/recording`} /></div>}<h3>Interview transcript</h3><div className="drawer-transcript">{selected.messages.map((m,i)=><div key={i} className="drawer-message"><small>{m.role==="assistant"?"AI INTERVIEWER":"CANDIDATE"}</small><p>{m.content}</p></div>)}</div>
+      {selected.recordingPath && <div className="drawer-live-call"><h3>Live interview room</h3><p>{liveCallState}</p><video ref={employerVideoRef} autoPlay playsInline /><div className="employer-self-preview"><video ref={employerLocalRef} autoPlay muted playsInline /><span>Your camera</span></div><small>Keep this review panel open while the candidate joins. Browser camera and microphone permission is required.</small></div><div className="drawer-video"><h3>Candidate video recording</h3><video controls playsInline src={`/api/sessions/${selected.id}/recording`} /></div>}<h3>Interview transcript</h3><div className="drawer-transcript">{selected.messages.map((m,i)=><div key={i} className="drawer-message"><small>{m.role==="assistant"?"AI INTERVIEWER":"CANDIDATE"}</small><p>{m.content}</p></div>)}</div>
     </section></div>}
   </main>;
 }
