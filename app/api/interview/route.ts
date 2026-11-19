@@ -150,6 +150,7 @@ export async function POST(request: NextRequest) {
     }
 
     let startedAt: Date | null = null;
+    let startLockAt: Date | null = null;
     if (body.sessionId) {
       const session = await db.interview.findUnique({
         where: { id: body.sessionId },
@@ -182,13 +183,27 @@ export async function POST(request: NextRequest) {
             select: { content: true }
           });
           if (firstQuestion) return NextResponse.json({ message: firstQuestion.content, done: false, focus: "Interview introduction" });
-          // A previous start may have failed after reserving its start timestamp.
-          // Permit a retry after a short grace period instead of leaving the invitation stuck.
-          if (Date.now() - startedAt.getTime() < 30_000) {
-            return NextResponse.json({ error: "Interview is initializing. Please retry in a few seconds." }, { status: 409 });
-          }
-          startedAt = null;
+          return NextResponse.json({ error: "Interview initialization is incomplete. Please contact the hiring team." }, { status: 409 });
         }
+        const lockAt = new Date();
+        const lock = await db.interview.updateMany({
+          where: {
+            id: body.sessionId,
+            startedAt: null,
+            OR: [{ startLockAt: null }, { startLockAt: { lt: new Date(Date.now() - 90_000) } }]
+          },
+          data: { startLockAt: lockAt, consentAcceptedAt: lockAt, consentVersion: "2026-11-19" }
+        });
+        if (lock.count !== 1) {
+          const existingQuestion = await db.interviewMessage.findFirst({
+            where: { interviewId: body.sessionId, role: "assistant" },
+            orderBy: { createdAt: "asc" },
+            select: { content: true }
+          });
+          if (existingQuestion) return NextResponse.json({ message: existingQuestion.content, done: false, focus: "Interview introduction" });
+          return NextResponse.json({ error: "Interview is already initializing. Please wait a moment and retry." }, { status: 409 });
+        }
+        startLockAt = lockAt;
       } else {
         if (!startedAt) return NextResponse.json({ error: "The interview has not been started." }, { status: 409 });
         if (body.action === "answer" && elapsedSeconds(startedAt) >= INTERVIEW_LIMIT_SECONDS) {
@@ -213,33 +228,44 @@ export async function POST(request: NextRequest) {
     ].join("\n\n");
 
     if (body.action === "start") {
-      const content = await askGrok([
-        { role: "system", content: SYSTEM },
-        { role: "user", content: `Begin the interview. Context:\n${context}\nReturn JSON only.` }
-      ]);
-      const parsed = parseJson(content);
-      if (typeof parsed.message !== "string" || !parsed.message.trim()) {
-        throw new Error("AI returned an invalid opening question. Please retry.");
-      }
-      if (body.sessionId) {
-        const startedAt = new Date();
-        await db.$transaction([
-          db.interviewMessage.create({
-            data: { interviewId: body.sessionId, role: "assistant", content: parsed.message.slice(0, 12000) }
-          }),
-          db.interview.update({
-            where: { id: body.sessionId },
-            data: {
-              status: "in_progress",
-              inviteUsedAt: startedAt,
-              startedAt,
-              consentAcceptedAt: startedAt,
-              consentVersion: "2026-11-19"
-            }
-          })
+      try {
+        const content = await askGrok([
+          { role: "system", content: SYSTEM },
+          { role: "user", content: `Begin the interview. Context:\n${context}\nReturn JSON only.` }
         ]);
+        const parsed = parseJson(content);
+        if (typeof parsed.message !== "string" || !parsed.message.trim()) {
+          throw new Error("AI returned an invalid opening question. Please retry.");
+        }
+        if (body.sessionId) {
+          if (!startLockAt) throw new Error("Interview start lock was not acquired.");
+          const startedAt = new Date();
+          await db.$transaction(async (tx) => {
+            const current = await tx.interview.findUnique({
+              where: { id: body.sessionId },
+              select: { startLockAt: true, startedAt: true, status: true }
+            });
+            if (!current || current.startedAt || current.startLockAt?.getTime() !== startLockAt!.getTime() || current.status === "completed") {
+              throw new Error("Interview start request expired. Please retry.");
+            }
+            await tx.interviewMessage.create({
+              data: { interviewId: body.sessionId!, role: "assistant", content: parsed.message.slice(0, 12000) }
+            });
+            await tx.interview.update({
+              where: { id: body.sessionId },
+              data: { status: "in_progress", inviteUsedAt: startedAt, startedAt, startLockAt: null }
+            });
+          });
+        }
+        return NextResponse.json(parsed);
+      } finally {
+        if (body.sessionId && startLockAt) {
+          await db.interview.updateMany({
+            where: { id: body.sessionId, startLockAt },
+            data: { startLockAt: null }
+          }).catch(() => undefined);
+        }
       }
-      return NextResponse.json(parsed);
     }
 
     if (body.action === "answer") {
