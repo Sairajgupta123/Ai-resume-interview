@@ -171,8 +171,10 @@ export default function Home() {
   }, []);
 
   const callApi = async (payload: Record<string, unknown>) => {
+    const token = inviteToken || (typeof payload.inviteToken === "string" ? payload.inviteToken : "");
+    const { inviteToken: _token, ...requestPayload } = payload;
     const response = await fetch("/api/interview", {
-      method: "POST", headers: { "Content-Type": "application/json", ...(inviteToken ? { "x-interview-invite": inviteToken } : {}) }, body: JSON.stringify(payload)
+      method: "POST", headers: { "Content-Type": "application/json", ...(token ? { "x-interview-invite": token } : {}) }, body: JSON.stringify(requestPayload)
     });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "Request failed.");
@@ -201,8 +203,9 @@ export default function Home() {
         if (!saved.ok) throw new Error(savedData.error || "Could not create interview session.");
         activeSessionId = savedData.id;
         setSessionId(activeSessionId);
+        setInviteToken(savedData.inviteToken);
       }
-      const data = await callApi({ action: "start", candidateName, role, resume, jobDescription, mode, sessionId: activeSessionId }) as InterviewReply;
+      const data = await callApi({ action: "start", candidateName, role, resume, jobDescription, mode, sessionId: activeSessionId, inviteToken: inviteToken || undefined }) as InterviewReply;
       const initial = [{ role: "assistant" as const, content: data.message }];
       setHistory(initial);
       await fetch(`/api/sessions/${activeSessionId}`, { method: "PUT", headers: { "Content-Type": "application/json", ...(inviteToken ? { "x-interview-invite": inviteToken } : {}) }, body: JSON.stringify({ messages: initial }) });
