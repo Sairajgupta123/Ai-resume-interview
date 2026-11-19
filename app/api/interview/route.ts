@@ -64,10 +64,11 @@ export async function POST(request: NextRequest) {
     if (!body.action) return NextResponse.json({ error: "Missing action." }, { status: 400 });
     if (body.sessionId) {
       const session = await db.interview.findUnique({ where: { id: body.sessionId }, select: {
-        invitationTokenHash: true, candidateName: true, role: true, resumeText: true, jobDescription: true, mode: true
+        invitationTokenHash: true, status: true, candidateName: true, role: true, resumeText: true, jobDescription: true, mode: true
       } });
       if (!session) return NextResponse.json({ error: "Interview session not found." }, { status: 404 });
       if (session.invitationTokenHash && !(await hasValidCandidateInvitation(body.sessionId, request.headers.get("x-interview-invite")))) return NextResponse.json({ error: "Invalid or expired candidate invitation." }, { status: 401 });
+      if (session.invitationTokenHash && session.status === "completed") return NextResponse.json({ error: "This interview has already been completed." }, { status: 409 });
       if (session.invitationTokenHash) {
         body.candidateName = session.candidateName;
         body.role = session.role;
