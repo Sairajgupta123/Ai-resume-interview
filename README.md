@@ -54,7 +54,7 @@ Open http://localhost:3000/dashboard and sign in with `EMPLOYER_USERNAME` and `E
 - Voice input uses the browser Web Speech API and spoken interviewer prompts use browser speech synthesis. Availability and language quality vary by browser/device. Text entry remains available.
 - SQLite is suitable for local evaluation/single-machine use. For production or multiple app instances, move to managed PostgreSQL and configure secure persistent storage.
 - Candidate invitations are generated as expiring private links, but the app does not send emails automatically; employers copy and send the link themselves.
-- AI questions and answers remain a turn-based Grok voice/text interaction using browser speech APIs; WebRTC provides a separate live candidate-employer audio/video room. A production TURN service is still needed for reliable connectivity across restrictive NAT/firewall networks.
+- AI questions and answers remain a turn-based Grok voice/text interaction using browser speech APIs; WebRTC provides a separate live candidate-employer audio/video room. A TURN service can be configured using NEXT_PUBLIC_TURN_URL, NEXT_PUBLIC_TURN_USERNAME and NEXT_PUBLIC_TURN_CREDENTIAL in .env.local. Without provider credentials, the app falls back to the public STUN server; peer connectivity may fail on restrictive NAT/firewall networks.
 - Before production deployment, add organisation-level multi-tenant access control, password reset, stronger operational monitoring, secure cloud recording storage, retention/deletion jobs, audit logging and a complete privacy notice.
 - This is not a certified hiring assessment. AI reports can be wrong or incomplete; employers must review evidence and make final decisions.
 
