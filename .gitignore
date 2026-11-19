@@ -8,3 +8,5 @@ out
 *.log
 *.db
 *.db-journal
+
+/data/recordings/
