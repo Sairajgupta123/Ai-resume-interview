@@ -31,6 +31,7 @@ model Interview {
   updatedAt       DateTime @updatedAt
   messages        InterviewMessage[]
   decisionHistory EmployerDecisionHistory[]
+  signals         InterviewSignal[]
   @@index([createdAt])
   @@index([candidateName])
 }
@@ -50,6 +51,19 @@ model EmployerDecisionHistory {
   interviewId String
   decision    String
   notes       String?
+  createdAt   DateTime  @default(now())
+  interview   Interview @relation(fields: [interviewId], references: [id], onDelete: Cascade)
+
+  @@index([interviewId, createdAt])
+}
+
+
+model InterviewSignal {
+  id          String    @id @default(cuid())
+  interviewId String
+  sender      String
+  kind        String
+  payload     String
   createdAt   DateTime  @default(now())
   interview   Interview @relation(fields: [interviewId], references: [id], onDelete: Cascade)
 
