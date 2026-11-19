@@ -286,10 +286,12 @@ export async function POST(request: NextRequest) {
           where: {
             id: body.sessionId,
             status: "in_progress",
-            OR: [{ answerLockAt: null }, { answerLockAt: { lt: new Date(Date.now() - 90_000) } }],
-            reportLockAt: null
+            AND: [
+              { OR: [{ answerLockAt: null }, { answerLockAt: { lt: new Date(Date.now() - 90_000) } }] },
+              { OR: [{ reportLockAt: null }, { reportLockAt: { lt: new Date(Date.now() - 90_000) } }] }
+            ]
           },
-          data: { answerLockAt: lockAt }
+          data: { answerLockAt: lockAt, reportLockAt: null }
         });
         if (lock.count !== 1) {
           return NextResponse.json({ error: "Another interview action is being processed. Please wait and retry." }, { status: 409 });
@@ -356,10 +358,12 @@ export async function POST(request: NextRequest) {
           where: {
             id: body.sessionId,
             status: "in_progress",
-            answerLockAt: null,
-            OR: [{ reportLockAt: null }, { reportLockAt: { lt: new Date(Date.now() - 90_000) } }]
+            AND: [
+              { OR: [{ answerLockAt: null }, { answerLockAt: { lt: new Date(Date.now() - 90_000) } }] },
+              { OR: [{ reportLockAt: null }, { reportLockAt: { lt: new Date(Date.now() - 90_000) } }] }
+            ]
           },
-          data: { reportLockAt: lockAt }
+          data: { reportLockAt: lockAt, answerLockAt: null }
         });
         if (lock.count !== 1) {
           return NextResponse.json({ error: "Another interview action is being processed. Please wait and retry." }, { status: 409 });
