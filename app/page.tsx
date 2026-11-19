@@ -120,8 +120,10 @@ export default function Home() {
           method: "POST", headers, body: JSON.stringify({ kind: "offer", payload: JSON.stringify(peer.localDescription) })
         });
         if (!offerResponse.ok) throw new Error("Could not start live video call.");
+        let polling = false;
         const poll = async () => {
-          if (stopped || !peer) return;
+          if (stopped || !peer || polling) return;
+          polling = true;
           try {
             const response = await fetch(`/api/sessions/${sessionId}/signals?since=${encodeURIComponent(cursor)}&afterId=${encodeURIComponent(cursorId)}`, { headers: { "x-interview-invite": inviteToken }, cache: "no-store" });
             if (!response.ok) return;
@@ -141,6 +143,7 @@ export default function Home() {
               if (signal.kind === "hangup") { peer!.close(); setError("Employer ended the live video connection."); }
             }
           } catch { /* retry on next poll */ }
+          finally { polling = false; }
         };
         void poll();
         timer = window.setInterval(() => void poll(), 1200);
