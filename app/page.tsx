@@ -54,6 +54,7 @@ export default function Home() {
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
+  const recordingCompleteRef = useRef<Promise<boolean> | null>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const transcriptEndRef = useRef<HTMLDivElement>(null);
 
@@ -236,18 +237,69 @@ export default function Home() {
     setBusy(true); setError("");
     try {
       const data = await callApi({ action: "report", candidateName, role, resume, jobDescription, history: transcript, sessionId }) as Report;
+      if (recorderRef.current?.state === "recording") {
+        recorderRef.current.stop();
+        setRecording(false);
+      }
+      const recordingSavedOk = recordingCompleteRef.current ? await recordingCompleteRef.current : recordingSaved;
       if (sessionId) {
         const saved = await fetch(`/api/sessions/${sessionId}`, { method: "PUT", headers: { "Content-Type": "application/json", ...(inviteToken ? { "x-interview-invite": inviteToken } : {}) }, body: JSON.stringify({ durationSeconds: seconds }) });
         if (!saved.ok) throw new Error("Report generated but could not be saved to the employer dashboard.");
       }
+      if (!recordingSavedOk && cameraOn) setError("Interview report is ready, but the video recording could not be uploaded. Please check server storage.");
       setReport(data); setPhase("report");
       window.speechSynthesis?.cancel();
       recognitionRef.current?.stop();
-      if (recorderRef.current?.state === "recording") recorderRef.current.stop();
       streamRef.current?.getTracks().forEach((track) => track.stop());
       setCameraOn(false);
     } catch (e) { setError(e instanceof Error ? e.message : "Report generation failed."); }
     finally { setBusy(false); }
+  };
+
+  const startRecording = (stream: MediaStream) => {
+    if (typeof MediaRecorder === "undefined") {
+      setError("Video recording is not supported in this browser. You can continue the interview, but no video file will be saved.");
+      return;
+    }
+    if (recorderRef.current?.state === "recording") return;
+    try {
+      const preferredTypes = ["video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm", "video/mp4"];
+      const mimeType = preferredTypes.find(type => MediaRecorder.isTypeSupported(type));
+      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+      recorderRef.current = recorder;
+      const chunks: BlobPart[] = [];
+      let resolveCompletion: (saved: boolean) => void = () => {};
+      recordingCompleteRef.current = new Promise<boolean>(resolve => { resolveCompletion = resolve; });
+      recorder.ondataavailable = event => { if (event.data.size) chunks.push(event.data); };
+      recorder.onstop = async () => {
+        const type = recorder.mimeType || "video/webm";
+        const extension = type.includes("mp4") ? "mp4" : "webm";
+        const filename = `mzobs-interview-${Date.now()}.${extension}`;
+        const blob = new Blob(chunks, { type });
+        if (!sessionId) { resolveCompletion(false); return; }
+        setUploadingRecording(true);
+        try {
+          const form = new FormData();
+          form.append("recording", blob, filename);
+          const response = await fetch(`/api/sessions/${sessionId}/recording`, {
+            method: "POST",
+            headers: inviteToken ? { "x-interview-invite": inviteToken } : {},
+            body: form
+          });
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.error || "Recording upload failed.");
+          setRecordingSaved(true);
+          resolveCompletion(true);
+        } catch (error) {
+          setError(error instanceof Error ? error.message : "Could not upload recording.");
+          resolveCompletion(false);
+        } finally { setUploadingRecording(false); }
+      };
+      recorder.start(1000);
+      setRecording(true);
+    } catch {
+      setError("Could not start video recording in this browser.");
+    }
   };
 
   const enableCamera = async () => {
@@ -256,38 +308,18 @@ export default function Home() {
       streamRef.current = stream;
       if (videoRef.current) videoRef.current.srcObject = stream;
       setCameraOn(true);
+      startRecording(stream);
     } catch { setError("Camera/microphone permission was not granted. You can still answer by typing."); }
   };
 
   const toggleRecording = () => {
     if (!streamRef.current) { setError("Enable camera and microphone before recording."); return; }
-    if (recording) { recorderRef.current?.stop(); setRecording(false); return; }
-    const recorder = new MediaRecorder(streamRef.current);
-    recorderRef.current = recorder;
-    const chunks: BlobPart[] = [];
-    recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data); };
-    recorder.onstop = async () => {
-      const blob = new Blob(chunks, { type: recorder.mimeType || "video/webm" });
-      const filename = `mzobs-interview-${Date.now()}.webm`;
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url; link.download = filename; link.click();
-      URL.revokeObjectURL(url);
-      if (sessionId) {
-        setUploadingRecording(true);
-        try {
-          const form = new FormData();
-          form.append("recording", blob, filename);
-          const response = await fetch(`/api/sessions/${sessionId}/recording`, { method: "POST", headers: inviteToken ? { "x-interview-invite": inviteToken } : {}, body: form });
-          const data = await response.json();
-          if (!response.ok) throw new Error(data.error || "Recording upload failed.");
-          setRecordingSaved(true);
-        } catch (e) {
-          setError(e instanceof Error ? e.message : "Could not upload recording.");
-        } finally { setUploadingRecording(false); }
-      }
-    };
-    recorder.start(); setRecording(true);
+    if (recording) {
+      if (recorderRef.current?.state === "recording") recorderRef.current.stop();
+      setRecording(false);
+      return;
+    }
+    startRecording(streamRef.current);
   };
 
   const toggleMic = () => {
@@ -365,7 +397,7 @@ export default function Home() {
           <div className="session-footer"><span>✳ AI-generated questions · Job-related evaluation only</span><button onClick={() => finishInterview() } disabled={busy}>End interview & generate report</button></div>
         </div>
         <aside className="side-panel">
-          <div className="side-card"><div className="side-card-head"><b>Candidate camera</b><span className={cameraOn ? "live-tag" : "muted-tag"}>{cameraOn ? "CAMERA ON" : "NOT CONNECTED"}</span></div><div className="video-wrap">{cameraOn ? <video ref={videoRef} autoPlay muted playsInline /> : <div className="camera-placeholder">◉<small>Camera preview</small></div>}</div>{mode === "live" && <div className="video-wrap remote-video-wrap"><video ref={remoteVideoRef} autoPlay playsInline /><small>Employer live video · connects when employer joins</small></div>}<button className="outline-btn" onClick={enableCamera}>{cameraOn ? "Reconnect camera" : "Enable camera & mic"}</button>{mode === "recorded" && <button className={recording ? "record-btn recording" : "record-btn"} onClick={toggleRecording}>{recording ? "■ Stop & save recording" : "● Start video recording"}</button>}{uploadingRecording && <p className="privacy-note">Saving recording to the interview server…</p>}{recordingSaved && <p className="privacy-note">✓ Recording saved for employer review.</p>}</div>
+          <div className="side-card"><div className="side-card-head"><b>Candidate camera</b><span className={cameraOn ? "live-tag" : "muted-tag"}>{cameraOn ? "CAMERA ON" : "NOT CONNECTED"}</span></div><div className="video-wrap">{cameraOn ? <video ref={videoRef} autoPlay muted playsInline /> : <div className="camera-placeholder">◉<small>Camera preview</small></div>}</div>{mode === "live" && <div className="video-wrap remote-video-wrap"><video ref={remoteVideoRef} autoPlay playsInline /><small>Employer live video · connects when employer joins</small></div>}<button className="outline-btn" onClick={enableCamera}>{cameraOn ? "Reconnect camera" : "Enable camera & mic"}</button>{mode === "recorded" && <button className={recording ? "record-btn recording" : "record-btn"} onClick={toggleRecording}>{recording ? "■ Stop & save recording" : "● Start video recording"}</button>}{mode === "live" && <p className="privacy-note">{recording ? "● Video recording is active for this interview." : "Video recording is not active."}</p>}{uploadingRecording && <p className="privacy-note">Saving recording to the interview server…</p>}{recordingSaved && <p className="privacy-note">✓ Recording saved for employer review.</p>}</div>
           <div className="side-card"><b>Interview structure</b><div className="timeline"><div className="timeline-item done"><i />Introduction & background<small>Getting to know the candidate</small></div><div className="timeline-item current"><i />Resume & project deep dive<small>Validating experience and ownership</small></div><div className="timeline-item"><i />Technical & problem solving<small>Role-specific knowledge</small></div><div className="timeline-item"><i />Wrap-up<small>Candidate questions and closing</small></div></div></div>
           <div className="fairness-note"><b>Fair evaluation</b><p>Assessment is based on answer content and job-related evidence—not facial appearance, accent or voice characteristics.</p></div>
         </aside>
