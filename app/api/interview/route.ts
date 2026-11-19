@@ -67,15 +67,19 @@ export async function POST(request: NextRequest) {
         invitationTokenHash: true, status: true, candidateName: true, role: true, resumeText: true, jobDescription: true, mode: true
       } });
       if (!session) return NextResponse.json({ error: "Interview session not found." }, { status: 404 });
-      if (session.invitationTokenHash && !(await hasValidCandidateInvitation(body.sessionId, request.headers.get("x-interview-invite")))) return NextResponse.json({ error: "Invalid or expired candidate invitation." }, { status: 401 });
-      if (session.invitationTokenHash && session.status === "completed") return NextResponse.json({ error: "This interview has already been completed." }, { status: 409 });
       if (session.invitationTokenHash) {
-        body.candidateName = session.candidateName;
-        body.role = session.role;
-        body.resume = session.resumeText;
-        body.jobDescription = session.jobDescription;
-        body.mode = session.mode === "recorded" ? "recorded" : "live";
+        if (!(await hasValidCandidateInvitation(body.sessionId, request.headers.get("x-interview-invite")))) {
+          return NextResponse.json({ error: "Invalid or expired candidate invitation." }, { status: 401 });
+        }
+      } else {
+        return NextResponse.json({ error: "This interview does not have a valid candidate invitation." }, { status: 401 });
       }
+      if (session.status === "completed") return NextResponse.json({ error: "This interview has already been completed." }, { status: 409 });
+      body.candidateName = session.candidateName;
+      body.role = session.role;
+      body.resume = session.resumeText;
+      body.jobDescription = session.jobDescription;
+      body.mode = session.mode === "recorded" ? "recorded" : "live";
       if (body.action === "start") await db.interview.update({ where: { id: body.sessionId }, data: { status: "in_progress", inviteUsedAt: new Date() } });
     }
     const context = [
