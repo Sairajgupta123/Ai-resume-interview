@@ -160,7 +160,7 @@ export default function Dashboard() {
     const rows = items.map(item => [item.candidateName, item.role, item.mode, item.status, item.overallScore ?? "", item.recommendation ?? "", item.employerDecision ?? "", item.durationSeconds, item.createdAt]);
     const escapeCsv = (value: string | number) => {
       const raw = String(value);
-      const safe = typeof value === "string" && /^[\\t\\r\\n ]*[=+\\-@]/.test(raw) ? "'" + raw : raw;
+      const safe = typeof value === "string" && /^[\t\r\n ]*[=+\-@]/.test(raw) ? "'" + raw : raw;
       return `"${safe.replace(/"/g, '""')}"`;
     };
     const csv = [columns, ...rows].map(row => row.map(escapeCsv).join(",")).join("\\r\\n");
