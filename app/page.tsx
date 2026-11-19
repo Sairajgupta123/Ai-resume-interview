@@ -55,6 +55,7 @@ export default function Home() {
   const streamRef = useRef<MediaStream | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const recordingCompleteRef = useRef<Promise<boolean> | null>(null);
+  const finishStartedRef = useRef(false);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const transcriptEndRef = useRef<HTMLDivElement>(null);
 
@@ -234,6 +235,8 @@ export default function Home() {
   };
 
   const finishInterview = async (transcript = history) => {
+    if (finishStartedRef.current) return;
+    finishStartedRef.current = true;
     setBusy(true); setError("");
     try {
       const data = await callApi({ action: "report", candidateName, role, resume, jobDescription, history: transcript, sessionId }) as Report;
@@ -252,7 +255,7 @@ export default function Home() {
       recognitionRef.current?.stop();
       streamRef.current?.getTracks().forEach((track) => track.stop());
       setCameraOn(false);
-    } catch (e) { setError(e instanceof Error ? e.message : "Report generation failed."); }
+    } catch (e) { finishStartedRef.current = false; setError(e instanceof Error ? e.message : "Report generation failed."); }
     finally { setBusy(false); }
   };
 
@@ -397,7 +400,7 @@ export default function Home() {
           <div className="session-footer"><span>✳ AI-generated questions · Job-related evaluation only</span><button onClick={() => finishInterview() } disabled={busy}>End interview & generate report</button></div>
         </div>
         <aside className="side-panel">
-          <div className="side-card"><div className="side-card-head"><b>Candidate camera</b><span className={cameraOn ? "live-tag" : "muted-tag"}>{cameraOn ? "CAMERA ON" : "NOT CONNECTED"}</span></div><div className="video-wrap">{cameraOn ? <video ref={videoRef} autoPlay muted playsInline /> : <div className="camera-placeholder">◉<small>Camera preview</small></div>}</div>{mode === "live" && <div className="video-wrap remote-video-wrap"><video ref={remoteVideoRef} autoPlay playsInline /><small>Employer live video · connects when employer joins</small></div>}<button className="outline-btn" onClick={enableCamera}>{cameraOn ? "Reconnect camera" : "Enable camera & mic"}</button>{mode === "recorded" && <button className={recording ? "record-btn recording" : "record-btn"} onClick={toggleRecording}>{recording ? "■ Stop & save recording" : "● Start video recording"}</button>}{mode === "live" && <p className="privacy-note">{recording ? "● Video recording is active for this interview." : "Video recording is not active."}</p>}{uploadingRecording && <p className="privacy-note">Saving recording to the interview server…</p>}{recordingSaved && <p className="privacy-note">✓ Recording saved for employer review.</p>}</div>
+          <div className="side-card"><div className="side-card-head"><b>Candidate camera</b><span className={cameraOn ? "live-tag" : "muted-tag"}>{cameraOn ? "CAMERA ON" : "NOT CONNECTED"}</span></div><div className="video-wrap">{cameraOn ? <video ref={videoRef} autoPlay muted playsInline /> : <div className="camera-placeholder">◉<small>Camera preview</small></div>}</div>{mode === "live" && <div className="video-wrap remote-video-wrap"><video ref={remoteVideoRef} autoPlay playsInline /><small>Employer live video · connects when employer joins</small></div>}<button className="outline-btn" onClick={enableCamera}>{cameraOn ? "Reconnect camera" : "Enable camera & mic"}</button><button className={recording ? "record-btn recording" : "record-btn"} onClick={toggleRecording} disabled={uploadingRecording || recordingSaved}>{recording ? "■ Stop & save recording" : recordingSaved ? "✓ Recording saved" : "● Start video recording"}</button>{uploadingRecording && <p className="privacy-note">Saving recording to the interview server…</p>}{recordingSaved && <p className="privacy-note">✓ Recording saved for employer review.</p>}</div>
           <div className="side-card"><b>Interview structure</b><div className="timeline"><div className="timeline-item done"><i />Introduction & background<small>Getting to know the candidate</small></div><div className="timeline-item current"><i />Resume & project deep dive<small>Validating experience and ownership</small></div><div className="timeline-item"><i />Technical & problem solving<small>Role-specific knowledge</small></div><div className="timeline-item"><i />Wrap-up<small>Candidate questions and closing</small></div></div></div>
           <div className="fairness-note"><b>Fair evaluation</b><p>Assessment is based on answer content and job-related evidence—not facial appearance, accent or voice characteristics.</p></div>
         </aside>
