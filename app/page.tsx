@@ -94,6 +94,7 @@ export default function Home() {
     let timer: number | undefined;
     let peer: RTCPeerConnection | null = null;
     let cursor = "";
+    let cursorId = "";
     const pendingIce: RTCIceCandidateInit[] = [];
     const headers = { "Content-Type": "application/json", "x-interview-invite": inviteToken };
     const init = async () => {
@@ -122,11 +123,12 @@ export default function Home() {
         const poll = async () => {
           if (stopped || !peer) return;
           try {
-            const response = await fetch(`/api/sessions/${sessionId}/signals?since=${encodeURIComponent(cursor)}`, { headers: { "x-interview-invite": inviteToken }, cache: "no-store" });
+            const response = await fetch(`/api/sessions/${sessionId}/signals?since=${encodeURIComponent(cursor)}&afterId=${encodeURIComponent(cursorId)}`, { headers: { "x-interview-invite": inviteToken }, cache: "no-store" });
             if (!response.ok) return;
             const data = await response.json();
             for (const signal of data.signals || []) {
               cursor = signal.createdAt;
+              cursorId = signal.id;
               if (signal.kind === "answer" && peer!.signalingState === "have-local-offer") {
                 await peer!.setRemoteDescription(JSON.parse(signal.payload));
                 for (const candidate of pendingIce.splice(0)) await peer!.addIceCandidate(candidate).catch(() => {});
