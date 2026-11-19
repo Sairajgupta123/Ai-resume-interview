@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import type { Prisma } from "@prisma/client";
 import { isEmployerAuthenticated } from "@/lib/auth";
+import { hasValidCandidateInvitation } from "@/lib/invitation";
 
 type Context = { params: Promise<{ id: string }> };
 
@@ -9,8 +10,9 @@ export async function PUT(request: NextRequest, context: Context) {
   const { id } = await context.params;
   try {
     const body = await request.json();
-    const exists = await db.interview.findUnique({ where: { id }, select: { id: true } });
+    const exists = await db.interview.findUnique({ where: { id }, select: { id: true, invitationTokenHash: true } });
     if (!exists) return NextResponse.json({ error: "Interview not found." }, { status: 404 });
+    if (exists.invitationTokenHash && !(await hasValidCandidateInvitation(id, request.headers.get("x-interview-invite")))) return NextResponse.json({ error: "Invalid or expired candidate invitation." }, { status: 401 });
     if (Array.isArray(body.messages)) {
       await db.interviewMessage.deleteMany({ where: { interviewId: id } });
       await db.interviewMessage.createMany({
