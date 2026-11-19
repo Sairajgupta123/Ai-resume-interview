@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { getInterviewIceServers } from "@/lib/webrtc";
 
 type ChatMessage = { role: "assistant" | "user"; content: string };
 type Report = {
