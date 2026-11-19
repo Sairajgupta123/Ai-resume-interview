@@ -75,7 +75,7 @@ export async function POST(request: NextRequest) {
         body.jobDescription = session.jobDescription;
         body.mode = session.mode === "recorded" ? "recorded" : "live";
       }
-      if (body.action === "start") await db.interview.update({ where: { id: body.sessionId }, data: { status: "in_progress" } });
+      if (body.action === "start") await db.interview.update({ where: { id: body.sessionId }, data: { status: "in_progress", inviteUsedAt: new Date() } });
     }
     const context = [
       `Candidate: ${body.candidateName || "Candidate"}`,
