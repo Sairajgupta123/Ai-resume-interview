@@ -149,6 +149,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unsupported interview action." }, { status: 400 });
     }
 
+    if (body.action === "start" && body.consentAccepted !== true) {
+      return NextResponse.json({ error: "Candidate consent is required before the interview can start." }, { status: 400 });
+    }
+
     let startedAt: Date | null = null;
     let startLockAt: Date | null = null;
     if (body.sessionId) {
@@ -173,9 +177,6 @@ export async function POST(request: NextRequest) {
       startedAt = session.startedAt;
 
       if (body.action === "start") {
-        if (body.consentAccepted !== true) {
-          return NextResponse.json({ error: "Candidate consent is required before the interview can start." }, { status: 400 });
-        }
         if (startedAt) {
           const firstQuestion = await db.interviewMessage.findFirst({
             where: { interviewId: body.sessionId, role: "assistant" },
