@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import type { Prisma } from "@prisma/client";
 import { isEmployerAuthenticated } from "@/lib/auth";
 
 type Context = { params: Promise<{ id: string }> };
@@ -20,7 +21,7 @@ export async function PUT(request: NextRequest, context: Context) {
         }))
       });
     }
-    const data: Record<string, unknown> = {};
+    const data: Prisma.InterviewUpdateInput = {};
     if (typeof body.status === "string") data.status = body.status;
     if (typeof body.durationSeconds === "number") data.durationSeconds = Math.max(0, Math.min(900, Math.floor(body.durationSeconds)));
     if (body.report && typeof body.report === "object") {
