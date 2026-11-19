@@ -23,6 +23,9 @@ model Interview {
   invitationTokenHash String? @unique
   inviteExpiresAt DateTime?
   inviteUsedAt    DateTime?
+  employerDecision String?
+  employerNotes    String?
+  decisionAt       DateTime?
   durationSeconds Int      @default(0)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
