@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { db } from "@/lib/db";
+import { hasValidCandidateInvitation } from "@/lib/invitation";
 
 export const runtime = "nodejs";
 
@@ -60,6 +62,12 @@ export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as Payload;
     if (!body.action) return NextResponse.json({ error: "Missing action." }, { status: 400 });
+    if (body.sessionId) {
+      const session = await db.interview.findUnique({ where: { id: body.sessionId }, select: { invitationTokenHash: true } });
+      if (!session) return NextResponse.json({ error: "Interview session not found." }, { status: 404 });
+      if (session.invitationTokenHash && !(await hasValidCandidateInvitation(body.sessionId, request.headers.get("x-interview-invite")))) return NextResponse.json({ error: "Invalid or expired candidate invitation." }, { status: 401 });
+      if (body.action === "start") await db.interview.update({ where: { id: body.sessionId }, data: { status: "in_progress" } });
+    }
     const context = [
       `Candidate: ${body.candidateName || "Candidate"}`,
       `Target role: ${body.role || "Not specified"}`,
