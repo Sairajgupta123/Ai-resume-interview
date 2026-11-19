@@ -93,20 +93,19 @@ export async function POST(request: NextRequest) {
       startedAt = session.startedAt;
 
       if (body.action === "start") {
-        if (!startedAt) {
-          startedAt = new Date();
-          await db.interview.update({
-            where: { id: body.sessionId },
-            data: { status: "in_progress", inviteUsedAt: startedAt, startedAt }
-          });
-        } else {
+        if (startedAt) {
           const firstQuestion = await db.interviewMessage.findFirst({
             where: { interviewId: body.sessionId, role: "assistant" },
             orderBy: { createdAt: "asc" },
             select: { content: true }
           });
           if (firstQuestion) return NextResponse.json({ message: firstQuestion.content, done: false, focus: "Interview introduction" });
-          return NextResponse.json({ error: "Interview initialization is already in progress. Please retry shortly." }, { status: 409 });
+          // A previous start may have failed after reserving its start timestamp.
+          // Permit a retry after a short grace period instead of leaving the invitation stuck.
+          if (Date.now() - startedAt.getTime() < 30_000) {
+            return NextResponse.json({ error: "Interview is initializing. Please retry in a few seconds." }, { status: 409 });
+          }
+          startedAt = null;
         }
       } else {
         if (!startedAt) return NextResponse.json({ error: "The interview has not been started." }, { status: 409 });
@@ -141,9 +140,16 @@ export async function POST(request: NextRequest) {
         throw new Error("AI returned an invalid opening question. Please retry.");
       }
       if (body.sessionId) {
-        await db.interviewMessage.create({
-          data: { interviewId: body.sessionId, role: "assistant", content: parsed.message.slice(0, 12000) }
-        });
+        const startedAt = new Date();
+        await db.$transaction([
+          db.interviewMessage.create({
+            data: { interviewId: body.sessionId, role: "assistant", content: parsed.message.slice(0, 12000) }
+          }),
+          db.interview.update({
+            where: { id: body.sessionId },
+            data: { status: "in_progress", inviteUsedAt: startedAt, startedAt }
+          })
+        ]);
       }
       return NextResponse.json(parsed);
     }
