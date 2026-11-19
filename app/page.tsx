@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { getInterviewIceServers } from "@/lib/webrtc";
 
 type ChatMessage = { role: "assistant" | "user"; content: string };
 type Report = {
@@ -89,7 +90,7 @@ export default function Home() {
     let stopped = false;
     let cursor = "";
     const pendingIce: RTCIceCandidateInit[] = [];
-    const peer = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
+    const peer = new RTCPeerConnection({ iceServers: getInterviewIceServers() });
     peerConnectionRef.current = peer;
     peer.addEventListener("track", event => {
       if (remoteVideoRef.current) remoteVideoRef.current.srcObject = event.streams[0];
