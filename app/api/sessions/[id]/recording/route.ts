@@ -18,7 +18,8 @@ export async function POST(request: NextRequest, context: Context) {
     const form = await request.formData();
     const file = form.get("recording");
     if (!(file instanceof File)) return NextResponse.json({ error: "Recording file is required." }, { status: 400 });
-    if (!["video/webm", "video/mp4", "video/quicktime"].includes(file.type)) {
+    const mimeType = file.type.split(";")[0].trim();
+    if (!["video/webm", "video/mp4", "video/quicktime"].includes(mimeType)) {
       return NextResponse.json({ error: "Only WebM or MP4 recordings are accepted." }, { status: 415 });
     }
     if (file.size < 1 || file.size > MAX_BYTES) {
@@ -27,7 +28,7 @@ export async function POST(request: NextRequest, context: Context) {
 
     const directory = join(process.cwd(), "data", "recordings");
     await mkdir(directory, { recursive: true });
-    const extension = file.type === "video/mp4" ? ".mp4" : file.type === "video/quicktime" ? ".mov" : ".webm";
+    const extension = mimeType === "video/mp4" ? ".mp4" : mimeType === "video/quicktime" ? ".mov" : ".webm";
     const filename = `${id}-${Date.now()}${extension}`;
     const absolutePath = join(directory, filename);
     await writeFile(absolutePath, Buffer.from(await file.arrayBuffer()));
