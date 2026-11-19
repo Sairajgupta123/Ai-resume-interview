@@ -10,6 +10,7 @@ A resume- and job-description-aware interview application powered by xAI Grok.
 - Camera/microphone preview and candidate-controlled video recording upload to local server storage
 - SQLite persistence for interview sessions, transcripts and reports
 - Employer login and dashboard with interview search, candidate review, report and transcript
+- Employer-created candidate invitations with 72-hour expiring, hashed tokens and protected candidate API access
 - Employer review recommendation is advisory; hiring decisions remain human-led
 
 ## Technology
@@ -45,7 +46,7 @@ npm run dev
 The dev command runs Prisma schema sync and starts Next.js. Open http://localhost:3000.
 
 ## Employer dashboard
-Open http://localhost:3000/dashboard and sign in with `EMPLOYER_USERNAME` and `EMPLOYER_PASSWORD` from `.env.local`.
+Open http://localhost:3000/dashboard and sign in with `EMPLOYER_USERNAME` and `EMPLOYER_PASSWORD` from `.env.local`. Use **Invite candidate** to create an interview and generate a private link. Copy the link and send it to the candidate manually; outbound email delivery is not configured yet.
 
 ## Important current boundaries
 - Video is recorded in the browser, downloaded to the candidate device, and uploaded to the app server's local `data/recordings` folder for employer playback. The recording is not stored in SQLite. Keep this folder on persistent storage; local disk is not suitable for ephemeral/serverless deployments.
