@@ -197,18 +197,19 @@ export default function Home() {
     setBusy(true); setError("");
     try {
       let activeSessionId = sessionId;
+      let activeInviteToken = inviteToken;
       if (!activeSessionId) {
         const saved = await fetch("/api/sessions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ candidateName, role, resume, jobDescription, mode }) });
         const savedData = await saved.json();
         if (!saved.ok) throw new Error(savedData.error || "Could not create interview session.");
         activeSessionId = savedData.id;
         setSessionId(activeSessionId);
-        setInviteToken(savedData.inviteToken);
+        activeInviteToken = savedData.inviteToken;
+        setInviteToken(activeInviteToken);
       }
-      const data = await callApi({ action: "start", candidateName, role, resume, jobDescription, mode, sessionId: activeSessionId, inviteToken: inviteToken || undefined }) as InterviewReply;
+      const data = await callApi({ action: "start", candidateName, role, resume, jobDescription, mode, sessionId: activeSessionId, inviteToken: activeInviteToken || undefined }) as InterviewReply;
       const initial = [{ role: "assistant" as const, content: data.message }];
       setHistory(initial);
-      await fetch(`/api/sessions/${activeSessionId}`, { method: "PUT", headers: { "Content-Type": "application/json", ...(inviteToken ? { "x-interview-invite": inviteToken } : {}) }, body: JSON.stringify({ messages: initial }) });
       setPhase("interview"); setSeconds(0); speak(data.message);
       await enableCamera();
     } catch (e) { setError(e instanceof Error ? e.message : "Could not start interview."); }
@@ -224,7 +225,7 @@ export default function Home() {
       const data = await callApi({ action: "answer", candidateName, role, resume, jobDescription, mode, sessionId, history, answer }) as InterviewReply;
       const next = [...updated, { role: "assistant" as const, content: data.message }];
       setHistory(next);
-      if (sessionId) await fetch(`/api/sessions/${sessionId}`, { method: "PUT", headers: { "Content-Type": "application/json", ...(inviteToken ? { "x-interview-invite": inviteToken } : {}) }, body: JSON.stringify({ messages: next, durationSeconds: seconds }) });
+      if (sessionId) await fetch(`/api/sessions/${sessionId}`, { method: "PUT", headers: { "Content-Type": "application/json", ...(inviteToken ? { "x-interview-invite": inviteToken } : {}) }, body: JSON.stringify({ durationSeconds: seconds }) });
       speak(data.message);
       if (data.done) await finishInterview(next);
     } catch (e) { setError(e instanceof Error ? e.message : "Could not submit answer."); }
@@ -236,7 +237,7 @@ export default function Home() {
     try {
       const data = await callApi({ action: "report", candidateName, role, resume, jobDescription, history: transcript, sessionId }) as Report;
       if (sessionId) {
-        const saved = await fetch(`/api/sessions/${sessionId}`, { method: "PUT", headers: { "Content-Type": "application/json", ...(inviteToken ? { "x-interview-invite": inviteToken } : {}) }, body: JSON.stringify({ messages: transcript, durationSeconds: seconds }) });
+        const saved = await fetch(`/api/sessions/${sessionId}`, { method: "PUT", headers: { "Content-Type": "application/json", ...(inviteToken ? { "x-interview-invite": inviteToken } : {}) }, body: JSON.stringify({ durationSeconds: seconds }) });
         if (!saved.ok) throw new Error("Report generated but could not be saved to the employer dashboard.");
       }
       setReport(data); setPhase("report");
