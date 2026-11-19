@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 
-type Item = { id: string; candidateName: string; role: string; mode: string; status: string; overallScore: number | null; recommendation: string | null; durationSeconds: number; createdAt: string };
-type Detail = Item & { resumeText: string; jobDescription: string; recordingPath: string | null; reportJson: string | null; messages: { role: string; content: string }[] };
+type Item = { id: string; candidateName: string; role: string; mode: string; status: string; overallScore: number | null; recommendation: string | null; employerDecision: string | null; durationSeconds: number; createdAt: string };
+type Detail = Item & { resumeText: string; jobDescription: string; recordingPath: string | null; reportJson: string | null; employerNotes: string | null; decisionAt: string | null; messages: { role: string; content: string }[] };
 
 export default function Dashboard() {
   const [authenticated, setAuthenticated] = useState(false);
@@ -14,6 +14,8 @@ export default function Dashboard() {
   const [items, setItems] = useState<Item[]>([]);
   const [selected, setSelected] = useState<Detail | null>(null);
   const [query, setQuery] = useState("");
+  const [decisionNotes, setDecisionNotes] = useState("");
+  const [decisionBusy, setDecisionBusy] = useState(false);
 
   const load = async () => {
     const r = await fetch("/api/sessions", { cache: "no-store" });
@@ -40,8 +42,21 @@ export default function Dashboard() {
   const openDetail = async (id: string) => {
     const r = await fetch(`/api/sessions/${id}`);
     const d = await r.json();
-    if (r.ok) setSelected(d.interview);
+    if (r.ok) { setSelected(d.interview); setDecisionNotes(d.interview.employerNotes || ""); }
     else setError(d.error || "Could not load interview.");
+  };
+
+  const saveDecision = async (decision: "shortlist" | "review" | "reject") => {
+    if (!selected || decisionBusy) return;
+    setDecisionBusy(true); setError("");
+    try {
+      const r = await fetch(`/api/sessions/${selected.id}/decision`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ decision, notes: decisionNotes }) });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || "Could not save decision.");
+      setSelected({ ...selected, employerDecision: data.decision, employerNotes: data.notes, decisionAt: data.decisionAt });
+      await load();
+    } catch (e) { setError(e instanceof Error ? e.message : "Could not save decision."); }
+    finally { setDecisionBusy(false); }
   };
 
   const logout = async () => { await fetch("/api/auth/logout", { method: "POST" }); setAuthenticated(false); setSelected(null); };
@@ -64,6 +79,7 @@ export default function Dashboard() {
     </section>
     {selected && <div className="detail-backdrop" onClick={()=>setSelected(null)}><section className="detail-drawer" onClick={e=>e.stopPropagation()}><button className="drawer-close" onClick={()=>setSelected(null)}>×</button><div className="eyebrow">CANDIDATE REVIEW</div><h2>{selected.candidateName}</h2><p className="drawer-sub">{selected.role} · {selected.mode} interview</p>
       {selected.reportJson ? <ReportView json={selected.reportJson}/> : <p className="drawer-sub">No completed report is available for this interview.</p>}
+      <div className="employer-decision"><div className="eyebrow">EMPLOYER DECISION</div><p>AI recommendation is advisory. Record your independent hiring decision.</p><textarea rows={3} value={decisionNotes} onChange={e=>setDecisionNotes(e.target.value)} placeholder="Optional notes for the hiring team…" /><div className="decision-actions"><button disabled={decisionBusy} onClick={()=>saveDecision("shortlist")}>Shortlist</button><button disabled={decisionBusy} onClick={()=>saveDecision("review")}>Needs review</button><button disabled={decisionBusy} onClick={()=>saveDecision("reject")}>Reject</button></div>{selected.employerDecision && <small>Current decision: <b>{selected.employerDecision}</b>{selected.decisionAt ? ` · ${date(selected.decisionAt)}` : ""}</small>}</div>
       {selected.recordingPath && <div className="drawer-video"><h3>Candidate video recording</h3><video controls playsInline src={`/api/sessions/${selected.id}/recording`} /></div>}<h3>Interview transcript</h3><div className="drawer-transcript">{selected.messages.map((m,i)=><div key={i} className="drawer-message"><small>{m.role==="assistant"?"AI INTERVIEWER":"CANDIDATE"}</small><p>{m.content}</p></div>)}</div>
     </section></div>}
   </main>;
