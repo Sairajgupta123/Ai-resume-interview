@@ -44,7 +44,7 @@ export async function GET(_request: NextRequest, context: Context) {
   if (!(await isEmployerAuthenticated())) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   const { id } = await context.params;
   const interview = await db.interview.findUnique({
-    where: { id }, include: { messages: { orderBy: { createdAt: "asc" } } }
+    where: { id }, include: { messages: { orderBy: { createdAt: "asc" } }, decisionHistory: { orderBy: { createdAt: "desc" } } }
   });
   if (!interview) return NextResponse.json({ error: "Interview not found." }, { status: 404 });
   return NextResponse.json({ interview });
