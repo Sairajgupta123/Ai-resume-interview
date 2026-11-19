@@ -12,7 +12,7 @@ export async function hasValidCandidateInvitation(sessionId: string, token: stri
     select: { invitationTokenHash: true, inviteExpiresAt: true, inviteUsedAt: true, status: true }
   });
   if (!interview?.invitationTokenHash || !interview.inviteExpiresAt) return false;
-  if (interview.inviteExpiresAt.getTime() < Date.now() || interview.status === "completed") return false;
+  if (interview.inviteExpiresAt.getTime() < Date.now()) return false;
   const actual = Buffer.from(hashInvitationToken(token), "hex");
   const expected = Buffer.from(interview.invitationTokenHash, "hex");
   return actual.length === expected.length && timingSafeEqual(actual, expected);
