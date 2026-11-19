@@ -88,48 +88,69 @@ export default function Home() {
   useEffect(() => {
     if (phase !== "interview" || mode !== "live" || !cameraOn || !sessionId || !inviteToken || !streamRef.current) return;
     let stopped = false;
+    let timer: number | undefined;
+    let peer: RTCPeerConnection | null = null;
     let cursor = "";
     const pendingIce: RTCIceCandidateInit[] = [];
-    const peer = new RTCPeerConnection({ iceServers: getInterviewIceServers() });
-    peerConnectionRef.current = peer;
-    peer.addEventListener("track", event => {
-      if (remoteVideoRef.current) remoteVideoRef.current.srcObject = event.streams[0];
-    });
-    streamRef.current.getTracks().forEach(track => peer.addTrack(track, streamRef.current!));
-    peer.onicecandidate = event => {
-      if (event.candidate && !stopped) void fetch(`/api/sessions/${sessionId}/signals`, {
-        method: "POST", headers: { "Content-Type": "application/json", "x-interview-invite": inviteToken },
-        body: JSON.stringify({ kind: "ice", payload: JSON.stringify(event.candidate.toJSON()) })
-      });
-    };
-    const sendOffer = async () => {
-      const offer = await peer.createOffer();
-      await peer.setLocalDescription(offer);
-      await fetch(`/api/sessions/${sessionId}/signals`, {
-        method: "POST", headers: { "Content-Type": "application/json", "x-interview-invite": inviteToken },
-        body: JSON.stringify({ kind: "offer", payload: JSON.stringify(peer.localDescription) })
-      });
-    };
-    const poll = async () => {
-      if (stopped) return;
+    const headers = { "Content-Type": "application/json", "x-interview-invite": inviteToken };
+    const init = async () => {
       try {
-        const response = await fetch(`/api/sessions/${sessionId}/signals?since=${encodeURIComponent(cursor)}`, { headers: { "x-interview-invite": inviteToken }, cache: "no-store" });
-        if (!response.ok) return;
-        const data = await response.json();
-        for (const signal of data.signals || []) {
-          cursor = signal.createdAt;
-          if (signal.kind === "answer" && peer.signalingState === "have-local-offer") { await peer.setRemoteDescription(JSON.parse(signal.payload)); for (const candidate of pendingIce.splice(0)) await peer.addIceCandidate(candidate).catch(() => {}); }
-          if (signal.kind === "ice") { const candidate = JSON.parse(signal.payload) as RTCIceCandidateInit; if (peer.remoteDescription) await peer.addIceCandidate(candidate).catch(() => {}); else pendingIce.push(candidate); }
-          if (signal.kind === "hangup") { peer.close(); setError("Employer ended the live video connection."); }
-        }
-      } catch { /* retry on next poll */ }
+        const iceResponse = await fetch(`/api/sessions/${sessionId}/ice`, { headers: { "x-interview-invite": inviteToken }, cache: "no-store" });
+        if (!iceResponse.ok) throw new Error("Could not load secure live video connection settings.");
+        const { iceServers } = await iceResponse.json();
+        if (stopped) return;
+        peer = new RTCPeerConnection({ iceServers });
+        peerConnectionRef.current = peer;
+        peer.addEventListener("track", event => {
+          if (remoteVideoRef.current) remoteVideoRef.current.srcObject = event.streams[0];
+        });
+        streamRef.current!.getTracks().forEach(track => peer!.addTrack(track, streamRef.current!));
+        peer.onicecandidate = event => {
+          if (event.candidate && !stopped) void fetch(`/api/sessions/${sessionId}/signals`, {
+            method: "POST", headers, body: JSON.stringify({ kind: "ice", payload: JSON.stringify(event.candidate.toJSON()) })
+          });
+        };
+        const offer = await peer.createOffer();
+        await peer.setLocalDescription(offer);
+        const offerResponse = await fetch(`/api/sessions/${sessionId}/signals`, {
+          method: "POST", headers, body: JSON.stringify({ kind: "offer", payload: JSON.stringify(peer.localDescription) })
+        });
+        if (!offerResponse.ok) throw new Error("Could not start live video call.");
+        const poll = async () => {
+          if (stopped || !peer) return;
+          try {
+            const response = await fetch(`/api/sessions/${sessionId}/signals?since=${encodeURIComponent(cursor)}`, { headers: { "x-interview-invite": inviteToken }, cache: "no-store" });
+            if (!response.ok) return;
+            const data = await response.json();
+            for (const signal of data.signals || []) {
+              cursor = signal.createdAt;
+              if (signal.kind === "answer" && peer!.signalingState === "have-local-offer") {
+                await peer!.setRemoteDescription(JSON.parse(signal.payload));
+                for (const candidate of pendingIce.splice(0)) await peer!.addIceCandidate(candidate).catch(() => {});
+              }
+              if (signal.kind === "ice") {
+                const candidate = JSON.parse(signal.payload) as RTCIceCandidateInit;
+                if (peer!.remoteDescription) await peer!.addIceCandidate(candidate).catch(() => {});
+                else pendingIce.push(candidate);
+              }
+              if (signal.kind === "hangup") { peer!.close(); setError("Employer ended the live video connection."); }
+            }
+          } catch { /* retry on next poll */ }
+        };
+        void poll();
+        timer = window.setInterval(() => void poll(), 1200);
+      } catch (error) {
+        if (!stopped) setError(error instanceof Error ? error.message : "Could not connect live video.");
+      }
     };
-    void sendOffer().then(poll);
-    const timer = window.setInterval(() => void poll(), 1200);
+    void init();
     return () => {
-      stopped = true; window.clearInterval(timer);
-      if (peer.connectionState !== "closed") void fetch(`/api/sessions/${sessionId}/signals`, { method: "POST", headers: { "Content-Type": "application/json", "x-interview-invite": inviteToken }, body: JSON.stringify({ kind: "hangup", payload: "candidate-ended" }) }).catch(() => {});
-      peer.close();
+      stopped = true;
+      if (timer !== undefined) window.clearInterval(timer);
+      if (peer && peer.connectionState !== "closed") void fetch(`/api/sessions/${sessionId}/signals`, {
+        method: "POST", headers, body: JSON.stringify({ kind: "hangup", payload: "candidate-ended" })
+      }).catch(() => {});
+      peer?.close();
       if (peerConnectionRef.current === peer) peerConnectionRef.current = null;
       if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
     };
