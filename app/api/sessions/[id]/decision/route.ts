@@ -17,11 +17,14 @@ export async function POST(request: NextRequest, context: Context) {
     const notes = String(body.notes || "").trim().slice(0, 3000);
     const interview = await db.interview.findUnique({ where: { id }, select: { id: true } });
     if (!interview) return NextResponse.json({ error: "Interview not found." }, { status: 404 });
-    const updated = await db.interview.update({ where: { id }, data: {
-      employerDecision: decision,
-      employerNotes: notes || null,
-      decisionAt: new Date()
-    }, select: { employerDecision: true, employerNotes: true, decisionAt: true } });
+    const [, updated] = await db.$transaction([
+      db.employerDecisionHistory.create({ data: { interviewId: id, decision, notes: notes || null } }),
+      db.interview.update({ where: { id }, data: {
+        employerDecision: decision,
+        employerNotes: notes || null,
+        decisionAt: new Date()
+      }, select: { employerDecision: true, employerNotes: true, decisionAt: true } })
+    ]);
     return NextResponse.json({ ok: true, decision: updated.employerDecision, notes: updated.employerNotes, decisionAt: updated.decisionAt });
   } catch {
     return NextResponse.json({ error: "Could not save employer decision." }, { status: 500 });
