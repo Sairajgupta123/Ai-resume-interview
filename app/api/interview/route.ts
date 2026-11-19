@@ -286,7 +286,7 @@ export async function POST(request: NextRequest) {
           where: {
             id: body.sessionId,
             status: "in_progress",
-            answerLockAt: null,
+            OR: [{ answerLockAt: null }, { answerLockAt: { lt: new Date(Date.now() - 90_000) } }],
             reportLockAt: null
           },
           data: { answerLockAt: lockAt }
@@ -357,7 +357,7 @@ export async function POST(request: NextRequest) {
             id: body.sessionId,
             status: "in_progress",
             answerLockAt: null,
-            reportLockAt: null
+            OR: [{ reportLockAt: null }, { reportLockAt: { lt: new Date(Date.now() - 90_000) } }]
           },
           data: { reportLockAt: lockAt }
         });
