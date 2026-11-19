@@ -44,6 +44,8 @@ export default function Home() {
   const [report, setReport] = useState<Report | null>(null);
   const [cameraOn, setCameraOn] = useState(false);
   const [recording, setRecording] = useState(false);
+  const [uploadingRecording, setUploadingRecording] = useState(false);
+  const [recordingSaved, setRecordingSaved] = useState(false);
   const [seconds, setSeconds] = useState(0);
   const [listening, setListening] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -155,12 +157,26 @@ export default function Home() {
     recorderRef.current = recorder;
     const chunks: BlobPart[] = [];
     recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data); };
-    recorder.onstop = () => {
+    recorder.onstop = async () => {
       const blob = new Blob(chunks, { type: recorder.mimeType || "video/webm" });
+      const filename = `mzobs-interview-${Date.now()}.webm`;
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
-      link.href = url; link.download = `mzobs-interview-${Date.now()}.webm`; link.click();
+      link.href = url; link.download = filename; link.click();
       URL.revokeObjectURL(url);
+      if (sessionId) {
+        setUploadingRecording(true);
+        try {
+          const form = new FormData();
+          form.append("recording", blob, filename);
+          const response = await fetch(`/api/sessions/${sessionId}/recording`, { method: "POST", body: form });
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.error || "Recording upload failed.");
+          setRecordingSaved(true);
+        } catch (e) {
+          setError(e instanceof Error ? e.message : "Could not upload recording.");
+        } finally { setUploadingRecording(false); }
+      }
     };
     recorder.start(); setRecording(true);
   };
@@ -240,7 +256,7 @@ export default function Home() {
           <div className="session-footer"><span>✳ AI-generated questions · Job-related evaluation only</span><button onClick={() => finishInterview() } disabled={busy}>End interview & generate report</button></div>
         </div>
         <aside className="side-panel">
-          <div className="side-card"><div className="side-card-head"><b>Candidate camera</b><span className={cameraOn ? "live-tag" : "muted-tag"}>{cameraOn ? "CAMERA ON" : "NOT CONNECTED"}</span></div><div className="video-wrap">{cameraOn ? <video ref={videoRef} autoPlay muted playsInline /> : <div className="camera-placeholder">◉<small>Camera preview</small></div>}</div><button className="outline-btn" onClick={enableCamera}>{cameraOn ? "Reconnect camera" : "Enable camera & mic"}</button>{mode === "recorded" && <button className={recording ? "record-btn recording" : "record-btn"} onClick={toggleRecording}>{recording ? "■ Stop & download recording" : "● Start local recording"}</button>}</div>
+          <div className="side-card"><div className="side-card-head"><b>Candidate camera</b><span className={cameraOn ? "live-tag" : "muted-tag"}>{cameraOn ? "CAMERA ON" : "NOT CONNECTED"}</span></div><div className="video-wrap">{cameraOn ? <video ref={videoRef} autoPlay muted playsInline /> : <div className="camera-placeholder">◉<small>Camera preview</small></div>}</div><button className="outline-btn" onClick={enableCamera}>{cameraOn ? "Reconnect camera" : "Enable camera & mic"}</button>{mode === "recorded" && <button className={recording ? "record-btn recording" : "record-btn"} onClick={toggleRecording}>{recording ? "■ Stop & save recording" : "● Start video recording"}</button>}{uploadingRecording && <p className="privacy-note">Saving recording to the interview server…</p>}{recordingSaved && <p className="privacy-note">✓ Recording saved for employer review.</p>}</div>
           <div className="side-card"><b>Interview structure</b><div className="timeline"><div className="timeline-item done"><i />Introduction & background<small>Getting to know the candidate</small></div><div className="timeline-item current"><i />Resume & project deep dive<small>Validating experience and ownership</small></div><div className="timeline-item"><i />Technical & problem solving<small>Role-specific knowledge</small></div><div className="timeline-item"><i />Wrap-up<small>Candidate questions and closing</small></div></div></div>
           <div className="fairness-note"><b>Fair evaluation</b><p>Assessment is based on answer content and job-related evidence—not facial appearance, accent or voice characteristics.</p></div>
         </aside>
@@ -254,7 +270,7 @@ export default function Home() {
         <div className="report-card"><h3>Role skill assessment</h3><div className="skill-table">{report.skills.map((s,i)=><div className="skill-row" key={i}><b>{s.skill}</b><span>{s.rating}</span><p>{s.evidence}</p></div>)}</div></div>
         <div className="report-card"><h3>Question-by-question evidence</h3>{report.questionFeedback.map((q,i)=><div className="feedback-row" key={i}><b>Q{i+1}. {q.question}</b><p>{q.assessment}</p><small>Evidence: {q.evidence}</small></div>)}</div>
         <p className="report-disclaimer">{report.disclaimer || "This AI-generated report is decision support, not an automated hiring decision. Review the transcript and evidence before taking action."}</p>
-        <button className="outline-btn back-btn" onClick={() => { setPhase("setup"); setHistory([]); setReport(null); setSeconds(0); setSessionId(""); streamRef.current?.getTracks().forEach(t=>t.stop()); setCameraOn(false); }}>＋ Create another interview</button>
+        <button className="outline-btn back-btn" onClick={() => { setPhase("setup"); setHistory([]); setReport(null); setSeconds(0); setSessionId(""); setRecordingSaved(false); streamRef.current?.getTracks().forEach(t=>t.stop()); setCameraOn(false); }}>＋ Create another interview</button>
       </section>}
       <footer className="global-footer"><span>MZOBS · AI Interview Studio</span><span>Thoughtful technology. Better hiring.</span></footer>
     </main>
