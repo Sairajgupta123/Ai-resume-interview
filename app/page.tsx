@@ -55,6 +55,8 @@ export default function Home() {
   const streamRef = useRef<MediaStream | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const recordingCompleteRef = useRef<Promise<boolean> | null>(null);
+  const recordingSavedRef = useRef(false);
+  const recordingUploadInProgressRef = useRef(false);
   const finishStartedRef = useRef(false);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const transcriptEndRef = useRef<HTMLDivElement>(null);
@@ -263,24 +265,36 @@ export default function Home() {
       setError("Video recording is not supported in this browser. You can continue the interview, but no video file will be saved.");
       return;
     }
-    if (recorderRef.current?.state === "recording") return;
+    if (recorderRef.current?.state === "recording" || recordingSavedRef.current || recordingUploadInProgressRef.current) return;
+    let resolveCompletion: (saved: boolean) => void = () => {};
+    let completionSettled = false;
+    const settleCompletion = (saved: boolean) => {
+      if (completionSettled) return;
+      completionSettled = true;
+      resolveCompletion(saved);
+    };
     try {
       const preferredTypes = ["video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm", "video/mp4"];
       const mimeType = preferredTypes.find(type => MediaRecorder.isTypeSupported(type));
       const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
       recorderRef.current = recorder;
       const chunks: BlobPart[] = [];
-      let resolveCompletion: (saved: boolean) => void = () => {};
       recordingCompleteRef.current = new Promise<boolean>(resolve => { resolveCompletion = resolve; });
       recorder.ondataavailable = event => { if (event.data.size) chunks.push(event.data); };
+      recorder.onerror = () => {
+        setError("The browser encountered a video recording error. You can continue with your interview answers.");
+        settleCompletion(false);
+      };
       recorder.onstop = async () => {
-        const type = recorder.mimeType || "video/webm";
-        const extension = type.includes("mp4") ? "mp4" : "webm";
-        const filename = `mzobs-interview-${Date.now()}.${extension}`;
-        const blob = new Blob(chunks, { type });
-        if (!sessionId) { resolveCompletion(false); return; }
+        recordingUploadInProgressRef.current = true;
         setUploadingRecording(true);
         try {
+          const type = recorder.mimeType || "video/webm";
+          const extension = type.includes("mp4") ? "mp4" : "webm";
+          const filename = `mzobs-interview-${Date.now()}.${extension}`;
+          const blob = new Blob(chunks, { type });
+          if (!sessionId) throw new Error("Interview session is not available for recording upload.");
+          if (blob.size < 1) throw new Error("The browser did not produce a video recording. Please retry.");
           const form = new FormData();
           form.append("recording", blob, filename);
           const response = await fetch(`/api/sessions/${sessionId}/recording`, {
@@ -290,17 +304,23 @@ export default function Home() {
           });
           const data = await response.json();
           if (!response.ok) throw new Error(data.error || "Recording upload failed.");
+          recordingSavedRef.current = true;
           setRecordingSaved(true);
-          resolveCompletion(true);
+          settleCompletion(true);
         } catch (error) {
           setError(error instanceof Error ? error.message : "Could not upload recording.");
-          resolveCompletion(false);
-        } finally { setUploadingRecording(false); }
+          settleCompletion(false);
+        } finally {
+          recordingUploadInProgressRef.current = false;
+          setUploadingRecording(false);
+        }
       };
       recorder.start(1000);
       setRecording(true);
     } catch {
+      recordingUploadInProgressRef.current = false;
       setError("Could not start video recording in this browser.");
+      settleCompletion(false);
     }
   };
 
@@ -413,7 +433,7 @@ export default function Home() {
         <div className="report-card"><h3>Role skill assessment</h3><div className="skill-table">{report.skills.map((s,i)=><div className="skill-row" key={i}><b>{s.skill}</b><span>{s.rating}</span><p>{s.evidence}</p></div>)}</div></div>
         <div className="report-card"><h3>Question-by-question evidence</h3>{report.questionFeedback.map((q,i)=><div className="feedback-row" key={i}><b>Q{i+1}. {q.question}</b><p>{q.assessment}</p><small>Evidence: {q.evidence}</small></div>)}</div>
         <p className="report-disclaimer">{report.disclaimer || "This AI-generated report is decision support, not an automated hiring decision. Review the transcript and evidence before taking action."}</p>
-        <button className="outline-btn back-btn" onClick={() => { setPhase("setup"); setHistory([]); setReport(null); setSeconds(0); setSessionId(""); setInviteToken(""); setRecordingSaved(false); streamRef.current?.getTracks().forEach(t=>t.stop()); setCameraOn(false); }}>＋ Create another interview</button>
+        <button className="outline-btn back-btn" onClick={() => { setPhase("setup"); setHistory([]); setReport(null); setSeconds(0); setSessionId(""); setInviteToken(""); setRecordingSaved(false); recordingSavedRef.current = false; recordingUploadInProgressRef.current = false; recorderRef.current = null; recordingCompleteRef.current = null; streamRef.current?.getTracks().forEach(t=>t.stop()); setCameraOn(false); }}>＋ Create another interview</button>
       </section>}
       <footer className="global-footer"><span>MZOBS · AI Interview Studio</span><span>Thoughtful technology. Better hiring.</span></footer>
     </main>
