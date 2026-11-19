@@ -53,9 +53,10 @@ export default function Home() {
   const transcriptEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (phase !== "interview" || seconds >= 900) return;
-    const timer = window.setInterval(() => setSeconds((s) => s + 1), 1000);
-    return () => window.clearInterval(timer);
+    if (phase !== "interview") return;
+    if (seconds >= 900) { void finishInterview(); return; }
+    const timer = window.setTimeout(() => setSeconds((s) => Math.min(900, s + 1)), 1000);
+    return () => window.clearTimeout(timer);
   }, [phase, seconds]);
 
   useEffect(() => { transcriptEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [history]);
