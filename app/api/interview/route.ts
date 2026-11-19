@@ -97,11 +97,13 @@ export async function POST(request: NextRequest) {
     }
 
     if (body.action === "answer") {
-      const history = (body.history || []).slice(-18);
+      const history = body.sessionId
+        ? await db.interviewMessage.findMany({ where: { interviewId: body.sessionId }, orderBy: { createdAt: "asc" }, take: 40, select: { role: true, content: true } })
+        : (body.history || []).slice(-18);
       const messages = [
         { role: "system" as const, content: SYSTEM },
         { role: "user" as const, content: `Interview context:\n${context}\nContinue the interview. Return JSON only.` },
-        ...history.map((m) => ({ role: m.role, content: m.content })),
+        ...history.map((m) => ({ role: m.role as "assistant" | "user", content: m.content })),
         { role: "user" as const, content: body.answer || "" }
       ];
       const content = await askGrok(messages);
@@ -117,10 +119,16 @@ export async function POST(request: NextRequest) {
     }
 
     if (body.action === "report") {
-      const history = (body.history || []).slice(-40);
+      const history = body.sessionId
+        ? await db.interviewMessage.findMany({ where: { interviewId: body.sessionId }, orderBy: { createdAt: "asc" }, take: 100, select: { role: true, content: true } })
+        : (body.history || []).slice(-40);
+      if (body.sessionId && history.filter(message => message.role === "user").length === 0) {
+        return NextResponse.json({ error: "No candidate answers are available to evaluate yet." }, { status: 409 });
+      }
+      const transcript = history.map(m => `${m.role}: ${m.content}`).join("\n").slice(-24000);
       const content = await askGrok([
         { role: "system", content: SYSTEM },
-        { role: "user", content: `Generate the employer-facing evidence-based interview report from this context and transcript. Do not infer anything from video or voice appearance.\n${context}\nTranscript:\n${history.map(m => `${m.role}: ${m.content}`).join("\n")}\nReturn report JSON only.` }
+        { role: "user", content: `Generate the employer-facing evidence-based interview report from this saved server-side transcript. Do not infer anything from video or voice appearance.\n${context}\nTranscript:\n${transcript}\nReturn report JSON only.` }
       ]);
       const report = parseJson(content);
       if (body.sessionId) {
