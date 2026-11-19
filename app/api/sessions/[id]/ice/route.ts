@@ -14,10 +14,10 @@ export async function GET(request: NextRequest, context: Context) {
   const candidate = !employer && await hasValidCandidateInvitation(id, candidateToken);
   if (!employer && !candidate) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
 
-  const interview = await db.interview.findUnique({ where: { id }, select: { mode: true, status: true } });
+  const interview = await db.interview.findUnique({ where: { id }, select: { mode: true, status: true, startedAt: true, consentAcceptedAt: true } });
   if (!interview) return NextResponse.json({ error: "Interview not found." }, { status: 404 });
-  if (interview.mode !== "live" || interview.status === "completed") {
-    return NextResponse.json({ error: "Live interview is not active." }, { status: 409 });
+  if (interview.mode !== "live" || interview.status !== "in_progress" || !interview.startedAt || !interview.consentAcceptedAt) {
+    return NextResponse.json({ error: "Live interview is not active or candidate consent has not been recorded." }, { status: 409 });
   }
 
   const iceServers: RTCIceServer[] = [{ urls: "stun:stun.l.google.com:19302" }];
