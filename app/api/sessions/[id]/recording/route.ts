@@ -15,7 +15,9 @@ export async function POST(request: NextRequest, context: Context) {
   try {
     const interview = await db.interview.findUnique({ where: { id }, select: { id: true, recordingPath: true, invitationTokenHash: true } });
     if (!interview) return NextResponse.json({ error: "Interview not found." }, { status: 404 });
-    if (interview.invitationTokenHash && !(await hasValidCandidateInvitation(id, request.headers.get("x-interview-invite")))) return NextResponse.json({ error: "Invalid or expired candidate invitation." }, { status: 401 });
+    const employer = await isEmployerAuthenticated();
+    const candidate = await hasValidCandidateInvitation(id, request.headers.get("x-interview-invite"));
+    if (!employer && !candidate) return NextResponse.json({ error: "Unauthorized recording upload." }, { status: 401 });
 
     const form = await request.formData();
     const file = form.get("recording");
