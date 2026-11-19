@@ -7,7 +7,7 @@ A resume- and job-description-aware interview application powered by xAI Grok.
 - Grok-powered opening questions, adaptive follow-ups and structured evidence-based evaluation
 - 15-minute interview timer
 - Browser speech-to-text input and text-to-speech interviewer prompts (browser support varies)
-- Candidate camera/microphone preview and candidate-controlled video recording upload to local server storage (the camera feed is not live-streamed to an employer)
+- Candidate and employer browser video/audio can connect peer-to-peer using WebRTC during live interview mode; recorded interview uploads are stored on the app server
 - SQLite persistence for interview sessions, transcripts and reports
 - Employer login and dashboard with interview search, candidate review, report and transcript
 - Employer-created candidate invitations with 72-hour expiring, hashed tokens and protected candidate API access
@@ -54,7 +54,7 @@ Open http://localhost:3000/dashboard and sign in with `EMPLOYER_USERNAME` and `E
 - Voice input uses the browser Web Speech API and spoken interviewer prompts use browser speech synthesis. Availability and language quality vary by browser/device. Text entry remains available.
 - SQLite is suitable for local evaluation/single-machine use. For production or multiple app instances, move to managed PostgreSQL and configure secure persistent storage.
 - Candidate invitations are generated as expiring private links, but the app does not send emails automatically; employers copy and send the link themselves.
-- The live interview is a turn-based AI voice/text interaction using browser speech APIs. It is not a low-latency full-duplex audio stream or a live employer video call.
+- AI questions and answers remain a turn-based Grok voice/text interaction using browser speech APIs; WebRTC provides a separate live candidate-employer audio/video room. A production TURN service is still needed for reliable connectivity across restrictive NAT/firewall networks.
 - Before production deployment, add organisation-level multi-tenant access control, password reset, stronger operational monitoring, secure cloud recording storage, retention/deletion jobs, audit logging and a complete privacy notice.
 - This is not a certified hiring assessment. AI reports can be wrong or incomplete; employers must review evidence and make final decisions.
 
