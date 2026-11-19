@@ -28,8 +28,9 @@ Rules:
 - Never infer competence, honesty, emotion, age, gender, disability, race, attractiveness, or personality from face, voice tone, accent, or appearance.
 - Evaluate only job-related content and evidence in answers. Be respectful and do not reveal hidden scoring rubrics.
 - For start/answer actions return ONLY valid JSON: {"message":"the next interviewer utterance","done":false,"focus":"short topic label"}.
-- End when there is enough evidence or the session is complete. For report action return ONLY JSON with keys: overallScore (0-100), recommendation ("Strong match"|"Consider"|"Needs review"), summary, strengths (string array), improvementAreas (string array), skills (array of {"skill":string,"rating":"Strong"|"Good"|"Developing"|"Insufficient evidence","evidence":string}), questionFeedback (array of {"question":string,"assessment":string,"evidence":string}), and disclaimer.
-- Do not fabricate evidence. Use "Insufficient evidence" where appropriate. Recommendation is advisory; employer makes the final decision.`;
+- End when there is enough evidence or the session is complete. For report action return ONLY JSON with keys: overallScore (integer 0-100), recommendation ("Strong match"|"Consider"|"Needs review"), summary, strengths (string array), improvementAreas (string array), skills (array of {"skill":string,"rating":"Strong"|"Good"|"Developing"|"Insufficient evidence","evidence":string}), questionFeedback (array of {"question":string,"assessment":string,"evidence":string}), and disclaimer.
+- For every skill and questionFeedback evidence field, provide a short VERBATIM quote copied exactly from a candidate answer in the transcript. If no supporting answer exists, use exactly "Insufficient evidence". Never use an interviewer question, resume text, job description, or assumptions as candidate-answer evidence.
+- Do not fabricate evidence. Recommendation is advisory; employer makes the final decision.`;
 
 async function askGrok(messages: { role: "system" | "user" | "assistant"; content: string }[]) {
   const key = process.env.XAI_API_KEY;
@@ -62,6 +63,83 @@ function parseJson(text: string) {
 
 function elapsedSeconds(startedAt: Date) {
   return Math.max(0, Math.floor((Date.now() - startedAt.getTime()) / 1000));
+}
+
+function normalizeEvidence(value: string) {
+  return value.toLocaleLowerCase().replace(/[^\\p{L}\\p{N}]+/gu, " ").trim().replace(/\\s+/g, " ");
+}
+
+function boundedText(value: unknown, field: string, maxLength: number) {
+  if (typeof value !== "string" || !value.trim() || value.length > maxLength) {
+    throw new Error(`AI report validation failed: invalid ${field}.`);
+  }
+  return value.trim();
+}
+
+function validateReport(raw: any, candidateAnswers: string[]) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    throw new Error("AI report validation failed: report must be an object.");
+  }
+  if (!Number.isInteger(raw.overallScore) || raw.overallScore < 0 || raw.overallScore > 100) {
+    throw new Error("AI report validation failed: overall score must be an integer from 0 to 100.");
+  }
+  const recommendations = ["Strong match", "Consider", "Needs review"];
+  if (!recommendations.includes(raw.recommendation)) {
+    throw new Error("AI report validation failed: recommendation is not supported.");
+  }
+  const candidateText = normalizeEvidence(candidateAnswers.join(" "));
+  const validateEvidence = (value: unknown, field: string) => {
+    const evidence = boundedText(value, field, 1200);
+    if (evidence === "Insufficient evidence") return evidence;
+    const normalized = normalizeEvidence(evidence);
+    if (normalized.length < 12 || !candidateText.includes(normalized)) {
+      throw new Error(`AI report validation failed: ${field} is not an exact quote from a candidate answer.`);
+    }
+    return evidence;
+  };
+  const stringList = (value: unknown, field: string, maxItems: number) => {
+    if (!Array.isArray(value) || value.length > maxItems) {
+      throw new Error(`AI report validation failed: invalid ${field} list.`);
+    }
+    return value.map((item, index) => boundedText(item, `${field}[${index}]`, 500));
+  };
+  if (!Array.isArray(raw.skills) || raw.skills.length > 30) {
+    throw new Error("AI report validation failed: invalid skills list.");
+  }
+  const ratings = ["Strong", "Good", "Developing", "Insufficient evidence"];
+  const skills = raw.skills.map((item: any, index: number) => {
+    if (!item || typeof item !== "object" || !ratings.includes(item.rating)) {
+      throw new Error(`AI report validation failed: invalid skill rating at item ${index + 1}.`);
+    }
+    return {
+      skill: boundedText(item.skill, `skills[${index}].skill`, 120),
+      rating: item.rating,
+      evidence: validateEvidence(item.evidence, `skills[${index}].evidence`)
+    };
+  });
+  if (!Array.isArray(raw.questionFeedback) || raw.questionFeedback.length > 40) {
+    throw new Error("AI report validation failed: invalid question feedback list.");
+  }
+  const questionFeedback = raw.questionFeedback.map((item: any, index: number) => {
+    if (!item || typeof item !== "object") {
+      throw new Error(`AI report validation failed: invalid question feedback at item ${index + 1}.`);
+    }
+    return {
+      question: boundedText(item.question, `questionFeedback[${index}].question`, 1000),
+      assessment: boundedText(item.assessment, `questionFeedback[${index}].assessment`, 1500),
+      evidence: validateEvidence(item.evidence, `questionFeedback[${index}].evidence`)
+    };
+  });
+  return {
+    overallScore: raw.overallScore,
+    recommendation: raw.recommendation,
+    summary: boundedText(raw.summary, "summary", 3000),
+    strengths: stringList(raw.strengths, "strengths", 12),
+    improvementAreas: stringList(raw.improvementAreas, "improvementAreas", 12),
+    skills,
+    questionFeedback,
+    disclaimer: boundedText(raw.disclaimer, "disclaimer", 1000)
+  };
 }
 
 export async function POST(request: NextRequest) {
@@ -213,15 +291,17 @@ export async function POST(request: NextRequest) {
         { role: "system", content: SYSTEM },
         { role: "user", content: `Generate the employer-facing evidence-based interview report from this saved server-side transcript. Do not infer anything from video or voice appearance.\n${context}\nTranscript:\n${transcript}\nReturn report JSON only.` }
       ]);
-      const report = parseJson(content);
+      const rawReport = parseJson(content);
+      const candidateAnswers = history.filter(message => message.role === "user").map(message => message.content);
+      const report = validateReport(rawReport, candidateAnswers);
       if (body.sessionId) {
         const durationSeconds = startedAt ? Math.min(INTERVIEW_LIMIT_SECONDS, elapsedSeconds(startedAt)) : 0;
         await db.interview.update({
           where: { id: body.sessionId },
           data: {
             reportJson: JSON.stringify(report),
-            overallScore: Math.max(0, Math.min(100, Math.round(Number(report.overallScore) || 0))),
-            recommendation: String(report.recommendation || "Needs review").slice(0, 80),
+            overallScore: report.overallScore,
+            recommendation: report.recommendation,
             durationSeconds,
             status: "completed"
           }
@@ -233,6 +313,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unsupported interview action." }, { status: 400 });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unexpected server error.";
-    return NextResponse.json({ error: message }, { status: 500 });
+    const status = message.startsWith("AI report validation failed") || message.startsWith("AI returned") ? 502 : 500;
+    return NextResponse.json({ error: message }, { status });
   }
 }
