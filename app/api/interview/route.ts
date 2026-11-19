@@ -149,6 +149,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unsupported interview action." }, { status: 400 });
     }
 
+    // Every AI operation must belong to a persisted interview and a valid candidate
+    // invitation. Do not expose an anonymous Grok proxy that can be abused for API spend.
+    if (typeof body.sessionId !== "string" || !body.sessionId.trim()) {
+      return NextResponse.json({ error: "A valid interview invitation is required." }, { status: 401 });
+    }
+
     if (body.action === "start" && body.consentAccepted !== true) {
       return NextResponse.json({ error: "Candidate consent is required before the interview can start." }, { status: 400 });
     }
