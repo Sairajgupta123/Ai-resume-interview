@@ -158,7 +158,11 @@ export default function Dashboard() {
   const exportCsv = () => {
     const columns = ["Candidate", "Role", "Mode", "Status", "AI score", "AI recommendation", "Employer decision", "Duration seconds", "Created at"];
     const rows = items.map(item => [item.candidateName, item.role, item.mode, item.status, item.overallScore ?? "", item.recommendation ?? "", item.employerDecision ?? "", item.durationSeconds, item.createdAt]);
-    const escapeCsv = (value: string | number) => `"${String(value).replace(/"/g, '""')}"`;
+    const escapeCsv = (value: string | number) => {
+      const raw = String(value);
+      const safe = typeof value === "string" && /^[\\t\\r\\n ]*[=+\\-@]/.test(raw) ? "'" + raw : raw;
+      return `"${safe.replace(/"/g, '""')}"`;
+    };
     const csv = [columns, ...rows].map(row => row.map(escapeCsv).join(",")).join("\\r\\n");
     const url = URL.createObjectURL(new Blob(["\\uFEFF", csv], { type: "text/csv;charset=utf-8" }));
     const link = document.createElement("a");
