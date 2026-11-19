@@ -279,71 +279,146 @@ export async function POST(request: NextRequest) {
     }
 
     if (body.action === "answer") {
-      const history = body.sessionId
-        ? await db.interviewMessage.findMany({
-            where: { interviewId: body.sessionId },
-            orderBy: { createdAt: "asc" }, take: 40,
-            select: { role: true, content: true }
-          })
-        : (body.history || []).slice(-18);
-      const messages = [
-        { role: "system" as const, content: SYSTEM },
-        { role: "user" as const, content: `Interview context:\n${context}\nContinue the interview. Return JSON only.` },
-        ...history.map((m) => ({ role: m.role as "assistant" | "user", content: m.content })),
-        { role: "user" as const, content: body.answer! }
-      ];
-      const content = await askGrok(messages);
-      const parsed = parseJson(content);
-      if (typeof parsed.message !== "string" || !parsed.message.trim()) {
-        throw new Error("AI returned an invalid follow-up question. Please retry.");
-      }
+      let answerLockAt: Date | null = null;
       if (body.sessionId) {
-        if (!startedAt || elapsedSeconds(startedAt) >= INTERVIEW_LIMIT_SECONDS) {
-          return NextResponse.json({ error: "The 15-minute interview time limit was reached while processing your answer." }, { status: 409 });
-        }
-        await db.interviewMessage.createMany({
-          data: [
-            { interviewId: body.sessionId, role: "user", content: body.answer! },
-            { interviewId: body.sessionId, role: "assistant", content: parsed.message.slice(0, 12000) }
-          ]
+        const lockAt = new Date();
+        const lock = await db.interview.updateMany({
+          where: {
+            id: body.sessionId,
+            status: "in_progress",
+            answerLockAt: null,
+            reportLockAt: null
+          },
+          data: { answerLockAt: lockAt }
         });
+        if (lock.count !== 1) {
+          return NextResponse.json({ error: "Another interview action is being processed. Please wait and retry." }, { status: 409 });
+        }
+        answerLockAt = lockAt;
       }
-      return NextResponse.json(parsed);
+      try {
+        const history = body.sessionId
+          ? await db.interviewMessage.findMany({
+              where: { interviewId: body.sessionId },
+              orderBy: { createdAt: "asc" }, take: 40,
+              select: { role: true, content: true }
+            })
+          : (body.history || []).slice(-18);
+        const messages = [
+          { role: "system" as const, content: SYSTEM },
+          { role: "user" as const, content: `Interview context:\n${context}\nContinue the interview. Return JSON only.` },
+          ...history.map((m) => ({ role: m.role as "assistant" | "user", content: m.content })),
+          { role: "user" as const, content: body.answer! }
+        ];
+        const content = await askGrok(messages);
+        const parsed = parseJson(content);
+        if (typeof parsed.message !== "string" || !parsed.message.trim()) {
+          throw new Error("AI returned an invalid follow-up question. Please retry.");
+        }
+        if (body.sessionId) {
+          if (!startedAt || elapsedSeconds(startedAt) >= INTERVIEW_LIMIT_SECONDS || !answerLockAt) {
+            return NextResponse.json({ error: "The 15-minute interview time limit was reached while processing your answer." }, { status: 409 });
+          }
+          await db.$transaction(async (tx) => {
+            const current = await tx.interview.findUnique({
+              where: { id: body.sessionId },
+              select: { status: true, answerLockAt: true, startedAt: true }
+            });
+            if (!current || current.status !== "in_progress" || current.answerLockAt?.getTime() !== answerLockAt!.getTime()) {
+              throw new Error("Interview answer request expired. Please retry.");
+            }
+            await tx.interviewMessage.createMany({
+              data: [
+                { interviewId: body.sessionId!, role: "user", content: body.answer! },
+                { interviewId: body.sessionId!, role: "assistant", content: parsed.message.slice(0, 12000) }
+              ]
+            });
+            await tx.interview.update({ where: { id: body.sessionId }, data: { answerLockAt: null } });
+          });
+          answerLockAt = null;
+        }
+        return NextResponse.json(parsed);
+      } finally {
+        if (body.sessionId && answerLockAt) {
+          await db.interview.updateMany({
+            where: { id: body.sessionId, answerLockAt },
+            data: { answerLockAt: null }
+          }).catch(() => undefined);
+        }
+      }
     }
 
     if (body.action === "report") {
-      const history = body.sessionId
-        ? await db.interviewMessage.findMany({
-            where: { interviewId: body.sessionId },
-            orderBy: { createdAt: "asc" }, take: 100,
-            select: { role: true, content: true }
-          })
-        : (body.history || []).slice(-40);
-      if (body.sessionId && history.filter(message => message.role === "user").length === 0) {
-        return NextResponse.json({ error: "No candidate answers are available to evaluate yet." }, { status: 409 });
-      }
-      const transcript = history.map(m => `${m.role}: ${m.content}`).join("\n").slice(-24000);
-      const content = await askGrok([
-        { role: "system", content: SYSTEM },
-        { role: "user", content: `Generate the employer-facing evidence-based interview report from this saved server-side transcript. Do not infer anything from video or voice appearance.\n${context}\nTranscript:\n${transcript}\nReturn report JSON only.` }
-      ]);
-      const rawReport = parseJson(content);
-      const candidateAnswers = history.filter(message => message.role === "user").map(message => message.content);
-      const report = validateReport(rawReport, candidateAnswers);
+      let reportLockAt: Date | null = null;
       if (body.sessionId) {
-        const durationSeconds = startedAt ? Math.min(INTERVIEW_LIMIT_SECONDS, elapsedSeconds(startedAt)) : 0;
-        await db.interview.update({
-          where: { id: body.sessionId },
-          data: {
-            reportJson: JSON.stringify(report),
-            overallScore: report.overallScore,
-            recommendation: report.recommendation,
-            durationSeconds,
-            status: "completed"
-          }
+        const lockAt = new Date();
+        const lock = await db.interview.updateMany({
+          where: {
+            id: body.sessionId,
+            status: "in_progress",
+            answerLockAt: null,
+            reportLockAt: null
+          },
+          data: { reportLockAt: lockAt }
         });
+        if (lock.count !== 1) {
+          return NextResponse.json({ error: "Another interview action is being processed. Please wait and retry." }, { status: 409 });
+        }
+        reportLockAt = lockAt;
       }
-      return NextResponse.json(report);
+      try {
+        const history = body.sessionId
+          ? await db.interviewMessage.findMany({
+              where: { interviewId: body.sessionId },
+              orderBy: { createdAt: "asc" }, take: 100,
+              select: { role: true, content: true }
+            })
+          : (body.history || []).slice(-40);
+        if (body.sessionId && history.filter(message => message.role === "user").length === 0) {
+          return NextResponse.json({ error: "No candidate answers are available to evaluate yet." }, { status: 409 });
+        }
+        const transcript = history.map(m => `${m.role}: ${m.content}`).join("\n").slice(-24000);
+        const content = await askGrok([
+          { role: "system", content: SYSTEM },
+          { role: "user", content: `Generate the employer-facing evidence-based interview report from this saved server-side transcript. Do not infer anything from video or voice appearance.\n${context}\nTranscript:\n${transcript}\nReturn report JSON only.` }
+        ]);
+        const rawReport = parseJson(content);
+        const candidateAnswers = history.filter(message => message.role === "user").map(message => message.content);
+        const report = validateReport(rawReport, candidateAnswers);
+        if (body.sessionId) {
+          if (!reportLockAt) throw new Error("Interview report lock was not acquired.");
+          const durationSeconds = startedAt ? Math.min(INTERVIEW_LIMIT_SECONDS, elapsedSeconds(startedAt)) : 0;
+          await db.$transaction(async (tx) => {
+            const current = await tx.interview.findUnique({
+              where: { id: body.sessionId },
+              select: { status: true, reportLockAt: true }
+            });
+            if (!current || current.status !== "in_progress" || current.reportLockAt?.getTime() !== reportLockAt!.getTime()) {
+              throw new Error("Interview report request expired. Please retry.");
+            }
+            await tx.interview.update({
+              where: { id: body.sessionId },
+              data: {
+                reportJson: JSON.stringify(report),
+                overallScore: report.overallScore,
+                recommendation: report.recommendation,
+                durationSeconds,
+                status: "completed",
+                reportLockAt: null
+              }
+            });
+          });
+          reportLockAt = null;
+        }
+        return NextResponse.json(report);
+      } finally {
+        if (body.sessionId && reportLockAt) {
+          await db.interview.updateMany({
+            where: { id: body.sessionId, reportLockAt },
+            data: { reportLockAt: null }
+          }).catch(() => undefined);
+        }
+      }
     }
 
     return NextResponse.json({ error: "Unsupported interview action." }, { status: 400 });
