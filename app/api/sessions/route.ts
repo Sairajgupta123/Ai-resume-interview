@@ -29,7 +29,7 @@ export async function GET() {
   if (!(await isEmployerAuthenticated())) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   const interviews = await db.interview.findMany({
     orderBy: { createdAt: "desc" },
-    select: { id: true, candidateName: true, role: true, mode: true, status: true, overallScore: true, recommendation: true, durationSeconds: true, createdAt: true }
+    select: { id: true, candidateName: true, role: true, mode: true, status: true, overallScore: true, recommendation: true, employerDecision: true, durationSeconds: true, createdAt: true }
   });
   return NextResponse.json({ interviews });
 }
