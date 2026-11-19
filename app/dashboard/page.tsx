@@ -62,8 +62,10 @@ export default function Dashboard() {
         if (employerLocalRef.current) employerLocalRef.current.srcObject = localStream;
         localStream.getTracks().forEach(track => peer!.addTrack(track, localStream!));
         setLiveCallState("Waiting for candidate to join…");
+        let polling = false;
         const poll = async () => {
-          if (stopped || !peer) return;
+          if (stopped || !peer || polling) return;
+          polling = true;
           try {
             const response = await fetch(`/api/sessions/${selected.id}/signals?since=${encodeURIComponent(cursor)}&afterId=${encodeURIComponent(cursorId)}`, { cache: "no-store" });
             if (!response.ok) return;
@@ -88,6 +90,7 @@ export default function Dashboard() {
               }
             }
           } catch { /* retry on transient network errors */ }
+          finally { polling = false; }
         };
         void poll();
         timer = window.setInterval(() => void poll(), 1000);
