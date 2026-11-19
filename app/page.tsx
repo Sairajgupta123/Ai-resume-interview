@@ -126,7 +126,9 @@ export default function Home() {
     void sendOffer().then(poll);
     const timer = window.setInterval(() => void poll(), 1200);
     return () => {
-      stopped = true; window.clearInterval(timer); peer.close();
+      stopped = true; window.clearInterval(timer);
+      if (peer.connectionState !== "closed") void fetch(`/api/sessions/${sessionId}/signals`, { method: "POST", headers: { "Content-Type": "application/json", "x-interview-invite": inviteToken }, body: JSON.stringify({ kind: "hangup", payload: "candidate-ended" }) }).catch(() => {});
+      peer.close();
       if (peerConnectionRef.current === peer) peerConnectionRef.current = null;
       if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
     };
