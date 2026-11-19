@@ -1,37 +1,58 @@
 # MZOBS AI Interview Studio
 
-A Next.js starter for resume- and job-description-aware AI interviews, powered by xAI Grok.
+A resume- and job-description-aware interview application powered by xAI Grok.
 
-## Included in this MVP
-- Candidate setup form for name, role, resume text and job description
-- Grok-powered interview opening, adaptive follow-up questions and structured evaluation report
-- 15-minute session timer and transcript
-- Browser text-to-speech for interviewer prompts
-- Browser speech recognition for voice answer input (support varies by browser)
-- Camera/microphone permission flow and local MediaRecorder download
-- Employer-style report view with score, strengths, development areas, skills and question evidence
-- Server-side API key handling
+## Current features
+- Candidate interview setup with resume and job description
+- Grok-powered opening questions, adaptive follow-ups and structured evidence-based evaluation
+- 15-minute interview timer
+- Browser speech-to-text input and text-to-speech interviewer prompts (browser support varies)
+- Camera/microphone preview and candidate-controlled local video recording download
+- SQLite persistence for interview sessions, transcripts and reports
+- Employer login and dashboard with interview search, candidate review, report and transcript
+- Employer review recommendation is advisory; hiring decisions remain human-led
 
-## Stack
+## Technology
 - Next.js 15, React 19, TypeScript
+- Prisma ORM + SQLite for local development
 - xAI Chat Completions API
 
-## Run locally
-1. Install Node.js 20+.
-2. Run `npm install`.
-3. Copy `.env.example` to `.env.local`.
-4. Set `XAI_API_KEY` in `.env.local`.
-5. Optionally set `XAI_MODEL` to a model enabled for your xAI account.
-6. Run `npm run dev` and open http://localhost:3000.
+## Requirements
+- Node.js 20+
+- npm
+- An xAI API key with access to the configured model
 
-## MVP boundaries
-- Camera preview and MediaRecorder are browser-local. Video is downloaded to the candidate's device; it is not uploaded or stored on a server.
-- Browser speech recognition availability and accuracy depend on browser, OS, and language support. Typed answers remain available.
-- The report is displayed in the current session and can be downloaded as JSON. This is not yet a production multi-tenant employer dashboard.
-- Authentication, employer/candidate roles, database persistence, secure cloud recording storage, deletion/retention workflows, PDF export, and production-grade real-time WebRTC transport are follow-up work.
-- AI recommendations are advisory only. A human employer must review evidence and make the final decision.
+## Setup (Windows PowerShell)
+```powershell
+git clone https://github.com/Sairajgupta123/Ai-resume.git
+cd Ai-resume
+npm install
+Copy-Item .env.example .env.local
+```
 
-## Privacy and security
-- Never commit `.env.local`, API keys, candidate resumes, or interview recordings.
-- Obtain explicit candidate consent before using camera, microphone, or recording.
-- Before production, add authenticated access, encryption at rest/in transit, retention controls, deletion workflows, audit logs, and a privacy notice.
+Open `.env.local` and set:
+- `XAI_API_KEY`: your xAI API key
+- `XAI_MODEL`: a chat model available to your xAI account
+- `EMPLOYER_USERNAME`: dashboard login (default example: admin)
+- `EMPLOYER_PASSWORD`: replace the example with a strong password
+- `SESSION_SECRET`: replace with a random secret of at least 32 characters
+- `DATABASE_URL`: keep `file:../dev.db` for local SQLite
+
+Then run:
+```powershell
+npm run dev
+```
+The dev command runs Prisma schema sync and starts Next.js. Open http://localhost:3000.
+
+## Employer dashboard
+Open http://localhost:3000/dashboard and sign in with `EMPLOYER_USERNAME` and `EMPLOYER_PASSWORD` from `.env.local`.
+
+## Important current boundaries
+- Video is recorded in the browser and downloaded to the candidate device. Video files are not uploaded or stored in the database. The employer dashboard currently stores the transcript and AI report, not the video.
+- Voice input uses the browser Web Speech API and spoken interviewer prompts use browser speech synthesis. Availability and language quality vary by browser/device. Text entry remains available.
+- SQLite is suitable for local evaluation/single-machine use. For production or multiple app instances, move to managed PostgreSQL and configure secure persistent storage.
+- Before production deployment, add organisation-level multi-tenant access control, candidate invitation links, password reset, stronger operational monitoring, secure cloud recording storage, retention/deletion jobs, audit logging and a privacy notice.
+- This is not a certified hiring assessment. AI reports can be wrong or incomplete; employers must review evidence and make final decisions.
+
+## Privacy
+Get candidate consent before camera, microphone or recording. Do not commit `.env.local`, API keys, candidate resumes or recordings. Use HTTPS in deployment and configure data retention/deletion before processing real candidate data.
