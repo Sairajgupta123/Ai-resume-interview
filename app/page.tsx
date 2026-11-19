@@ -133,6 +133,8 @@ export default function Home() {
       window.speechSynthesis?.cancel();
       recognitionRef.current?.stop();
       if (recorderRef.current?.state === "recording") recorderRef.current.stop();
+      streamRef.current?.getTracks().forEach((track) => track.stop());
+      setCameraOn(false);
     } catch (e) { setError(e instanceof Error ? e.message : "Report generation failed."); }
     finally { setBusy(false); }
   };
@@ -191,7 +193,7 @@ export default function Home() {
     <main className="shell">
       <header className="topbar">
         <a className="brand" href="#"><span className="brand-mark">M</span><span>mzobs<span className="brand-dot">.</span><small>AI INTERVIEW STUDIO</small></span></a>
-        <div className="topbar-right"><span className="secure"><i /> Secure interview workspace</span><span className="avatar">HR</span></div>
+        <div className="topbar-right"><span className="secure"><i /> Secure interview workspace</span><a className="avatar" href="/dashboard" aria-label="Employer dashboard">HR</a></div>
       </header>
 
       {phase === "setup" && <section className="setup-layout">
@@ -245,7 +247,7 @@ export default function Home() {
       </section>}
 
       {phase === "report" && report && <section className="report-layout">
-        <div className="report-top"><div><div className="eyebrow">INTERVIEW COMPLETE / EMPLOYER REVIEW</div><h1>Interview <em>insights.</em></h1><p>{candidateName} · {role} · {formatTime(seconds)} duration</p></div><button className="primary-btn compact" onClick={downloadReport}>Download report JSON ↧</button></div>
+        <div className="report-top"><div><div className="eyebrow">INTERVIEW COMPLETE / EMPLOYER REVIEW</div><h1>Interview <em>insights.</em></h1><p>{candidateName} · {role} · {formatTime(seconds)} duration</p></div><div className="report-actions"><button className="outline-btn" onClick={() => window.print()}>Print / Save PDF</button><button className="primary-btn compact" onClick={downloadReport}>Download report JSON ↧</button></div></div>
         <div className="score-grid"><div className="score-card"><small>OVERALL SCORE</small><strong>{report.overallScore}<i>/100</i></strong><div className="score-track"><span style={{ width: `${Math.max(0, Math.min(100, report.overallScore))}%` }} /></div></div><div className="recommend-card"><small>AI REVIEW SUGGESTION</small><strong>{report.recommendation}</strong><p>Advisory signal only. Final hiring decision stays with the employer.</p></div></div>
         <div className="report-card"><div className="eyebrow">EXECUTIVE SUMMARY</div><p>{report.summary}</p></div>
         <div className="report-columns"><div className="report-card"><h3>Strengths</h3>{report.strengths.map((x,i)=><div className="bullet good" key={i}>＋ {x}</div>)}</div><div className="report-card"><h3>Development areas</h3>{report.improvementAreas.map((x,i)=><div className="bullet" key={i}>↗ {x}</div>)}</div></div>
