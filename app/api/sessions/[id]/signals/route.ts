@@ -21,10 +21,11 @@ export async function GET(request: NextRequest, context: Context) {
   if (!sender) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   const interview = await db.interview.findUnique({ where: { id }, select: { status: true, mode: true, startedAt: true, consentAcceptedAt: true } });
   if (!interview) return NextResponse.json({ error: "Interview not found." }, { status: 404 });
-  if (!interview.startedAt || !interview.consentAcceptedAt || interview.status !== "in_progress") {
+  if (interview.mode !== "live") return NextResponse.json({ signals: [] });
+  if (interview.status === "completed") return NextResponse.json({ signals: [] });
+  if (sender === "candidate" && (!interview.startedAt || !interview.consentAcceptedAt || interview.status !== "in_progress")) {
     return NextResponse.json({ error: "The live interview has not been started with candidate consent." }, { status: 409 });
   }
-  if (interview.mode !== "live") return NextResponse.json({ signals: [] });
   const rawSince = request.nextUrl.searchParams.get("since");
   const afterId = request.nextUrl.searchParams.get("afterId") || "";
   const since = rawSince ? new Date(rawSince) : new Date(0);
@@ -54,8 +55,14 @@ export async function POST(request: NextRequest, context: Context) {
     const interview = await db.interview.findUnique({ where: { id }, select: { mode: true, status: true, startedAt: true, consentAcceptedAt: true } });
     if (!interview) return NextResponse.json({ error: "Interview not found." }, { status: 404 });
     if (interview.mode !== "live") return NextResponse.json({ error: "Live video is only enabled for live interviews." }, { status: 409 });
-    if (!interview.startedAt || !interview.consentAcceptedAt || interview.status !== "in_progress") {
+    if (interview.status === "completed") return NextResponse.json({ error: "This interview has ended." }, { status: 409 });
+    if (sender === "candidate" && (!interview.startedAt || !interview.consentAcceptedAt || interview.status !== "in_progress")) {
       return NextResponse.json({ error: "The live interview has not been started with candidate consent." }, { status: 409 });
+    }
+    // The employer's ICE candidates may be generated while waiting for the candidate's
+    // offer. Persist only ICE in that pre-join state; candidate media remains consent-gated.
+    if (sender === "employer" && interview.status !== "in_progress" && body.kind !== "ice") {
+      return NextResponse.json({ error: "The candidate has not joined the live interview yet." }, { status: 409 });
     }
     const signal = await db.interviewSignal.create({ data: { interviewId: id, sender, kind: body.kind, payload: body.payload } });
     return NextResponse.json({ ok: true, id: signal.id }, { status: 201 });
