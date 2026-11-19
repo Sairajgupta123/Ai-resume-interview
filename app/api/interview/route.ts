@@ -63,9 +63,18 @@ export async function POST(request: NextRequest) {
     const body = (await request.json()) as Payload;
     if (!body.action) return NextResponse.json({ error: "Missing action." }, { status: 400 });
     if (body.sessionId) {
-      const session = await db.interview.findUnique({ where: { id: body.sessionId }, select: { invitationTokenHash: true } });
+      const session = await db.interview.findUnique({ where: { id: body.sessionId }, select: {
+        invitationTokenHash: true, candidateName: true, role: true, resumeText: true, jobDescription: true, mode: true
+      } });
       if (!session) return NextResponse.json({ error: "Interview session not found." }, { status: 404 });
       if (session.invitationTokenHash && !(await hasValidCandidateInvitation(body.sessionId, request.headers.get("x-interview-invite")))) return NextResponse.json({ error: "Invalid or expired candidate invitation." }, { status: 401 });
+      if (session.invitationTokenHash) {
+        body.candidateName = session.candidateName;
+        body.role = session.role;
+        body.resume = session.resumeText;
+        body.jobDescription = session.jobDescription;
+        body.mode = session.mode === "recorded" ? "recorded" : "live";
+      }
       if (body.action === "start") await db.interview.update({ where: { id: body.sessionId }, data: { status: "in_progress" } });
     }
     const context = [
