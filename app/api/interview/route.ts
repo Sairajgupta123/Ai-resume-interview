@@ -66,7 +66,9 @@ function elapsedSeconds(startedAt: Date) {
 }
 
 function normalizeEvidence(value: string) {
-  return value.toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim().replace(/\s+/g, " ");
+  // Ignore case and whitespace differences only. Keep punctuation and word order
+  // so evidence must remain a contiguous quote from one candidate answer.
+  return value.toLocaleLowerCase().trim().replace(/\s+/g, " ");
 }
 
 function boundedText(value: unknown, field: string, maxLength: number) {
@@ -87,13 +89,14 @@ function validateReport(raw: any, candidateAnswers: string[]) {
   if (!recommendations.includes(raw.recommendation)) {
     throw new Error("AI report validation failed: recommendation is not supported.");
   }
-  const candidateText = normalizeEvidence(candidateAnswers.join(" "));
+  const normalizedAnswers = candidateAnswers.map(normalizeEvidence);
   const validateEvidence = (value: unknown, field: string) => {
     const evidence = boundedText(value, field, 1200);
     if (evidence === "Insufficient evidence") return evidence;
     const normalized = normalizeEvidence(evidence);
-    if (normalized.length < 4 || !candidateText.includes(normalized)) {
-      throw new Error(`AI report validation failed: ${field} is not an exact quote from a candidate answer.`);
+    const isVerifiableQuote = normalized.length >= 8 && normalizedAnswers.some(answer => answer.includes(normalized));
+    if (!isVerifiableQuote) {
+      throw new Error(`AI report validation failed: ${field} is not a contiguous quote from one candidate answer.`);
     }
     return evidence;
   };
