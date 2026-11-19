@@ -258,17 +258,17 @@ export default function Home() {
         <section className="panel setup-panel">
           <div className="panel-heading"><div><div className="eyebrow">GET STARTED</div><h2>Set up an interview</h2><p>Share the role and candidate context to personalise the session.</p></div><span className="step-pill">01 / 03</span></div>
           <div className="form-grid">
-            <label>Candidate name<input value={candidateName} onChange={e => setCandidateName(e.target.value)} placeholder="e.g. Aditi Sharma" /></label>
-            <label>Job role<input value={role} onChange={e => setRole(e.target.value)} placeholder="e.g. Frontend Developer" /></label>
-            <label className="full">Candidate resume<textarea value={resume} onChange={e => setResume(e.target.value)} rows={5} placeholder="Paste the candidate’s resume text here — skills, experience, projects, education..." /></label>
-            <label className="full">Job description<textarea value={jobDescription} onChange={e => setJobDescription(e.target.value)} rows={5} placeholder="Paste the job description — responsibilities, required skills and qualifications..." /></label>
+            <label>Candidate name<input value={candidateName} readOnly={!!inviteToken} onChange={e => setCandidateName(e.target.value)} placeholder="e.g. Aditi Sharma" /></label>
+            <label>Job role<input value={role} readOnly={!!inviteToken} onChange={e => setRole(e.target.value)} placeholder="e.g. Frontend Developer" /></label>
+            <label className="full">Candidate resume<textarea value={resume} readOnly={!!inviteToken} onChange={e => setResume(e.target.value)} rows={5} placeholder="Paste the candidate’s resume text here — skills, experience, projects, education..." /></label>
+            <label className="full">Job description<textarea value={jobDescription} readOnly={!!inviteToken} onChange={e => setJobDescription(e.target.value)} rows={5} placeholder="Paste the job description — responsibilities, required skills and qualifications..." /></label>
           </div>
           <div className="mode-label">INTERVIEW FORMAT</div>
           <div className="mode-picker">
-            <button className={mode === "live" ? "mode-card selected" : "mode-card"} onClick={() => setMode("live")}><span className="mode-symbol">◉</span><span><b>Live interview</b><small>Two-way conversation with camera and mic</small></span><span className="radio-dot" /></button>
-            <button className={mode === "recorded" ? "mode-card selected" : "mode-card"} onClick={() => setMode("recorded")}><span className="mode-symbol">▣</span><span><b>Recorded interview</b><small>Capture a video recording for employer review</small></span><span className="radio-dot" /></button>
+            <button className={mode === "live" ? "mode-card selected" : "mode-card"} disabled={!!inviteToken} onClick={() => setMode("live")}><span className="mode-symbol">◉</span><span><b>Live interview</b><small>Two-way conversation with camera and mic</small></span><span className="radio-dot" /></button>
+            <button className={mode === "recorded" ? "mode-card selected" : "mode-card"} disabled={!!inviteToken} onClick={() => setMode("recorded")}><span className="mode-symbol">▣</span><span><b>Recorded interview</b><small>Capture a video recording for employer review</small></span><span className="radio-dot" /></button>
           </div>
-          <label className="consent"><input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} /><span>I confirm the candidate has been informed about AI processing of their resume and answers, and has consented to the interview and any audio/video capture. The candidate can stop recording at any time. Video is securely stored on the interview server for employer review.</span></label>
+          <label className="consent"><input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} /><span>I understand that my resume and interview answers will be processed by AI for this interview. I consent to the interview and, if recording is enabled, to video capture for employer review. I can stop the recording at any time.</span></label>
           {error && <div className="error-box">{error}</div>}
           <button className="primary-btn" onClick={startInterview} disabled={busy}>{busy ? "Preparing interviewer..." : "Start 15-minute interview"} <span>↗</span></button>
           <p className="privacy-note">Your API key stays on the server. Candidate data is sent to Grok to generate interview questions and evaluation.</p>
