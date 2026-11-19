@@ -156,7 +156,7 @@ export async function POST(request: NextRequest, context: Context) {
       return NextResponse.json({ error: "The interview changed while this recording was uploading. Please retry." }, { status: 409 });
     }
     if (interview.recordingPath) await deleteRecording(interview.recordingPath);
-    return NextResponse.json({ ok: true, message: "Recording saved securely on this server." });
+    return NextResponse.json({ ok: true, message: "Recording saved to private storage." });
   } catch (error) {
     const message = error instanceof Error ? error.message : "";
     const missingConfiguration = message.includes("Configure S3_ENDPOINT") || message.includes("Private cloud recording storage is not configured");
