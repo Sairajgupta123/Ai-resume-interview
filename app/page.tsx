@@ -209,7 +209,7 @@ export default function Home() {
         activeInviteToken = savedData.inviteToken;
         setInviteToken(activeInviteToken);
       }
-      const data = await callApi({ action: "start", candidateName, role, resume, jobDescription, mode, sessionId: activeSessionId, inviteToken: activeInviteToken || undefined }) as InterviewReply;
+      const data = await callApi({ action: "start", candidateName, role, resume, jobDescription, mode, sessionId: activeSessionId, consentAccepted: true, inviteToken: activeInviteToken || undefined }) as InterviewReply;
       const initial = [{ role: "assistant" as const, content: data.message }];
       setHistory(initial);
       setPhase("interview"); setSeconds(0); speak(data.message);
