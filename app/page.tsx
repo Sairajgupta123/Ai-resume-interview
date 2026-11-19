@@ -239,16 +239,15 @@ export default function Home() {
     finishStartedRef.current = true;
     setBusy(true); setError("");
     try {
-      const data = await callApi({ action: "report", candidateName, role, resume, jobDescription, history: transcript, sessionId }) as Report;
+      // Save the recording before the report action closes the interview session.
       if (recorderRef.current?.state === "recording") {
         recorderRef.current.stop();
         setRecording(false);
       }
       const recordingSavedOk = recordingCompleteRef.current ? await recordingCompleteRef.current : recordingSaved;
-      if (sessionId) {
-        const saved = await fetch(`/api/sessions/${sessionId}`, { method: "PUT", headers: { "Content-Type": "application/json", ...(inviteToken ? { "x-interview-invite": inviteToken } : {}) }, body: JSON.stringify({ durationSeconds: seconds }) });
-        if (!saved.ok) throw new Error("Report generated but could not be saved to the employer dashboard.");
-      }
+      const data = await callApi({ action: "report", candidateName, role, resume, jobDescription, history: transcript, sessionId }) as Report;
+      // The report endpoint records authoritative duration and completes the session atomically.
+      // Do not call the general session update endpoint after completion.
       if (!recordingSavedOk && cameraOn) setError("Interview report is ready, but the video recording could not be uploaded. Please check server storage.");
       setReport(data); setPhase("report");
       window.speechSynthesis?.cancel();
