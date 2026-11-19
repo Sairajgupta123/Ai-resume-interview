@@ -27,72 +27,78 @@ export default function Dashboard() {
       return;
     }
     let stopped = false;
-    let cursor = "";
+    let timer: number | undefined;
+    let peer: RTCPeerConnection | null = null;
     let localStream: MediaStream | null = null;
+    let cursor = "";
     const pendingIce: RTCIceCandidateInit[] = [];
-    const peer = new RTCPeerConnection({ iceServers: getInterviewIceServers() });
-    peer.ontrack = event => {
-      if (employerVideoRef.current) employerVideoRef.current.srcObject = event.streams[0];
-      setLiveCallState("Connected · live video and audio");
-    };
-    peer.onconnectionstatechange = () => {
-      if (peer.connectionState === "connecting") setLiveCallState("Connecting to candidate…");
-      if (peer.connectionState === "failed") setLiveCallState("Connection failed. A TURN server may be required on restrictive networks.");
-      if (peer.connectionState === "disconnected") setLiveCallState("Candidate connection interrupted.");
-    };
     const postSignal = (kind: string, payload: string) => fetch(`/api/sessions/${selected.id}/signals`, {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind, payload })
     });
-    peer.onicecandidate = event => {
-      if (event.candidate && !stopped) void postSignal("ice", JSON.stringify(event.candidate.toJSON()));
-    };
-    const poll = async () => {
-      if (stopped) return;
-      try {
-        const response = await fetch(`/api/sessions/${selected.id}/signals?since=${encodeURIComponent(cursor)}`, { cache: "no-store" });
-        if (!response.ok) return;
-        const data = await response.json();
-        for (const signal of data.signals || []) {
-          cursor = signal.createdAt;
-          if (signal.kind === "offer" && peer.signalingState === "stable") {
-            await peer.setRemoteDescription(JSON.parse(signal.payload));
-            for (const candidate of pendingIce.splice(0)) await peer.addIceCandidate(candidate).catch(() => {});
-            const answer = await peer.createAnswer();
-            await peer.setLocalDescription(answer);
-            await postSignal("answer", JSON.stringify(peer.localDescription));
-            setLiveCallState("Answer sent · connecting…");
-          } else if (signal.kind === "ice") {
-            const candidate = JSON.parse(signal.payload) as RTCIceCandidateInit;
-            if (peer.remoteDescription) await peer.addIceCandidate(candidate).catch(() => {});
-            else pendingIce.push(candidate);
-          } else if (signal.kind === "hangup") {
-            setLiveCallState("Candidate ended the call.");
-            peer.close();
-          }
-        }
-      } catch { /* transient network errors are retried */ }
-    };
     const start = async () => {
       try {
+        setLiveCallState("Loading secure live video settings…");
+        const iceResponse = await fetch(`/api/sessions/${selected.id}/ice`, { cache: "no-store" });
+        if (!iceResponse.ok) throw new Error("Could not load live video connection settings.");
+        const { iceServers } = await iceResponse.json();
+        if (stopped) return;
+        peer = new RTCPeerConnection({ iceServers });
+        peer.ontrack = event => {
+          if (employerVideoRef.current) employerVideoRef.current.srcObject = event.streams[0];
+          setLiveCallState("Connected · live video and audio");
+        };
+        peer.onconnectionstatechange = () => {
+          if (peer?.connectionState === "connecting") setLiveCallState("Connecting to candidate…");
+          if (peer?.connectionState === "failed") setLiveCallState("Connection failed. Check TURN server configuration.");
+          if (peer?.connectionState === "disconnected") setLiveCallState("Candidate connection interrupted.");
+        };
+        peer.onicecandidate = event => {
+          if (event.candidate && !stopped) void postSignal("ice", JSON.stringify(event.candidate.toJSON()));
+        };
         setLiveCallState("Requesting employer camera and microphone…");
         localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
-        if (stopped) { localStream.getTracks().forEach(t => t.stop()); return false; }
+        if (stopped) { localStream.getTracks().forEach(track => track.stop()); return; }
         if (employerLocalRef.current) employerLocalRef.current.srcObject = localStream;
-        localStream.getTracks().forEach(track => peer.addTrack(track, localStream!));
+        localStream.getTracks().forEach(track => peer!.addTrack(track, localStream!));
         setLiveCallState("Waiting for candidate to join…");
-        return true;
-      } catch {
-        setLiveCallState("Allow camera and microphone to join the live interview.");
-        return false;
+        const poll = async () => {
+          if (stopped || !peer) return;
+          try {
+            const response = await fetch(`/api/sessions/${selected.id}/signals?since=${encodeURIComponent(cursor)}`, { cache: "no-store" });
+            if (!response.ok) return;
+            const data = await response.json();
+            for (const signal of data.signals || []) {
+              cursor = signal.createdAt;
+              if (signal.kind === "offer" && peer!.signalingState === "stable") {
+                await peer!.setRemoteDescription(JSON.parse(signal.payload));
+                for (const candidate of pendingIce.splice(0)) await peer!.addIceCandidate(candidate).catch(() => {});
+                const answer = await peer!.createAnswer();
+                await peer!.setLocalDescription(answer);
+                await postSignal("answer", JSON.stringify(peer!.localDescription));
+                setLiveCallState("Answer sent · connecting…");
+              } else if (signal.kind === "ice") {
+                const candidate = JSON.parse(signal.payload) as RTCIceCandidateInit;
+                if (peer!.remoteDescription) await peer!.addIceCandidate(candidate).catch(() => {});
+                else pendingIce.push(candidate);
+              } else if (signal.kind === "hangup") {
+                setLiveCallState("Candidate ended the call.");
+                peer!.close();
+              }
+            }
+          } catch { /* retry on transient network errors */ }
+        };
+        void poll();
+        timer = window.setInterval(() => void poll(), 1000);
+      } catch (error) {
+        if (!stopped) setLiveCallState(error instanceof Error ? error.message : "Could not start live call.");
       }
     };
-    let timer: number | undefined;
-    void start().then(ready => {
-      if (ready && !stopped) { void poll(); timer = window.setInterval(() => void poll(), 1000); }
-    });
+    void start();
     return () => {
-      stopped = true; if (timer !== undefined) window.clearInterval(timer); peer.close();
-      localStream?.getTracks().forEach(t => t.stop());
+      stopped = true;
+      if (timer !== undefined) window.clearInterval(timer);
+      peer?.close();
+      localStream?.getTracks().forEach(track => track.stop());
       if (employerVideoRef.current) employerVideoRef.current.srcObject = null;
       if (employerLocalRef.current) employerLocalRef.current.srcObject = null;
     };
