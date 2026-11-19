@@ -76,7 +76,7 @@ export async function POST(request: NextRequest) {
         where: { id: body.sessionId },
         select: {
           invitationTokenHash: true, status: true, candidateName: true, role: true,
-          resumeText: true, jobDescription: true, mode: true, startedAt: true
+          resumeText: true, jobDescription: true, mode: true, startedAt: true, consentAcceptedAt: true
         }
       });
       if (!session) return NextResponse.json({ error: "Interview session not found." }, { status: 404 });
@@ -93,6 +93,9 @@ export async function POST(request: NextRequest) {
       startedAt = session.startedAt;
 
       if (body.action === "start") {
+        if (body.consentAccepted !== true) {
+          return NextResponse.json({ error: "Candidate consent is required before the interview can start." }, { status: 400 });
+        }
         if (startedAt) {
           const firstQuestion = await db.interviewMessage.findFirst({
             where: { interviewId: body.sessionId, role: "assistant" },
@@ -147,7 +150,13 @@ export async function POST(request: NextRequest) {
           }),
           db.interview.update({
             where: { id: body.sessionId },
-            data: { status: "in_progress", inviteUsedAt: startedAt, startedAt }
+            data: {
+              status: "in_progress",
+              inviteUsedAt: startedAt,
+              startedAt,
+              consentAcceptedAt: startedAt,
+              consentVersion: "2026-11-19"
+            }
           })
         ]);
       }
