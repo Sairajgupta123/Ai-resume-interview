@@ -13,8 +13,15 @@ type Context = { params: Promise<{ id: string }> };
 export async function POST(request: NextRequest, context: Context) {
   const { id } = await context.params;
   try {
-    const interview = await db.interview.findUnique({ where: { id }, select: { id: true, recordingPath: true, invitationTokenHash: true } });
+    const interview = await db.interview.findUnique({
+      where: { id },
+      select: { id: true, recordingPath: true, status: true }
+    });
     if (!interview) return NextResponse.json({ error: "Interview not found." }, { status: 404 });
+    if (interview.status === "completed") {
+      return NextResponse.json({ error: "Recording uploads are closed for completed interviews." }, { status: 409 });
+    }
+
     const employer = await isEmployerAuthenticated();
     const candidate = await hasValidCandidateInvitation(id, request.headers.get("x-interview-invite"));
     if (!employer && !candidate) return NextResponse.json({ error: "Unauthorized recording upload." }, { status: 401 });
