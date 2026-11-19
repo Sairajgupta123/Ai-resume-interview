@@ -50,7 +50,7 @@ The dev command runs Prisma schema sync and starts Next.js. Open http://localhos
 Open http://localhost:3000/dashboard and sign in with `EMPLOYER_USERNAME` and `EMPLOYER_PASSWORD` from `.env.local`. Use **Invite candidate** to create an interview and generate a private link. Copy the link and send it to the candidate manually; outbound email delivery is not configured yet.
 
 ## Important current boundaries
-- Video is recorded in the browser, downloaded to the candidate device, and uploaded to the app server's local `data/recordings` folder for employer playback. The recording is not stored in SQLite. Keep this folder on persistent storage; local disk is not suitable for ephemeral/serverless deployments.
+- After candidate consent and camera permission, video recording starts automatically in both live and recorded modes. Candidates can stop recording; the recording is uploaded over an authenticated endpoint to the app server's local `data/recordings` folder for employer playback before the report screen is shown. The recording is not stored in SQLite. Keep this folder on persistent storage; local disk is not suitable for ephemeral/serverless deployments. Browser recording support and upload size limits apply (100 MB maximum).
 - Voice input uses the browser Web Speech API and spoken interviewer prompts use browser speech synthesis. Availability and language quality vary by browser/device. Text entry remains available.
 - SQLite is suitable for local evaluation/single-machine use. For production or multiple app instances, move to managed PostgreSQL and configure secure persistent storage.
 - Candidate invitations are generated as expiring private links, but the app does not send emails automatically; employers copy and send the link themselves.
