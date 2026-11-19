@@ -12,8 +12,10 @@ export async function PUT(request: NextRequest, context: Context) {
     const body = await request.json();
     const exists = await db.interview.findUnique({ where: { id }, select: { id: true, invitationTokenHash: true, status: true } });
     if (!exists) return NextResponse.json({ error: "Interview not found." }, { status: 404 });
-    if (exists.invitationTokenHash && !(await hasValidCandidateInvitation(id, request.headers.get("x-interview-invite")))) return NextResponse.json({ error: "Invalid or expired candidate invitation." }, { status: 401 });
-    if (exists.invitationTokenHash && exists.status === "completed" && body.report) return NextResponse.json({ error: "Completed interview reports cannot be overwritten." }, { status: 409 });
+    const employer = await isEmployerAuthenticated();
+    const candidate = await hasValidCandidateInvitation(id, request.headers.get("x-interview-invite"));
+    if (!employer && !candidate) return NextResponse.json({ error: "Unauthorized interview update." }, { status: 401 });
+    if (exists.status === "completed" && body.report) return NextResponse.json({ error: "Completed interview reports cannot be overwritten." }, { status: 409 });
     // Transcript entries and final reports are written only by the server-side AI interview route.
     // Never let a candidate overwrite evidence or submit their own score/report.
     const data: Prisma.InterviewUpdateInput = {};
