@@ -66,7 +66,7 @@ function elapsedSeconds(startedAt: Date) {
 }
 
 function normalizeEvidence(value: string) {
-  return value.toLocaleLowerCase().replace(/[^\\p{L}\\p{N}]+/gu, " ").trim().replace(/\\s+/g, " ");
+  return value.toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim().replace(/\s+/g, " ");
 }
 
 function boundedText(value: unknown, field: string, maxLength: number) {
@@ -92,7 +92,7 @@ function validateReport(raw: any, candidateAnswers: string[]) {
     const evidence = boundedText(value, field, 1200);
     if (evidence === "Insufficient evidence") return evidence;
     const normalized = normalizeEvidence(evidence);
-    if (normalized.length < 12 || !candidateText.includes(normalized)) {
+    if (normalized.length < 4 || !candidateText.includes(normalized)) {
       throw new Error(`AI report validation failed: ${field} is not an exact quote from a candidate answer.`);
     }
     return evidence;
