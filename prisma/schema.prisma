@@ -23,6 +23,7 @@ model Interview {
   invitationTokenHash String? @unique
   inviteExpiresAt DateTime?
   inviteUsedAt    DateTime?
+  startedAt       DateTime?
   employerDecision String?
   employerNotes    String?
   decisionAt       DateTime?
