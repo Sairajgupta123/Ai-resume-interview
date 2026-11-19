@@ -3,6 +3,7 @@ import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { db } from "@/lib/db";
 import { isEmployerAuthenticated } from "@/lib/auth";
+import { hasValidCandidateInvitation } from "@/lib/invitation";
 
 export const runtime = "nodejs";
 const MAX_BYTES = 100 * 1024 * 1024;
@@ -12,8 +13,9 @@ type Context = { params: Promise<{ id: string }> };
 export async function POST(request: NextRequest, context: Context) {
   const { id } = await context.params;
   try {
-    const interview = await db.interview.findUnique({ where: { id }, select: { id: true, recordingPath: true } });
+    const interview = await db.interview.findUnique({ where: { id }, select: { id: true, recordingPath: true, invitationTokenHash: true } });
     if (!interview) return NextResponse.json({ error: "Interview not found." }, { status: 404 });
+    if (interview.invitationTokenHash && !(await hasValidCandidateInvitation(id, request.headers.get("x-interview-invite")))) return NextResponse.json({ error: "Invalid or expired candidate invitation." }, { status: 401 });
 
     const form = await request.formData();
     const file = form.get("recording");
