@@ -19,6 +19,10 @@ model Interview {
   overallScore    Int?
   recommendation  String?
   recordingPath   String?
+  candidateEmail  String?
+  invitationTokenHash String? @unique
+  inviteExpiresAt DateTime?
+  inviteUsedAt    DateTime?
   durationSeconds Int      @default(0)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
