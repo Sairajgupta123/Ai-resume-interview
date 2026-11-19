@@ -31,6 +31,7 @@ type SpeechRecognitionLike = {
 export default function Home() {
   const [candidateName, setCandidateName] = useState("");
   const [sessionId, setSessionId] = useState("");
+  const [inviteToken, setInviteToken] = useState("");
   const [role, setRole] = useState("");
   const [resume, setResume] = useState("");
   const [jobDescription, setJobDescription] = useState("");
@@ -71,7 +72,7 @@ export default function Home() {
 
   const callApi = async (payload: Record<string, unknown>) => {
     const response = await fetch("/api/interview", {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload)
+      method: "POST", headers: { "Content-Type": "application/json", ...(inviteToken ? { "x-interview-invite": inviteToken } : {}) }, body: JSON.stringify(payload)
     });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "Request failed.");
@@ -93,14 +94,18 @@ export default function Home() {
     if (!consent) { setError("Please confirm consent before starting the interview."); return; }
     setBusy(true); setError("");
     try {
-      const saved = await fetch("/api/sessions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ candidateName, role, resume, jobDescription, mode }) });
-      const savedData = await saved.json();
-      if (!saved.ok) throw new Error(savedData.error || "Could not create interview session.");
-      setSessionId(savedData.id);
-      const data = await callApi({ action: "start", candidateName, role, resume, jobDescription, mode, sessionId: savedData.id }) as InterviewReply;
+      let activeSessionId = sessionId;
+      if (!activeSessionId) {
+        const saved = await fetch("/api/sessions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ candidateName, role, resume, jobDescription, mode }) });
+        const savedData = await saved.json();
+        if (!saved.ok) throw new Error(savedData.error || "Could not create interview session.");
+        activeSessionId = savedData.id;
+        setSessionId(activeSessionId);
+      }
+      const data = await callApi({ action: "start", candidateName, role, resume, jobDescription, mode, sessionId: activeSessionId }) as InterviewReply;
       const initial = [{ role: "assistant" as const, content: data.message }];
       setHistory(initial);
-      await fetch(`/api/sessions/${savedData.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ messages: initial }) });
+      await fetch(`/api/sessions/${savedData.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, headers: { "Content-Type": "application/json", ...(inviteToken ? { "x-interview-invite": inviteToken } : {}) }, body: JSON.stringify({ messages: initial }) });
       setPhase("interview"); setSeconds(0); speak(data.message);
       await enableCamera();
     } catch (e) { setError(e instanceof Error ? e.message : "Could not start interview."); }
@@ -116,7 +121,7 @@ export default function Home() {
       const data = await callApi({ action: "answer", candidateName, role, resume, jobDescription, mode, sessionId, history, answer }) as InterviewReply;
       const next = [...updated, { role: "assistant" as const, content: data.message }];
       setHistory(next);
-      if (sessionId) await fetch(`/api/sessions/${sessionId}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ messages: next, durationSeconds: seconds }) });
+      if (sessionId) await fetch(`/api/sessions/${sessionId}`, { method: "PUT", headers: { "Content-Type": "application/json" }, headers: { "Content-Type": "application/json", ...(inviteToken ? { "x-interview-invite": inviteToken } : {}) }, body: JSON.stringify({ messages: next, durationSeconds: seconds }) });
       speak(data.message);
       if (data.done) await finishInterview(next);
     } catch (e) { setError(e instanceof Error ? e.message : "Could not submit answer."); }
@@ -128,7 +133,7 @@ export default function Home() {
     try {
       const data = await callApi({ action: "report", candidateName, role, resume, jobDescription, history: transcript, sessionId }) as Report;
       if (sessionId) {
-        const saved = await fetch(`/api/sessions/${sessionId}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ messages: transcript, report: data, durationSeconds: seconds }) });
+        const saved = await fetch(`/api/sessions/${sessionId}`, { method: "PUT", headers: { "Content-Type": "application/json" }, headers: { "Content-Type": "application/json", ...(inviteToken ? { "x-interview-invite": inviteToken } : {}) }, body: JSON.stringify({ messages: transcript, report: data, durationSeconds: seconds }) });
         if (!saved.ok) throw new Error("Report generated but could not be saved to the employer dashboard.");
       }
       setReport(data); setPhase("report");
@@ -169,7 +174,7 @@ export default function Home() {
         try {
           const form = new FormData();
           form.append("recording", blob, filename);
-          const response = await fetch(`/api/sessions/${sessionId}/recording`, { method: "POST", body: form });
+          const response = await fetch(`/api/sessions/${sessionId}/recording`, { method: "POST", headers: inviteToken ? { "x-interview-invite": inviteToken } : {}, body: form });
           const data = await response.json();
           if (!response.ok) throw new Error(data.error || "Recording upload failed.");
           setRecordingSaved(true);
@@ -234,9 +239,9 @@ export default function Home() {
           <div className="mode-label">INTERVIEW FORMAT</div>
           <div className="mode-picker">
             <button className={mode === "live" ? "mode-card selected" : "mode-card"} onClick={() => setMode("live")}><span className="mode-symbol">◉</span><span><b>Live interview</b><small>Two-way conversation with camera and mic</small></span><span className="radio-dot" /></button>
-            <button className={mode === "recorded" ? "mode-card selected" : "mode-card"} onClick={() => setMode("recorded")}><span className="mode-symbol">▣</span><span><b>Recorded interview</b><small>Capture a local video recording of the session</small></span><span className="radio-dot" /></button>
+            <button className={mode === "recorded" ? "mode-card selected" : "mode-card"} onClick={() => setMode("recorded")}><span className="mode-symbol">▣</span><span><b>Recorded interview</b><small>Capture a video recording for employer review</small></span><span className="radio-dot" /></button>
           </div>
-          <label className="consent"><input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} /><span>I confirm the candidate has been informed about AI processing of their resume and answers, and has consented to the interview and any audio/video capture. The candidate can stop recording at any time. Video is stored locally on the candidate device in this MVP.</span></label>
+          <label className="consent"><input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} /><span>I confirm the candidate has been informed about AI processing of their resume and answers, and has consented to the interview and any audio/video capture. The candidate can stop recording at any time. Video is securely stored on the interview server for employer review.</span></label>
           {error && <div className="error-box">{error}</div>}
           <button className="primary-btn" onClick={startInterview} disabled={busy}>{busy ? "Preparing interviewer..." : "Start 15-minute interview"} <span>↗</span></button>
           <p className="privacy-note">Your API key stays on the server. Candidate data is sent to Grok to generate interview questions and evaluation.</p>
@@ -270,7 +275,7 @@ export default function Home() {
         <div className="report-card"><h3>Role skill assessment</h3><div className="skill-table">{report.skills.map((s,i)=><div className="skill-row" key={i}><b>{s.skill}</b><span>{s.rating}</span><p>{s.evidence}</p></div>)}</div></div>
         <div className="report-card"><h3>Question-by-question evidence</h3>{report.questionFeedback.map((q,i)=><div className="feedback-row" key={i}><b>Q{i+1}. {q.question}</b><p>{q.assessment}</p><small>Evidence: {q.evidence}</small></div>)}</div>
         <p className="report-disclaimer">{report.disclaimer || "This AI-generated report is decision support, not an automated hiring decision. Review the transcript and evidence before taking action."}</p>
-        <button className="outline-btn back-btn" onClick={() => { setPhase("setup"); setHistory([]); setReport(null); setSeconds(0); setSessionId(""); setRecordingSaved(false); streamRef.current?.getTracks().forEach(t=>t.stop()); setCameraOn(false); }}>＋ Create another interview</button>
+        <button className="outline-btn back-btn" onClick={() => { setPhase("setup"); setHistory([]); setReport(null); setSeconds(0); setSessionId(""); setInviteToken(""); setRecordingSaved(false); streamRef.current?.getTracks().forEach(t=>t.stop()); setCameraOn(false); }}>＋ Create another interview</button>
       </section>}
       <footer className="global-footer"><span>MZOBS · AI Interview Studio</span><span>Thoughtful technology. Better hiring.</span></footer>
     </main>
