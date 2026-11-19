@@ -1,0 +1,37 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Interview {
+  id              String   @id @default(cuid())
+  candidateName   String
+  role            String
+  mode            String   @default("live")
+  status          String   @default("completed")
+  resumeText      String
+  jobDescription  String
+  reportJson      String?
+  overallScore    Int?
+  recommendation  String?
+  durationSeconds Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  messages        InterviewMessage[]
+  @@index([createdAt])
+  @@index([candidateName])
+}
+
+model InterviewMessage {
+  id          String    @id @default(cuid())
+  interviewId String
+  role        String
+  content     String
+  createdAt   DateTime  @default(now())
+  interview   Interview @relation(fields: [interviewId], references: [id], onDelete: Cascade)
+  @@index([interviewId, createdAt])
+}

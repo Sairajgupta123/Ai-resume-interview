@@ -12,6 +12,7 @@ type Payload = {
   mode?: "live" | "recorded";
   history?: Message[];
   answer?: string;
+  sessionId?: string;
 };
 
 const SYSTEM = `You are MZOBS, a professional and fair AI interviewer. Conduct a structured 15-minute interview tailored to the candidate resume and job description.
@@ -72,7 +73,9 @@ export async function POST(request: NextRequest) {
         { role: "system", content: SYSTEM },
         { role: "user", content: `Begin the interview. Context:\n${context}\nReturn JSON only.` }
       ]);
-      return NextResponse.json(parseJson(content));
+      const parsed = parseJson(content);
+      if (body.sessionId) await (await import("@/lib/db")).db.interviewMessage.create({ data: { interviewId: body.sessionId, role: "assistant", content: String(parsed.message || "") } });
+      return NextResponse.json(parsed);
     }
 
     if (body.action === "answer") {
@@ -84,7 +87,15 @@ export async function POST(request: NextRequest) {
         { role: "user" as const, content: body.answer || "" }
       ];
       const content = await askGrok(messages);
-      return NextResponse.json(parseJson(content));
+      const parsed = parseJson(content);
+      if (body.sessionId) {
+        const { db } = await import("@/lib/db");
+        await db.interviewMessage.createMany({ data: [
+          { interviewId: body.sessionId, role: "user", content: String(body.answer || "").slice(0, 12000) },
+          { interviewId: body.sessionId, role: "assistant", content: String(parsed.message || "").slice(0, 12000) }
+        ] });
+      }
+      return NextResponse.json(parsed);
     }
 
     if (body.action === "report") {
@@ -93,7 +104,17 @@ export async function POST(request: NextRequest) {
         { role: "system", content: SYSTEM },
         { role: "user", content: `Generate the employer-facing evidence-based interview report from this context and transcript. Do not infer anything from video or voice appearance.\n${context}\nTranscript:\n${history.map(m => `${m.role}: ${m.content}`).join("\n")}\nReturn report JSON only.` }
       ]);
-      return NextResponse.json(parseJson(content));
+      const report = parseJson(content);
+      if (body.sessionId) {
+        const { db } = await import("@/lib/db");
+        await db.interview.update({ where: { id: body.sessionId }, data: {
+          reportJson: JSON.stringify(report),
+          overallScore: Math.max(0, Math.min(100, Math.round(Number(report.overallScore) || 0))),
+          recommendation: String(report.recommendation || "Needs review").slice(0, 80),
+          status: "completed"
+        } });
+      }
+      return NextResponse.json(report);
     }
 
     return NextResponse.json({ error: "Unsupported action." }, { status: 400 });
