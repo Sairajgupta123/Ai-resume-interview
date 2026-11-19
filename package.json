@@ -11,9 +11,9 @@
     "postinstall": "prisma generate"
   },
   "dependencies": {
-    "next": "15.2.4",
-    "react": "19.0.0",
-    "react-dom": "19.0.0",
+    "next": "15.5.28",
+    "react": "19.0.9",
+    "react-dom": "19.0.9",
     "@prisma/client": "6.5.0"
   },
   "devDependencies": {
