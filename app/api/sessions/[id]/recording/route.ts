@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash, createHmac } from "node:crypto";
 import { join } from "node:path";
-import { createHash, createHmac } from "node:crypto";
 import { db } from "@/lib/db";
 import { isEmployerAuthenticated } from "@/lib/auth";
 import { hasValidCandidateInvitation } from "@/lib/invitation";
@@ -158,8 +157,17 @@ export async function POST(request: NextRequest, context: Context) {
     }
     if (interview.recordingPath) await deleteRecording(interview.recordingPath);
     return NextResponse.json({ ok: true, message: "Recording saved securely on this server." });
-  } catch {
-    return NextResponse.json({ error: "Could not save recording on the server." }, { status: 500 });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    const missingConfiguration = message.includes("Configure S3_ENDPOINT") || message.includes("Private cloud recording storage is not configured");
+    const storageUnavailable = message.includes("Private recording storage returned");
+    return NextResponse.json({
+      error: missingConfiguration
+        ? "Production recording storage is not configured. Contact the hiring team."
+        : storageUnavailable
+          ? "Private recording storage is temporarily unavailable. Please retry."
+          : "Could not save recording on the server."
+    }, { status: missingConfiguration ? 503 : storageUnavailable ? 502 : 500 });
   }
 }
 
@@ -174,7 +182,12 @@ export async function GET(_request: NextRequest, context: Context) {
     const file = await readRecording(storedPath);
     const contentType = filename.endsWith(".mp4") ? "video/mp4" : filename.endsWith(".mov") ? "video/quicktime" : "video/webm";
     return new NextResponse(file, { headers: { "Content-Type": contentType, "Content-Length": String(file.byteLength), "Content-Disposition": "inline", "Cache-Control": "private, no-store" } });
-  } catch {
-    return NextResponse.json({ error: "Recording file is missing from server storage." }, { status: 404 });
+  } catch (error) {
+    const remote = isRemoteRecordingPath(interview.recordingPath);
+    return NextResponse.json({
+      error: remote
+        ? "Private recording storage is temporarily unavailable."
+        : "Recording file is missing from server storage."
+    }, { status: remote ? 502 : 404 });
   }
 }
