@@ -7,7 +7,7 @@ A resume- and job-description-aware interview application powered by xAI Grok.
 - Grok-powered opening questions, adaptive follow-ups and structured evidence-based evaluation
 - 15-minute interview timer
 - Browser speech-to-text input and text-to-speech interviewer prompts (browser support varies)
-- Camera/microphone preview and candidate-controlled video recording upload to local server storage
+- Candidate camera/microphone preview and candidate-controlled video recording upload to local server storage (the camera feed is not live-streamed to an employer)
 - SQLite persistence for interview sessions, transcripts and reports
 - Employer login and dashboard with interview search, candidate review, report and transcript
 - Employer-created candidate invitations with 72-hour expiring, hashed tokens and protected candidate API access
@@ -52,7 +52,9 @@ Open http://localhost:3000/dashboard and sign in with `EMPLOYER_USERNAME` and `E
 - Video is recorded in the browser, downloaded to the candidate device, and uploaded to the app server's local `data/recordings` folder for employer playback. The recording is not stored in SQLite. Keep this folder on persistent storage; local disk is not suitable for ephemeral/serverless deployments.
 - Voice input uses the browser Web Speech API and spoken interviewer prompts use browser speech synthesis. Availability and language quality vary by browser/device. Text entry remains available.
 - SQLite is suitable for local evaluation/single-machine use. For production or multiple app instances, move to managed PostgreSQL and configure secure persistent storage.
-- Before production deployment, add organisation-level multi-tenant access control, candidate invitation links, password reset, stronger operational monitoring, secure cloud recording storage, retention/deletion jobs, audit logging and a privacy notice.
+- Candidate invitations are generated as expiring private links, but the app does not send emails automatically; employers copy and send the link themselves.
+- The live interview is a turn-based AI voice/text interaction using browser speech APIs. It is not a low-latency full-duplex audio stream or a live employer video call.
+- Before production deployment, add organisation-level multi-tenant access control, password reset, stronger operational monitoring, secure cloud recording storage, retention/deletion jobs, audit logging and a complete privacy notice.
 - This is not a certified hiring assessment. AI reports can be wrong or incomplete; employers must review evidence and make final decisions.
 
 ## Privacy
