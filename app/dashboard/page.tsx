@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 
 type Item = { id: string; candidateName: string; role: string; mode: string; status: string; overallScore: number | null; recommendation: string | null; durationSeconds: number; createdAt: string };
-type Detail = Item & { resumeText: string; jobDescription: string; reportJson: string | null; messages: { role: string; content: string }[] };
+type Detail = Item & { resumeText: string; jobDescription: string; recordingPath: string | null; reportJson: string | null; messages: { role: string; content: string }[] };
 
 export default function Dashboard() {
   const [authenticated, setAuthenticated] = useState(false);
@@ -64,7 +64,7 @@ export default function Dashboard() {
     </section>
     {selected && <div className="detail-backdrop" onClick={()=>setSelected(null)}><section className="detail-drawer" onClick={e=>e.stopPropagation()}><button className="drawer-close" onClick={()=>setSelected(null)}>×</button><div className="eyebrow">CANDIDATE REVIEW</div><h2>{selected.candidateName}</h2><p className="drawer-sub">{selected.role} · {selected.mode} interview</p>
       {selected.reportJson ? <ReportView json={selected.reportJson}/> : <p className="drawer-sub">No completed report is available for this interview.</p>}
-      <h3>Interview transcript</h3><div className="drawer-transcript">{selected.messages.map((m,i)=><div key={i} className="drawer-message"><small>{m.role==="assistant"?"AI INTERVIEWER":"CANDIDATE"}</small><p>{m.content}</p></div>)}</div>
+      {selected.recordingPath && <div className="drawer-video"><h3>Candidate video recording</h3><video controls playsInline src={`/api/sessions/${selected.id}/recording`} /></div>}<h3>Interview transcript</h3><div className="drawer-transcript">{selected.messages.map((m,i)=><div key={i} className="drawer-message"><small>{m.role==="assistant"?"AI INTERVIEWER":"CANDIDATE"}</small><p>{m.content}</p></div>)}</div>
     </section></div>}
   </main>;
 }
