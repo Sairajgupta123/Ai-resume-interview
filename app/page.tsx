@@ -105,7 +105,7 @@ export default function Home() {
       const data = await callApi({ action: "start", candidateName, role, resume, jobDescription, mode, sessionId: activeSessionId }) as InterviewReply;
       const initial = [{ role: "assistant" as const, content: data.message }];
       setHistory(initial);
-      await fetch(`/api/sessions/${savedData.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, headers: { "Content-Type": "application/json", ...(inviteToken ? { "x-interview-invite": inviteToken } : {}) }, body: JSON.stringify({ messages: initial }) });
+      await fetch(`/api/sessions/${activeSessionId}`, { method: "PUT", headers: { "Content-Type": "application/json", ...(inviteToken ? { "x-interview-invite": inviteToken } : {}) }, body: JSON.stringify({ messages: initial }) });
       setPhase("interview"); setSeconds(0); speak(data.message);
       await enableCamera();
     } catch (e) { setError(e instanceof Error ? e.message : "Could not start interview."); }
@@ -121,7 +121,7 @@ export default function Home() {
       const data = await callApi({ action: "answer", candidateName, role, resume, jobDescription, mode, sessionId, history, answer }) as InterviewReply;
       const next = [...updated, { role: "assistant" as const, content: data.message }];
       setHistory(next);
-      if (sessionId) await fetch(`/api/sessions/${sessionId}`, { method: "PUT", headers: { "Content-Type": "application/json" }, headers: { "Content-Type": "application/json", ...(inviteToken ? { "x-interview-invite": inviteToken } : {}) }, body: JSON.stringify({ messages: next, durationSeconds: seconds }) });
+      if (sessionId) await fetch(`/api/sessions/${sessionId}`, { method: "PUT", headers: { "Content-Type": "application/json", ...(inviteToken ? { "x-interview-invite": inviteToken } : {}) }, body: JSON.stringify({ messages: next, durationSeconds: seconds }) });
       speak(data.message);
       if (data.done) await finishInterview(next);
     } catch (e) { setError(e instanceof Error ? e.message : "Could not submit answer."); }
