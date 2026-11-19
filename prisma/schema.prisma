@@ -40,6 +40,17 @@ model Interview {
   @@index([candidateName])
 }
 
+model LoginAttempt {
+  id              String   @id @default(cuid())
+  key             String   @unique
+  attempts        Int      @default(0)
+  windowStartedAt DateTime @default(now())
+  blockedUntil    DateTime?
+  updatedAt       DateTime @updatedAt
+
+  @@index([blockedUntil])
+}
+
 model InterviewMessage {
   id          String    @id @default(cuid())
   interviewId String
