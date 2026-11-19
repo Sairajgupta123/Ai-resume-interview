@@ -160,7 +160,7 @@ export default function Home() {
     try {
       const data = await callApi({ action: "report", candidateName, role, resume, jobDescription, history: transcript, sessionId }) as Report;
       if (sessionId) {
-        const saved = await fetch(`/api/sessions/${sessionId}`, { method: "PUT", headers: { "Content-Type": "application/json", ...(inviteToken ? { "x-interview-invite": inviteToken } : {}) }, body: JSON.stringify({ messages: transcript, report: data, durationSeconds: seconds }) });
+        const saved = await fetch(`/api/sessions/${sessionId}`, { method: "PUT", headers: { "Content-Type": "application/json", ...(inviteToken ? { "x-interview-invite": inviteToken } : {}) }, body: JSON.stringify({ messages: transcript, durationSeconds: seconds }) });
         if (!saved.ok) throw new Error("Report generated but could not be saved to the employer dashboard.");
       }
       setReport(data); setPhase("report");
