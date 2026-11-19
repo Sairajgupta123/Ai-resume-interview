@@ -348,8 +348,14 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ error: "Unsupported interview action." }, { status: 400 });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unexpected server error.";
-    const status = message.startsWith("AI report validation failed") || message.startsWith("AI returned") ? 502 : 500;
-    return NextResponse.json({ error: message }, { status });
+    const message = error instanceof Error ? error.message : "";
+    const aiFailure = message.startsWith("AI report validation failed")
+      || message.startsWith("AI returned")
+      || message.startsWith("Grok API error");
+    const clientMessage = aiFailure
+      ? "The AI interviewer could not complete this step. Please retry in a moment."
+      : "The interview service encountered an unexpected error. Please retry or contact the hiring team.";
+    // Do not return upstream provider bodies, infrastructure details or secrets to candidates.
+    return NextResponse.json({ error: clientMessage }, { status: aiFailure ? 502 : 500 });
   }
 }
