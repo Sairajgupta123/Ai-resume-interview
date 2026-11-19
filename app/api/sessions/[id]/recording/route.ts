@@ -27,6 +27,10 @@ export async function POST(request: NextRequest, context: Context) {
     const candidate = await hasValidCandidateInvitation(id, request.headers.get("x-interview-invite"));
     if (!employer && !candidate) return NextResponse.json({ error: "Unauthorized recording upload." }, { status: 401 });
 
+    const contentLength = Number(request.headers.get("content-length") || 0);
+    if (contentLength > MAX_BYTES + 1024 * 1024) {
+      return NextResponse.json({ error: "Recording upload exceeds the 100 MB limit." }, { status: 413 });
+    }
     const form = await request.formData();
     const file = form.get("recording");
     if (!(file instanceof File)) return NextResponse.json({ error: "Recording file is required." }, { status: 400 });
@@ -55,17 +59,18 @@ export async function POST(request: NextRequest, context: Context) {
 
     // Atomically refuse a late upload if the report completed while the file was uploading.
     const saved = await db.interview.updateMany({
-      where: { id, status: { not: "completed" } },
+      where: { id, status: { not: "completed" }, recordingPath: interview.recordingPath },
       data: { recordingPath: relativePath }
     });
     if (saved.count !== 1) {
       await unlink(absolutePath).catch(() => undefined);
-      return NextResponse.json({ error: "This interview has ended; the recording was not changed." }, { status: 409 });
+      return NextResponse.json({ error: "The interview changed while this recording was uploading. Please retry." }, { status: 409 });
     }
 
     if (interview.recordingPath) {
-      const oldName = interview.recordingPath.replace(/\\\\/g, "/").split("/").pop();
-      if (oldName && oldName === interview.recordingPath.replace(/\\\\/g, "/").split("/").pop()) {
+      const oldStoredPath = interview.recordingPath.replace(/\\\\/g, "/");
+      const oldName = oldStoredPath.split("/").pop() || "";
+      if (oldStoredPath === `data/recordings/${oldName}` && /^[a-f0-9-]+\\.(webm|mp4|mov)$/i.test(oldName)) {
         const oldPath = join(directory, oldName);
         if (oldPath !== absolutePath) await unlink(oldPath).catch(() => undefined);
       }
@@ -84,7 +89,7 @@ export async function GET(_request: NextRequest, context: Context) {
   try {
     const storedPath = interview.recordingPath.replace(/\\\\/g, "/");
     const filename = storedPath.split("/").pop() || "";
-    if (storedPath !== `data/recordings/${filename}` || !/^[a-f0-9-]+\\.(webm|mp4|mov)$/i.test(filename)) {
+    if (storedPath !== `data/recordings/${filename}` || !/^[a-f0-9-]+\.(webm|mp4|mov)$/i.test(filename)) {
       return NextResponse.json({ error: "Recording storage reference is invalid." }, { status: 500 });
     }
     const absolutePath = join(process.cwd(), "data", "recordings", filename);
