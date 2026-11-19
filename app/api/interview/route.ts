@@ -16,6 +16,7 @@ type Payload = {
   history?: Message[];
   answer?: string;
   sessionId?: string;
+  consentAccepted?: boolean;
 };
 
 const SYSTEM = `You are MZOBS, a professional and fair AI interviewer. Conduct a structured 15-minute interview tailored to the candidate resume and job description.
