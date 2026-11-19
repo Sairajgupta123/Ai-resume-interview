@@ -31,6 +31,7 @@ export default function Dashboard() {
     let peer: RTCPeerConnection | null = null;
     let localStream: MediaStream | null = null;
     let cursor = "";
+    let cursorId = "";
     const pendingIce: RTCIceCandidateInit[] = [];
     const postSignal = (kind: string, payload: string) => fetch(`/api/sessions/${selected.id}/signals`, {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind, payload })
@@ -64,11 +65,12 @@ export default function Dashboard() {
         const poll = async () => {
           if (stopped || !peer) return;
           try {
-            const response = await fetch(`/api/sessions/${selected.id}/signals?since=${encodeURIComponent(cursor)}`, { cache: "no-store" });
+            const response = await fetch(`/api/sessions/${selected.id}/signals?since=${encodeURIComponent(cursor)}&afterId=${encodeURIComponent(cursorId)}`, { cache: "no-store" });
             if (!response.ok) return;
             const data = await response.json();
             for (const signal of data.signals || []) {
               cursor = signal.createdAt;
+              cursorId = signal.id;
               if (signal.kind === "offer" && peer!.signalingState === "stable") {
                 await peer!.setRemoteDescription(JSON.parse(signal.payload));
                 for (const candidate of pendingIce.splice(0)) await peer!.addIceCandidate(candidate).catch(() => {});
