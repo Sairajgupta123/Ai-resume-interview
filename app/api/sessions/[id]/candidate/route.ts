@@ -12,5 +12,6 @@ export async function GET(request: NextRequest, context: Context) {
     id: true, candidateName: true, role: true, mode: true, resumeText: true, jobDescription: true, status: true, inviteExpiresAt: true
   } });
   if (!interview) return NextResponse.json({ error: "Interview not found." }, { status: 404 });
+  if (interview.status === "completed") return NextResponse.json({ error: "This interview has already been completed." }, { status: 409 });
   return NextResponse.json({ interview });
 }
