@@ -75,18 +75,22 @@ export default function Dashboard() {
       try {
         setLiveCallState("Requesting employer camera and microphone…");
         localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
-        if (stopped) { localStream.getTracks().forEach(t => t.stop()); return; }
+        if (stopped) { localStream.getTracks().forEach(t => t.stop()); return false; }
         if (employerLocalRef.current) employerLocalRef.current.srcObject = localStream;
         localStream.getTracks().forEach(track => peer.addTrack(track, localStream!));
         setLiveCallState("Waiting for candidate to join…");
+        return true;
       } catch {
         setLiveCallState("Allow camera and microphone to join the live interview.");
+        return false;
       }
     };
-    void start();
-    const timer = window.setInterval(() => void poll(), 1000);
+    let timer: number | undefined;
+    void start().then(ready => {
+      if (ready && !stopped) { void poll(); timer = window.setInterval(() => void poll(), 1000); }
+    });
     return () => {
-      stopped = true; window.clearInterval(timer); peer.close();
+      stopped = true; if (timer !== undefined) window.clearInterval(timer); peer.close();
       localStream?.getTracks().forEach(t => t.stop());
       if (employerVideoRef.current) employerVideoRef.current.srcObject = null;
       if (employerLocalRef.current) employerLocalRef.current.srcObject = null;
