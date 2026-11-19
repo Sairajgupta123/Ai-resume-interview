@@ -56,6 +56,33 @@ export default function Home() {
   const transcriptEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const invitedId = params.get("candidateInterviewId");
+    const token = params.get("token");
+    if (!invitedId || !token) return;
+    let cancelled = false;
+    fetch(`/api/sessions/${invitedId}/candidate?token=${encodeURIComponent(token)}`)
+      .then(async response => {
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "This invitation is invalid or expired.");
+        return data.interview;
+      })
+      .then(interview => {
+        if (cancelled) return;
+        setSessionId(interview.id);
+        setInviteToken(token);
+        setCandidateName(interview.candidateName);
+        setRole(interview.role);
+        setResume(interview.resumeText);
+        setJobDescription(interview.jobDescription);
+        setMode(interview.mode === "recorded" ? "recorded" : "live");
+        window.history.replaceState({}, "", "/");
+      })
+      .catch(e => { if (!cancelled) setError(e instanceof Error ? e.message : "Could not load invitation."); });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
     if (phase !== "interview") return;
     if (seconds >= 900) { void finishInterview(); return; }
     const timer = window.setTimeout(() => setSeconds((s) => Math.min(900, s + 1)), 1000);
