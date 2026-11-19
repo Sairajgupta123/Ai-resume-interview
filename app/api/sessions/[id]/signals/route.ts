@@ -23,11 +23,17 @@ export async function GET(request: NextRequest, context: Context) {
   if (!interview) return NextResponse.json({ error: "Interview not found." }, { status: 404 });
   if (interview.mode !== "live") return NextResponse.json({ signals: [] });
   const rawSince = request.nextUrl.searchParams.get("since");
+  const afterId = request.nextUrl.searchParams.get("afterId") || "";
   const since = rawSince ? new Date(rawSince) : new Date(0);
-  if (Number.isNaN(since.getTime())) return NextResponse.json({ error: "Invalid cursor." }, { status: 400 });
+  if (Number.isNaN(since.getTime()) || afterId.length > 64) return NextResponse.json({ error: "Invalid cursor." }, { status: 400 });
   const signals = await db.interviewSignal.findMany({
-    where: { interviewId: id, sender: sender === "employer" ? "candidate" : "employer", createdAt: { gt: since } },
-    orderBy: { createdAt: "asc" }, take: 50,
+    where: {
+      interviewId: id,
+      sender: sender === "employer" ? "candidate" : "employer",
+      OR: [{ createdAt: { gt: since } }, ...(rawSince && afterId ? [{ createdAt: since, id: { gt: afterId } }] : [])]
+    },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    take: 50,
     select: { id: true, kind: true, payload: true, createdAt: true }
   });
   return NextResponse.json({ signals });
