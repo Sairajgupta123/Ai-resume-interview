@@ -88,6 +88,7 @@ export default function Home() {
     if (phase !== "interview" || mode !== "live" || !cameraOn || !sessionId || !inviteToken || !streamRef.current) return;
     let stopped = false;
     let cursor = "";
+    const pendingIce: RTCIceCandidateInit[] = [];
     const peer = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
     peerConnectionRef.current = peer;
     peer.addEventListener("track", event => {
@@ -116,8 +117,8 @@ export default function Home() {
         const data = await response.json();
         for (const signal of data.signals || []) {
           cursor = signal.createdAt;
-          if (signal.kind === "answer" && peer.signalingState === "have-local-offer") await peer.setRemoteDescription(JSON.parse(signal.payload));
-          if (signal.kind === "ice" && peer.remoteDescription) await peer.addIceCandidate(JSON.parse(signal.payload)).catch(() => {});
+          if (signal.kind === "answer" && peer.signalingState === "have-local-offer") { await peer.setRemoteDescription(JSON.parse(signal.payload)); for (const candidate of pendingIce.splice(0)) await peer.addIceCandidate(candidate).catch(() => {}); }
+          if (signal.kind === "ice") { const candidate = JSON.parse(signal.payload) as RTCIceCandidateInit; if (peer.remoteDescription) await peer.addIceCandidate(candidate).catch(() => {}); else pendingIce.push(candidate); }
           if (signal.kind === "hangup") { peer.close(); setError("Employer ended the live video connection."); }
         }
       } catch { /* retry on next poll */ }
