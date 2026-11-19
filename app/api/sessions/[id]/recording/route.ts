@@ -111,11 +111,14 @@ export async function POST(request: NextRequest, context: Context) {
   try {
     const interview = await db.interview.findUnique({
       where: { id },
-      select: { id: true, recordingPath: true, status: true }
+      select: { id: true, recordingPath: true, status: true, consentAcceptedAt: true, startedAt: true }
     });
     if (!interview) return NextResponse.json({ error: "Interview not found." }, { status: 404 });
     if (interview.status === "completed") {
       return NextResponse.json({ error: "Recording uploads are closed for completed interviews." }, { status: 409 });
+    }
+    if (!interview.consentAcceptedAt || !interview.startedAt || interview.status !== "in_progress") {
+      return NextResponse.json({ error: "Recording is only accepted after the candidate has consented and started the interview." }, { status: 403 });
     }
 
     const employer = await isEmployerAuthenticated();
