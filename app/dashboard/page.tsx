@@ -14,6 +14,7 @@ export default function Dashboard() {
   const [items, setItems] = useState<Item[]>([]);
   const [selected, setSelected] = useState<Detail | null>(null);
   const [query, setQuery] = useState("");
+  const [compareIds, setCompareIds] = useState<string[]>([]);
   const [decisionNotes, setDecisionNotes] = useState("");
   const [decisionBusy, setDecisionBusy] = useState(false);
   const employerVideoRef = useRef<HTMLVideoElement>(null);
@@ -147,6 +148,18 @@ export default function Dashboard() {
 
   const logout = async () => { await fetch("/api/auth/logout", { method: "POST" }); setAuthenticated(false); setSelected(null); };
   const filtered = items.filter(x => `${x.candidateName} ${x.role}`.toLowerCase().includes(query.toLowerCase()));
+  const compared = items.filter(x => compareIds.includes(x.id));
+  const toggleCompare = (id: string) => setCompareIds(current => current.includes(id) ? current.filter(value => value !== id) : current.length < 3 ? [...current, id] : current);
+  const exportCsv = () => {
+    const columns = ["Candidate", "Role", "Mode", "Status", "AI score", "AI recommendation", "Employer decision", "Duration seconds", "Created at"];
+    const rows = items.map(item => [item.candidateName, item.role, item.mode, item.status, item.overallScore ?? "", item.recommendation ?? "", item.employerDecision ?? "", item.durationSeconds, item.createdAt]);
+    const escapeCsv = (value: string | number) => `"${String(value).replace(/"/g, '""')}"`;
+    const csv = [columns, ...rows].map(row => row.map(escapeCsv).join(",")).join("\\r\\n");
+    const url = URL.createObjectURL(new Blob(["\\uFEFF", csv], { type: "text/csv;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url; link.download = "mzobs-interview-candidates.csv"; link.click();
+    URL.revokeObjectURL(url);
+  };
   const date = (v: string) => new Date(v).toLocaleString();
 
   if (checking) return <main className="dashboard-shell"><p>Loading secure dashboard…</p></main>;
@@ -156,10 +169,11 @@ export default function Dashboard() {
     <header className="dashboard-header"><a className="brand" href="/"><span className="brand-mark">M</span><span>mzobs<span className="brand-dot">.</span><small>EMPLOYER WORKSPACE</small></span></a><div className="header-actions"><span className="secure"><i/> Signed in</span><button className="outline-btn" onClick={logout}>Sign out</button></div></header>
     <section className="dashboard-title"><div><div className="eyebrow">HIRING INTELLIGENCE</div><h1>Interview <em>overview.</em></h1><p>Review candidate conversations, role alignment and evidence-backed AI reports.</p></div><a className="primary-link" href="/dashboard/new">＋ Invite candidate</a></section>
     <div className="metric-row"><div className="metric"><small>TOTAL INTERVIEWS</small><strong>{items.length}</strong></div><div className="metric"><small>COMPLETED</small><strong>{items.filter(x=>x.status==="completed").length}</strong></div><div className="metric"><small>AVERAGE SCORE</small><strong>{items.filter(x=>x.overallScore!==null).length ? Math.round(items.reduce((a,x)=>a+(x.overallScore||0),0)/items.filter(x=>x.overallScore!==null).length) : "—"}</strong></div></div>
-    <section className="dashboard-table-card"><div className="table-heading"><div><h2>Candidate interviews</h2><p>Open an interview to review its transcript and report.</p></div><input className="search-input" placeholder="Search candidate or role…" value={query} onChange={e=>setQuery(e.target.value)} /></div>
+    {compared.length > 0 && <section className="dashboard-table-card"><div className="table-heading"><div><h2>Candidate comparison</h2><p>Compare up to three candidates side by side. AI scores are advisory, not hiring decisions.</p></div><button className="outline-btn" onClick={() => setCompareIds([])}>Clear comparison</button></div><div className="table-scroll"><table><thead><tr><th>Measure</th>{compared.map(item=><th key={item.id}>{item.candidateName}<small> · {item.role}</small></th>)}</tr></thead><tbody>{([{label:"AI score",value:(item:Item)=>item.overallScore === null ? "—" : `${item.overallScore}/100`},{label:"AI recommendation",value:(item:Item)=>item.recommendation || "—"},{label:"Employer decision",value:(item:Item)=>item.employerDecision || "Pending"},{label:"Interview status",value:(item:Item)=>item.status},{label:"Interview mode",value:(item:Item)=>item.mode},{label:"Duration",value:(item:Item)=>`${Math.floor(item.durationSeconds/60)}m ${item.durationSeconds%60}s`}]).map(metric=><tr key={metric.label}><th>{metric.label}</th>{compared.map(item=><td key={item.id}>{metric.value(item)}</td>)}</tr>)}</tbody></table></div></section>}
+    <section className="dashboard-table-card"><div className="table-heading"><div><h2>Candidate interviews</h2><p>Open an interview to review its transcript and report.</p></div><div className="header-actions"><input className="search-input" placeholder="Search candidate or role…" value={query} onChange={e=>setQuery(e.target.value)} /><button className="outline-btn" onClick={exportCsv} disabled={!items.length}>Export CSV</button></div></div>
       {error && <div className="error-box">{error}</div>}
-      <div className="table-scroll"><table><thead><tr><th>CANDIDATE</th><th>ROLE</th><th>FORMAT</th><th>STATUS</th><th>SCORE</th><th>DATE</th><th /></tr></thead><tbody>
-      {filtered.map(x=><tr key={x.id}><td><b>{x.candidateName}</b></td><td>{x.role}</td><td>{x.mode}</td><td><span className={x.status==="completed"?"status-complete":"status-progress"}>{x.status}</span></td><td>{x.overallScore===null?"—":`${x.overallScore}/100`}</td><td>{date(x.createdAt)}</td><td><button className="view-btn" onClick={()=>openDetail(x.id)}>Review →</button></td></tr>)}
+      <div className="table-scroll"><table><thead><tr><th>COMPARE / CANDIDATE</th><th>ROLE</th><th>FORMAT</th><th>STATUS</th><th>SCORE</th><th>DATE</th><th /></tr></thead><tbody>
+      {filtered.map(x=><tr key={x.id}><td><label className="compare-select"><input type="checkbox" checked={compareIds.includes(x.id)} disabled={!compareIds.includes(x.id) && compareIds.length >= 3} onChange={() => toggleCompare(x.id)} /><b>{x.candidateName}</b></label></td><td>{x.role}</td><td>{x.mode}</td><td><span className={x.status==="completed"?"status-complete":"status-progress"}>{x.status}</span></td><td>{x.overallScore===null?"—":`${x.overallScore}/100`}</td><td>{date(x.createdAt)}</td><td><button className="view-btn" onClick={()=>openDetail(x.id)}>Review →</button></td></tr>)}
       {!filtered.length && <tr><td colSpan={7} className="empty-cell">No interviews found yet. Create your first interview from the New interview button.</td></tr>}
       </tbody></table></div>
     </section>
