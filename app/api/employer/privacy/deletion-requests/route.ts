@@ -23,6 +23,10 @@ export async function GET() {
         requestedBy: true,
         createdAt: true,
         updatedAt: true,
+        deletionAttempts: true,
+        lastErrorCode: true,
+        executionStartedAt: true,
+        completedAt: true,
         events: { orderBy: { createdAt: "desc" }, take: 10 }
       }
     });
