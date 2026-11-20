@@ -26,6 +26,7 @@ A resume- and job-description-aware interview application powered by xAI Grok.
 - Automated unit tests cover interview time-limit boundaries, evidence quote integrity, evidence coverage and recommendation calibration, employer login rate-limit policy, employer session-expiry boundaries, candidate invitation expiry/one-time exchange policy, recording MIME/signature/size validation, recording replacement cleanup/failure handling, video byte-range parsing and CSV export formatting/formula-injection protection
 - Employer review recommendation is advisory; hiring decisions remain human-led
 - Employer can record shortlist, review or reject decisions with notes and an immutable decision history
+- Employer decision audit feed displays the latest 100 decision-history events with candidate, role, decision, timestamp and notes; it is an accountability view, not a full security access log
 
 ## Technology
 - Next.js 15, React 19, TypeScript
