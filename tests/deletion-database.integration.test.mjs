@@ -185,6 +185,7 @@ test("privacy deletion transaction removes interview data and retains an anonymi
         resumeText: "Dummy resume content",
         jobDescription: "Dummy job description",
         recordingPath: null,
+        recordingAccessEvents: { create: [{ method: "GET", outcome: "response_prepared" }] },
         messages: { create: [{ role: "candidate", content: "Dummy answer" }] },
         signals: { create: [{ sender: "candidate", kind: "answer", payload: "Dummy signal" }] },
         decisionHistory: { create: [{ decision: "shortlisted", notes: "Dummy note" }] }
@@ -223,6 +224,7 @@ test("privacy deletion transaction removes interview data and retains an anonymi
     assert.equal(await prisma.interviewMessage.count({ where: { interviewId: interview.id } }), 0);
     assert.equal(await prisma.interviewSignal.count({ where: { interviewId: interview.id } }), 0);
     assert.equal(await prisma.employerDecisionHistory.count({ where: { interviewId: interview.id } }), 0);
+    assert.equal(await prisma.recordingAccessEvent.count({ where: { interviewId: interview.id } }), 0);
 
     const receipt = await prisma.privacyDeletionRequest.findUnique({
       where: { id: request.id },
