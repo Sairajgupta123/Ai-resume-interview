@@ -4,7 +4,7 @@ import { randomUUID, createHash, createHmac } from "node:crypto";
 import { join } from "node:path";
 import { db } from "@/lib/db";
 import { isEmployerAuthenticated } from "@/lib/auth";
-import { hasValidCandidateInvitation } from "@/lib/invitation";
+import { getCandidateInvitationToken, hasValidCandidateInvitation } from "@/lib/invitation";
 
 export const runtime = "nodejs";
 const MAX_BYTES = 100 * 1024 * 1024;
@@ -122,7 +122,7 @@ export async function POST(request: NextRequest, context: Context) {
     }
 
     const employer = await isEmployerAuthenticated();
-    const candidate = await hasValidCandidateInvitation(id, request.headers.get("x-interview-invite"));
+    const candidate = await hasValidCandidateInvitation(id, getCandidateInvitationToken(request, id));
     if (!employer && !candidate) return NextResponse.json({ error: "Unauthorized recording upload." }, { status: 401 });
 
     const contentLength = Number(request.headers.get("content-length") || 0);
