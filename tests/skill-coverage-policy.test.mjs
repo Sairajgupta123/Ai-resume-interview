@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { extractTargetSkills, buildSkillCoverage, buildCoverageGuidance, matchesSkillTerm } from "../lib/skill-coverage-policy.mjs";
+import { extractTargetSkills, buildSkillCoverage, buildCoverageGuidance, matchesSkillTerm, resolveQuestionSkills } from "../lib/skill-coverage-policy.mjs";
 
 test("prioritizes skills found in the job description before resume-only skills", () => {
   assert.deepEqual(
@@ -75,4 +75,19 @@ test("matches skill mentions with the same boundaries used by target extraction"
   assert.equal(matchesSkillTerm("How did you use JS?", "JavaScript"), true);
   assert.equal(matchesSkillTerm("We used JSX components", "JS"), false);
   assert.equal(matchesSkillTerm("React Native project", "React"), true);
+});
+
+test("resolves question competencies only against required job skills", () => {
+  assert.deepEqual(
+    resolveQuestionSkills("How did you use JavaScript?", ["JavaScript", "Unlisted skill"], ["Java", "JavaScript", "Node.js"]),
+    ["JavaScript"]
+  );
+  assert.deepEqual(
+    resolveQuestionSkills("How did you use Node.js?", [], ["JavaScript", "Node.js"]),
+    ["Node.js"]
+  );
+  assert.deepEqual(
+    resolveQuestionSkills("Tell me about a challenge", [], ["JavaScript", "Node.js"]),
+    []
+  );
 });
