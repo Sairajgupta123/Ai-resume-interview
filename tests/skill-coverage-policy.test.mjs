@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { extractTargetSkills, buildSkillCoverage, buildCoverageGuidance } from "../lib/skill-coverage-policy.mjs";
+import { extractTargetSkills, buildSkillCoverage, buildCoverageGuidance, matchesSkillTerm } from "../lib/skill-coverage-policy.mjs";
 
 test("prioritizes skills found in the job description before resume-only skills", () => {
   assert.deepEqual(
@@ -66,4 +66,13 @@ test("does not match a skill name embedded inside a longer word", () => {
 
 test("does not interpret the js suffix in Node.js as JavaScript", () => {
   assert.deepEqual(extractTargetSkills("We need Node.js for backend development."), ["Node.js"]);
+});
+
+test("matches skill mentions with the same boundaries used by target extraction", () => {
+  assert.equal(matchesSkillTerm("How did you use JavaScript?", "Java"), false);
+  assert.equal(matchesSkillTerm("How did you use Java?", "Java"), true);
+  assert.equal(matchesSkillTerm("Tell me about Node.js APIs", "Node.js"), true);
+  assert.equal(matchesSkillTerm("How did you use JS?", "JavaScript"), true);
+  assert.equal(matchesSkillTerm("We used JSX components", "JS"), false);
+  assert.equal(matchesSkillTerm("React Native project", "React"), true);
 });
