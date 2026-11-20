@@ -2,7 +2,8 @@ import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { isEmployerAuthenticated } from "@/lib/auth";
-import { canClaimDeletionExecution, anonymizedDeletionTombstone, DELETION_EXECUTION_LEASE_MS } from "@/lib/deletion-execution-policy.mjs";
+import { canClaimDeletionExecution, DELETION_EXECUTION_LEASE_MS } from "@/lib/deletion-execution-policy.mjs";
+import { finalizeDeletionExecution, markDeletionExecutionFailed } from "@/lib/deletion-execution-service.mjs";
 import { deleteStoredInterviewRecording } from "@/lib/deletion-storage.mjs";
 
 export const runtime = "nodejs";
@@ -53,36 +54,10 @@ export async function POST(_request: Request, context: Context) {
       });
       if (interview?.recordingPath) await deleteStoredInterviewRecording(interview.recordingPath);
 
-      await db.$transaction(async tx => {
-        const ownership = await tx.privacyDeletionRequest.updateMany({
-          where: { id, status: "deletion_in_progress", executionLeaseToken: leaseToken },
-          data: { executionStartedAt: new Date() }
-        });
-        if (ownership.count !== 1) throw new Error("DELETION_LEASE_LOST");
-
-        await tx.interviewMessage.deleteMany({ where: { interviewId: requestRecord.interviewId } });
-        await tx.interviewSignal.deleteMany({ where: { interviewId: requestRecord.interviewId } });
-        await tx.employerDecisionHistory.deleteMany({ where: { interviewId: requestRecord.interviewId } });
-        if (interview) await tx.interview.delete({ where: { id: requestRecord.interviewId } });
-
-        await tx.privacyDeletionEvent.create({
-          data: {
-            requestId: id,
-            action: "deletion_completed",
-            actor: "employer",
-            details: "Candidate interview data and associated recording were deleted after candidate verification and employer approval."
-          }
-        });
-        await tx.privacyDeletionRequest.update({
-          where: { id },
-          data: {
-            ...anonymizedDeletionTombstone(id),
-            status: "deletion_completed",
-            completedAt: new Date(),
-            executionStartedAt: null,
-            executionLeaseToken: null
-          }
-        });
+      await finalizeDeletionExecution(db, {
+        requestId: id,
+        interviewId: requestRecord.interviewId,
+        leaseToken
       });
 
       return NextResponse.json({
@@ -100,17 +75,7 @@ export async function POST(_request: Request, context: Context) {
         : error instanceof Error && error.message === "UNSUPPORTED_RECORDING_REFERENCE"
           ? "UNSUPPORTED_RECORDING_REFERENCE"
           : "DELETION_EXECUTION_FAILED";
-      await db.$transaction(async tx => {
-        const failed = await tx.privacyDeletionRequest.updateMany({
-          where: { id, status: "deletion_in_progress", executionLeaseToken: leaseToken },
-          data: { status: "deletion_failed", lastErrorCode: code, executionStartedAt: null, executionLeaseToken: null }
-        });
-        if (failed.count === 1) {
-          await tx.privacyDeletionEvent.create({
-            data: { requestId: id, action: "deletion_failed", actor: "system", details: "Deletion execution failed safely. Retry is available after the underlying issue is resolved." }
-          });
-        }
-      });
+      await markDeletionExecutionFailed(db, { requestId: id, leaseToken, errorCode: code });
       return NextResponse.json({
         error: code === "STORAGE_NOT_CONFIGURED"
           ? "Private recording storage is not configured. No database candidate data was deleted; configure storage and retry."
