@@ -127,7 +127,7 @@ function validateReport(raw: any, candidateAnswers: string[], requiredSkills: st
     throw new Error("AI report validation failed: invalid skills list.");
   }
   const ratings = ["Strong", "Good", "Developing", "Insufficient evidence"];
-  const reportedSkills = raw.skills.map((item: any, index: number) => {
+  const reportedSkills: Array<{ skill: string; rating: string; evidence: string }> = raw.skills.map((item: any, index: number) => {
     if (!item || typeof item !== "object" || !ratings.includes(item.rating)) {
       throw new Error(`AI report validation failed: invalid skill rating at item ${index + 1}.`);
     }
@@ -141,7 +141,7 @@ function validateReport(raw: any, candidateAnswers: string[], requiredSkills: st
   if (!Array.isArray(raw.questionFeedback) || raw.questionFeedback.length > 40) {
     throw new Error("AI report validation failed: invalid question feedback list.");
   }
-  const questionFeedback = raw.questionFeedback.map((item: any, index: number) => {
+  const questionFeedback: Array<{ question: string; assessment: string; evidence: string; testedSkills: string[]; pairedAnswer: string | null }> = raw.questionFeedback.map((item: any, index: number) => {
     if (!item || typeof item !== "object") {
       throw new Error(`AI report validation failed: invalid question feedback at item ${index + 1}.`);
     }
