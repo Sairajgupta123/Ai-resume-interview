@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { candidateInvitationCookieName, getCandidateInvitationToken, hasValidCandidateInvitation } from "@/lib/invitation";
 import { elapsedInterviewSeconds, findCandidateAnswerForQuestion, INTERVIEW_LIMIT_SECONDS, isVerifiableEvidenceQuote } from "@/lib/interview-policy.mjs";
-import { calculateEvidenceCoverage, completeRequiredSkillEvaluations, deriveRecommendation, hasDuplicateSkills, isRatingEvidenceConsistent } from "@/lib/evaluation-policy.mjs";
+import { calculateEvidenceCoverage, completeRequiredSkillEvaluations, deriveRecommendation, hasDuplicateSkills, isRatingEvidenceConsistent, isSkillEvidenceLinkedToQuestion } from "@/lib/evaluation-policy.mjs";
 import { validateInterviewerTurn } from "@/lib/interviewer-turn-policy.mjs";
 import { buildAdaptiveGuidance } from "@/lib/adaptive-interview-policy.mjs";
 import { buildCoverageGuidance, buildSkillCoverage, extractRequiredJobSkills, resolveQuestionSkills } from "@/lib/skill-coverage-policy.mjs";
@@ -138,12 +138,6 @@ function validateReport(raw: any, candidateAnswers: string[], requiredSkills: st
     }
     return { skill, rating: item.rating, evidence };
   });
-  // The report must account for every skill extracted from the job description.
-  // Missing skills are made visible as unsupported instead of silently omitted.
-  const skills = completeRequiredSkillEvaluations(requiredSkills, reportedSkills);
-  if (hasDuplicateSkills(skills)) {
-    throw new Error("AI report validation failed: duplicate or empty skill names.");
-  }
   if (!Array.isArray(raw.questionFeedback) || raw.questionFeedback.length > 40) {
     throw new Error("AI report validation failed: invalid question feedback list.");
   }
@@ -163,10 +157,25 @@ function validateReport(raw: any, candidateAnswers: string[], requiredSkills: st
       question,
       assessment: boundedText(item.assessment, `questionFeedback[${index}].assessment`, 1500),
       evidence,
-      testedSkills: resolveQuestionSkills(question, item.testedSkills, requiredSkills)
+      testedSkills: resolveQuestionSkills(question, item.testedSkills, requiredSkills),
+      pairedAnswer
     };
   });
-  const evidenceCoverage = calculateEvidenceCoverage([...skills, ...questionFeedback]);
+  // A skill rating must be grounded in the answer to a question mapped to
+  // that same required skill. Quotes from unrelated answers are not enough.
+  const supportedReportedSkills = reportedSkills.map(item => {
+    const linked = isSkillEvidenceLinkedToQuestion(item.skill, item.evidence, questionFeedback);
+    return linked
+      ? item
+      : { ...item, rating: "Insufficient evidence", evidence: "Insufficient evidence" };
+  });
+  // Missing or unlinked job skills remain visible as unsupported.
+  const skills = completeRequiredSkillEvaluations(requiredSkills, supportedReportedSkills);
+  if (hasDuplicateSkills(skills)) {
+    throw new Error("AI report validation failed: duplicate or empty skill names.");
+  }
+  const publicQuestionFeedback = questionFeedback.map(({ pairedAnswer: _pairedAnswer, ...item }) => item);
+  const evidenceCoverage = calculateEvidenceCoverage([...skills, ...publicQuestionFeedback]);
   const skillEvidenceCoverage = calculateEvidenceCoverage(skills);
   return {
     overallScore: raw.overallScore,
@@ -179,7 +188,7 @@ function validateReport(raw: any, candidateAnswers: string[], requiredSkills: st
     strengths: stringList(raw.strengths, "strengths", 12),
     improvementAreas: stringList(raw.improvementAreas, "improvementAreas", 12),
     skills,
-    questionFeedback,
+    questionFeedback: publicQuestionFeedback,
     disclaimer: boundedText(raw.disclaimer, "disclaimer", 1000)
   };
 }
