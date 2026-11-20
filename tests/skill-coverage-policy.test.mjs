@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { extractTargetSkills, buildSkillCoverage, buildCoverageGuidance, matchesSkillTerm, resolveQuestionSkills } from "../lib/skill-coverage-policy.mjs";
+import { extractTargetSkills, buildSkillCoverage, buildCoverageGuidance, matchesSkillTerm, resolveQuestionSkills, extractRequiredJobSkills } from "../lib/skill-coverage-policy.mjs";
 
 test("prioritizes skills found in the job description before resume-only skills", () => {
   assert.deepEqual(
@@ -90,4 +90,19 @@ test("resolves question competencies only against required job skills", () => {
     resolveQuestionSkills("Tell me about a challenge", [], ["JavaScript", "Node.js"]),
     []
   );
+});
+
+test("required competency extraction uses only the job description, never resume-only skills", () => {
+  const required = extractRequiredJobSkills("Required: Node.js and SQL");
+  assert.deepEqual(required, ["Node.js", "SQL"]);
+  assert.equal(required.includes("React"), false);
+});
+
+test("required competency extraction preserves the full supported job-skill limit", () => {
+  const required = extractRequiredJobSkills("JavaScript TypeScript React Next.js Node.js Express Python Java C++ SQL MongoDB REST API Docker AWS");
+  assert.equal(required.length, 15);
+});
+
+test("empty job descriptions do not create resume-derived requirements", () => {
+  assert.deepEqual(extractRequiredJobSkills(""), []);
 });
