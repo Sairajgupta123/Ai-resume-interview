@@ -20,7 +20,7 @@ export async function GET(request: NextRequest, context: Context) {
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
     path: "/",
-    maxAge: Math.max(0, Math.floor((interview.inviteExpiresAt.getTime() - Date.now()) / 1000))
+    maxAge: Math.max(0, Math.floor((interview.inviteExpiresAt!.getTime() - Date.now()) / 1000))
   });
   return response;
 }
