@@ -65,11 +65,12 @@ export default function Home() {
     const params = new URLSearchParams(window.location.search);
     const invitedId = params.get("candidateInterviewId");
     const token = params.get("token");
-    if (!invitedId || !token) return;
-    // Remove the bearer token from the visible URL immediately, before any async request.
-    window.history.replaceState({}, "", "/");
+    if (!invitedId) return;
+    // Keep only the opaque session ID in the URL; the bearer token is exchanged for an HttpOnly cookie.
+    window.history.replaceState({}, "", `/?candidateInterviewId=${encodeURIComponent(invitedId)}`);
     let cancelled = false;
-    fetch(`/api/sessions/${invitedId}/candidate?token=${encodeURIComponent(token)}`)
+    const invitationUrl = `/api/sessions/${invitedId}/candidate${token ? `?token=${encodeURIComponent(token)}` : ""}`;
+    fetch(invitationUrl, { credentials: "same-origin", cache: "no-store" })
       .then(async response => {
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || "This invitation is invalid or expired.");
@@ -78,7 +79,6 @@ export default function Home() {
       .then(interview => {
         if (cancelled) return;
         setSessionId(interview.id);
-        setInviteToken(token);
         setCandidateName(interview.candidateName);
         setRole(interview.role);
         setResume(interview.resumeText);
@@ -394,15 +394,15 @@ export default function Home() {
         <section className="panel setup-panel">
           <div className="panel-heading"><div><div className="eyebrow">GET STARTED</div><h2>Set up an interview</h2><p>Share the role and candidate context to personalise the session.</p></div><span className="step-pill">01 / 03</span></div>
           <div className="form-grid">
-            <label>Candidate name<input value={candidateName} readOnly={!!inviteToken} onChange={e => setCandidateName(e.target.value)} placeholder="e.g. Aditi Sharma" /></label>
-            <label>Job role<input value={role} readOnly={!!inviteToken} onChange={e => setRole(e.target.value)} placeholder="e.g. Frontend Developer" /></label>
-            <label className="full">Candidate resume<textarea value={resume} readOnly={!!inviteToken} onChange={e => setResume(e.target.value)} rows={5} placeholder="Paste the candidate’s resume text here — skills, experience, projects, education..." /></label>
-            <label className="full">Job description<textarea value={jobDescription} readOnly={!!inviteToken} onChange={e => setJobDescription(e.target.value)} rows={5} placeholder="Paste the job description — responsibilities, required skills and qualifications..." /></label>
+            <label>Candidate name<input value={candidateName} readOnly={!!sessionId} onChange={e => setCandidateName(e.target.value)} placeholder="e.g. Aditi Sharma" /></label>
+            <label>Job role<input value={role} readOnly={!!sessionId} onChange={e => setRole(e.target.value)} placeholder="e.g. Frontend Developer" /></label>
+            <label className="full">Candidate resume<textarea value={resume} readOnly={!!sessionId} onChange={e => setResume(e.target.value)} rows={5} placeholder="Paste the candidate’s resume text here — skills, experience, projects, education..." /></label>
+            <label className="full">Job description<textarea value={jobDescription} readOnly={!!sessionId} onChange={e => setJobDescription(e.target.value)} rows={5} placeholder="Paste the job description — responsibilities, required skills and qualifications..." /></label>
           </div>
           <div className="mode-label">INTERVIEW FORMAT</div>
           <div className="mode-picker">
-            <button className={mode === "live" ? "mode-card selected" : "mode-card"} disabled={!!inviteToken} onClick={() => setMode("live")}><span className="mode-symbol">◉</span><span><b>Live interview</b><small>Two-way conversation with camera and mic</small></span><span className="radio-dot" /></button>
-            <button className={mode === "recorded" ? "mode-card selected" : "mode-card"} disabled={!!inviteToken} onClick={() => setMode("recorded")}><span className="mode-symbol">▣</span><span><b>Recorded interview</b><small>Capture a video recording for employer review</small></span><span className="radio-dot" /></button>
+            <button className={mode === "live" ? "mode-card selected" : "mode-card"} disabled={!!sessionId} onClick={() => setMode("live")}><span className="mode-symbol">◉</span><span><b>Live interview</b><small>Two-way conversation with camera and mic</small></span><span className="radio-dot" /></button>
+            <button className={mode === "recorded" ? "mode-card selected" : "mode-card"} disabled={!!sessionId} onClick={() => setMode("recorded")}><span className="mode-symbol">▣</span><span><b>Recorded interview</b><small>Capture a video recording for employer review</small></span><span className="radio-dot" /></button>
           </div>
           <label className="consent"><input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} /><span>I understand that my resume, job details and interview answers are processed by xAI Grok to generate questions and an assessment. If I grant camera and microphone permission, audio and video recording starts automatically and is uploaded to the interview server for employer review. I can stop recording at any time. The assessment is based on my answers, not my appearance, accent or voice characteristics.</span></label>
           {error && <div className="error-box">{error}</div>}
