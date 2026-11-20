@@ -84,6 +84,15 @@ export default function Home() {
         setResume(interview.resumeText);
         setJobDescription(interview.jobDescription);
         setMode(interview.mode === "recorded" ? "recorded" : "live");
+        setHistory((interview.messages || []).map((message: { role: string; content: string }) => ({
+          role: message.role === "assistant" ? "assistant" : "user",
+          content: message.content
+        })));
+        if (interview.startedAt) {
+          const elapsed = Math.max(0, Math.floor((Date.now() - new Date(interview.startedAt).getTime()) / 1000));
+          setSeconds(Math.min(900, elapsed));
+          setPhase("interview");
+        }
       })
       .catch(e => { if (!cancelled) setError(e instanceof Error ? e.message : "Could not load invitation."); });
     return () => { cancelled = true; };
@@ -219,8 +228,8 @@ export default function Home() {
       }
       const data = await callApi({ action: "start", candidateName, role, resume, jobDescription, mode, sessionId: activeSessionId, consentAccepted: true, inviteToken: activeInviteToken || undefined }) as InterviewReply;
       const initial = [{ role: "assistant" as const, content: data.message }];
-      setHistory(initial);
-      setPhase("interview"); setSeconds(0); speak(data.message);
+      if (history.length === 0) setHistory(initial);
+      setPhase("interview"); speak(data.message);
       await enableCamera(activeSessionId, activeInviteToken);
     } catch (e) { setError(e instanceof Error ? e.message : "Could not start interview."); }
     finally { setBusy(false); }
