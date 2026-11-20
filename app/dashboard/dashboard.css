@@ -88,3 +88,12 @@
 .retention-policy-note{margin-top:10px;padding:11px 13px;border-radius:8px;background:#f5f8f5;color:#68786d;font-size:10px;line-height:1.6}
 .retention-policy-note code{font-size:10px;color:#315b40}
 @media(max-width:700px){.retention-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.privacy-retention-card{padding:14px}}
+
+.privacy-deletion-request{margin:22px 0;padding:18px;border:1px solid #e4ebe5;border-radius:12px;background:#fbfdfb}
+.privacy-deletion-request h3{font:700 14px Manrope;color:#2c4333;margin:8px 0}
+.privacy-deletion-request>p{font-size:10px;line-height:1.65;color:#77847b;margin:0 0 14px}
+.privacy-deletion-request label{display:block;font-size:10px;font-weight:700;color:#53645a;margin:12px 0}
+.privacy-deletion-request input,.privacy-deletion-request textarea{display:block;width:100%;margin-top:6px;padding:10px 11px;border:1px solid #dce5dd;border-radius:8px;background:#fff;color:#304338;font:inherit;resize:vertical}
+.privacy-deletion-request input:focus,.privacy-deletion-request textarea:focus{outline:2px solid #b9d4c0;outline-offset:1px}
+.success-box{margin:10px 0;padding:10px 12px;border-radius:8px;background:#edf6ef;color:#28613d;font-size:10px;line-height:1.5}
+.privacy-deletion-request button:disabled{opacity:.45;cursor:not-allowed}
