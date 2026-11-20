@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { isEmployerAuthenticated } from "@/lib/auth";
+import { isDeletionExecutionLeaseExpired } from "@/lib/deletion-execution-policy.mjs";
 
 export const runtime = "nodejs";
 
@@ -30,7 +31,12 @@ export async function GET() {
         events: { orderBy: { createdAt: "desc" }, take: 10 }
       }
     });
-    return NextResponse.json({ requests }, { headers: { "Cache-Control": "private, no-store" } });
+    const now = new Date();
+    const requestsWithRecoveryState = requests.map(request => ({
+      ...request,
+      executionLeaseExpired: isDeletionExecutionLeaseExpired(request, now)
+    }));
+    return NextResponse.json({ requests: requestsWithRecoveryState }, { headers: { "Cache-Control": "private, no-store" } });
   } catch {
     return NextResponse.json({ error: "Could not load privacy deletion requests." }, { status: 500, headers: { "Cache-Control": "no-store" } });
   }
