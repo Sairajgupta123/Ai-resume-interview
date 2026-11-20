@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  areInterviewQuestionsNearDuplicates,
   normalizeInterviewPrompt,
   validateInterviewerTurn
 } from "../lib/interviewer-turn-policy.mjs";
@@ -73,4 +74,28 @@ test("rejects a closing statement that asks another question", () => {
     focus: "Interview complete"
   };
   assert.equal(validateInterviewerTurn(closing).reason, "closing_must_not_ask_question");
+});
+
+test("rejects near-duplicate questions with changed wording", () => {
+  const previous = "Can you explain how an API authentication flow works?";
+  const repeated = {
+    ...validTurn,
+    message: "Please explain how API authentication works?"
+  };
+  assert.equal(areInterviewQuestionsNearDuplicates(previous, repeated.message), true);
+  assert.equal(validateInterviewerTurn(repeated, [previous]).reason, "repeated_question");
+});
+
+test("allows a different question about the same broad technical area", () => {
+  const previous = "How would you design a REST API for high traffic caching?";
+  const next = {
+    ...validTurn,
+    message: "How would you secure API authentication using short-lived tokens?"
+  };
+  assert.equal(areInterviewQuestionsNearDuplicates(previous, next.message), false);
+  assert.equal(validateInterviewerTurn(next, [previous]).ok, true);
+});
+
+test("does not over-classify short questions as near duplicates", () => {
+  assert.equal(areInterviewQuestionsNearDuplicates("What is Java?", "What is JavaScript?"), false);
 });
