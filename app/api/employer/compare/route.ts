@@ -11,9 +11,10 @@ export async function POST(request: NextRequest) {
   }
   try {
     const body = await request.json();
-    const ids = Array.isArray(body?.interviewIds)
-      ? [...new Set(body.interviewIds.filter((id: unknown): id is string => typeof id === "string" && id.length > 0))]
-      : [];
+    const rawIds: unknown[] = Array.isArray(body?.interviewIds) ? body.interviewIds : [];
+    const ids: string[] = Array.from(new Set<string>(
+      rawIds.filter((id): id is string => typeof id === "string" && id.length > 0)
+    ));
     if (ids.length < 2 || ids.length > 3) {
       return NextResponse.json({ error: "Select between two and three candidates." }, { status: 400 });
     }
