@@ -25,17 +25,20 @@ export async function hasValidCandidateInvitation(sessionId: string, token: stri
 
 // Atomically consumes the emailed link once and records the use before issuing an HttpOnly cookie.
 export async function exchangeCandidateInvitation(sessionId: string, token: string | null) {
-  if (!token || token.length < 32 || token.length > 256) return false;
+  if (!token || token.length < 32 || token.length > 256) return null;
   const interview = await db.interview.findUnique({
     where: { id: sessionId },
     select: { invitationTokenHash: true, inviteExpiresAt: true, status: true, startedAt: true, inviteUsedAt: true }
   });
-  if (!interview?.invitationTokenHash) return false;
-  if (!isCandidateInvitationActive(token, interview.inviteExpiresAt, interview.status)) return false;
-  if (!canExchangeCandidateInvitation(interview.status, interview.startedAt, interview.inviteExpiresAt)) return false;
-  if (interview.inviteUsedAt) return false;
-  if (!tokenMatches(token, interview.invitationTokenHash)) return false;
+  if (!interview?.invitationTokenHash) return null;
+  if (!isCandidateInvitationActive(token, interview.inviteExpiresAt, interview.status)) return null;
+  if (!canExchangeCandidateInvitation(interview.status, interview.startedAt, interview.inviteExpiresAt)) return null;
+  if (interview.inviteUsedAt) return null;
+  if (!tokenMatches(token, interview.invitationTokenHash)) return null;
 
+  // The emailed bearer token is single-use. Replace its hash atomically with a
+  // fresh browser-session token so replaying the original link cannot authenticate.
+  const sessionToken = createInvitationToken();
   const now = new Date();
   const consumed = await db.interview.updateMany({
     where: {
@@ -46,9 +49,12 @@ export async function exchangeCandidateInvitation(sessionId: string, token: stri
       inviteUsedAt: null,
       inviteExpiresAt: { gt: now }
     },
-    data: { inviteUsedAt: now }
+    data: {
+      invitationTokenHash: hashInvitationToken(sessionToken),
+      inviteUsedAt: now
+    }
   });
-  return consumed.count === 1;
+  return consumed.count === 1 ? sessionToken : null;
 }
 
 export function candidateInvitationCookieName(sessionId: string) {
