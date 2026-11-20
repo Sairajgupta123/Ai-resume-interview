@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { candidateInvitationCookieName, getCandidateInvitationToken, hasValidCandidateInvitation } from "@/lib/invitation";
 import { elapsedInterviewSeconds, INTERVIEW_LIMIT_SECONDS, isVerifiableEvidenceQuote } from "@/lib/interview-policy.mjs";
-import { calculateEvidenceCoverage, deriveRecommendation, hasDuplicateSkills, isRatingEvidenceConsistent } from "@/lib/evaluation-policy.mjs";
+import { calculateEvidenceCoverage, completeRequiredSkillEvaluations, deriveRecommendation, hasDuplicateSkills, isRatingEvidenceConsistent } from "@/lib/evaluation-policy.mjs";
 import { validateInterviewerTurn } from "@/lib/interviewer-turn-policy.mjs";
 import { buildAdaptiveGuidance } from "@/lib/adaptive-interview-policy.mjs";
 import { buildCoverageGuidance, buildSkillCoverage, extractTargetSkills } from "@/lib/skill-coverage-policy.mjs";
@@ -102,7 +102,7 @@ function boundedText(value: unknown, field: string, maxLength: number) {
   return value.trim();
 }
 
-function validateReport(raw: any, candidateAnswers: string[]) {
+function validateReport(raw: any, candidateAnswers: string[], requiredSkills: string[] = []) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
     throw new Error("AI report validation failed: report must be an object.");
   }
@@ -126,7 +126,7 @@ function validateReport(raw: any, candidateAnswers: string[]) {
     throw new Error("AI report validation failed: invalid skills list.");
   }
   const ratings = ["Strong", "Good", "Developing", "Insufficient evidence"];
-  const skills = raw.skills.map((item: any, index: number) => {
+  const reportedSkills = raw.skills.map((item: any, index: number) => {
     if (!item || typeof item !== "object" || !ratings.includes(item.rating)) {
       throw new Error(`AI report validation failed: invalid skill rating at item ${index + 1}.`);
     }
@@ -137,6 +137,9 @@ function validateReport(raw: any, candidateAnswers: string[]) {
     }
     return { skill, rating: item.rating, evidence };
   });
+  // The report must account for every skill extracted from the job description.
+  // Missing skills are made visible as unsupported instead of silently omitted.
+  const skills = completeRequiredSkillEvaluations(requiredSkills, reportedSkills);
   if (hasDuplicateSkills(skills)) {
     throw new Error("AI report validation failed: duplicate or empty skill names.");
   }
@@ -452,7 +455,8 @@ export async function POST(request: NextRequest) {
         ]);
         const rawReport = parseJson(content);
         const candidateAnswers = history.filter(message => message.role === "user").map(message => message.content);
-        const report = validateReport(rawReport, candidateAnswers);
+        const requiredSkills = extractTargetSkills(body.jobDescription || "", "", 15);
+        const report = validateReport(rawReport, candidateAnswers, requiredSkills);
         if (body.sessionId) {
           if (!reportLockAt) throw new Error("Interview report lock was not acquired.");
           const durationSeconds = startedAt ? Math.min(INTERVIEW_LIMIT_SECONDS, elapsedInterviewSeconds(startedAt)) : 0;
