@@ -46,3 +46,26 @@ test("guidance explicitly prohibits sensitive personal inference", () => {
   const plan = buildInterviewFairnessPlan(["Python"], [], 0);
   assert.match(buildFairnessGuidance(plan), /protected or sensitive personal characteristics/);
 });
+
+test("does not count JavaScript questions against the Java skill cap", () => {
+  const history = [
+    { role: "assistant", content: "How did you use JavaScript in the frontend?" },
+    { role: "user", content: "I used JavaScript for the UI." },
+    { role: "assistant", content: "How did you structure JavaScript modules?" },
+    { role: "user", content: "I used ES modules." }
+  ];
+  const plan = buildInterviewFairnessPlan(["Java", "JavaScript"], history, 300);
+  assert.equal(plan.questionCounts.find(item => item.skill === "Java").questions, 0);
+  assert.equal(plan.questionCounts.find(item => item.skill === "JavaScript").questions, 2);
+  assert.deepEqual(plan.cappedSkills, ["JavaScript"]);
+});
+
+test("counts canonical and aliased skill mentions consistently", () => {
+  const plan = buildInterviewFairnessPlan(["JavaScript", "Node.js"], [
+    { role: "assistant", content: "How have you used JS?" },
+    { role: "user", content: "For browser interactions." },
+    { role: "assistant", content: "What backend work have you done with Node.js?" }
+  ], 200);
+  assert.equal(plan.questionCounts.find(item => item.skill === "JavaScript").questions, 1);
+  assert.equal(plan.questionCounts.find(item => item.skill === "Node.js").questions, 1);
+});
