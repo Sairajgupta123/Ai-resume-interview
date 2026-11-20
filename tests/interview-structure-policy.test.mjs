@@ -33,7 +33,7 @@ test("wrap-up takes priority in the final 90 seconds", () => {
 test("ignores candidate answers and unknown question text", () => {
   const plan = buildInterviewStructurePlan([
     { role: "user", content: "I debugged an API outage." },
-    { role: "assistant", content: "Tell me about your work." }
+    { role: "assistant", content: "Tell me about a project you worked on." }
   ]);
   assert.equal(plan.categoryCounts.practical, 0);
   assert.equal(plan.categoryCounts.situational, 0);
