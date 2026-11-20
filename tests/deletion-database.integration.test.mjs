@@ -6,6 +6,7 @@ import { join, resolve } from "node:path";
 import { test } from "node:test";
 import { createDeletionVerificationToken, hashDeletionVerificationToken } from "../lib/deletion-verification-policy.mjs";
 import { approveVerifiedDeletionRequest } from "../lib/deletion-approval-service.mjs";
+import { verifyDeletionRequest } from "../lib/deletion-verification-service.mjs";
 
 test("privacy deletion transaction removes interview data and retains an anonymized receipt", async () => {
   const tempDir = await mkdtemp(join(tmpdir(), "ai-interview-deletion-"));
@@ -60,34 +61,16 @@ test("privacy deletion transaction removes interview data and retains an anonymi
     });
     assert.equal(invalidAttempt.count, 1);
 
-    const candidateVerified = await prisma.$transaction(async tx => {
-      const changed = await tx.privacyDeletionRequest.updateMany({
-        where: {
-          id: lifecycleRequest.id,
-          status: "pending_candidate_verification",
-          verificationTokenHash: hashDeletionVerificationToken(lifecycleToken),
-          verificationExpiresAt: { gt: new Date() },
-          verificationAttempts: { lt: 5 }
-        },
-        data: {
-          status: "verified_pending_approval",
-          verifiedAt: new Date(),
-          verificationTokenHash: null,
-          verificationExpiresAt: null
-        }
-      });
-      if (changed.count !== 1) return false;
-      await tx.privacyDeletionEvent.create({
-        data: {
-          requestId: lifecycleRequest.id,
-          action: "candidate_verified",
-          actor: "candidate",
-          details: "Lifecycle integration test"
-        }
-      });
-      return true;
-    });
+    const candidateVerified = await verifyDeletionRequest(
+      prisma,
+      lifecycleRequest.id,
+      hashDeletionVerificationToken(lifecycleToken)
+    );
     assert.equal(candidateVerified, true);
+    assert.equal(
+      await verifyDeletionRequest(prisma, lifecycleRequest.id, hashDeletionVerificationToken(lifecycleToken)),
+      false
+    );
 
     // The one-time token cannot verify the same request a second time.
     const replayedVerification = await prisma.privacyDeletionRequest.updateMany({
