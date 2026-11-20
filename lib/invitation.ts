@@ -19,6 +19,23 @@ export async function hasValidCandidateInvitation(sessionId: string, token: stri
   return actual.length === expected.length && timingSafeEqual(actual, expected);
 }
 
+
+export function candidateInvitationCookieName(sessionId: string) {
+  const sessionKey = createHash("sha256").update(sessionId).digest("hex").slice(0, 24);
+  return `mzobs_candidate_${sessionKey}`;
+}
+
+type InvitationRequest = {
+  headers: { get(name: string): string | null };
+  cookies: { get(name: string): { value: string } | undefined };
+};
+
+export function getCandidateInvitationToken(request: InvitationRequest, sessionId: string) {
+  return request.headers.get("x-interview-invite")
+    || request.cookies.get(candidateInvitationCookieName(sessionId))?.value
+    || null;
+}
+
 export function createInvitationToken() {
   return randomBytes(32).toString("base64url");
 }
