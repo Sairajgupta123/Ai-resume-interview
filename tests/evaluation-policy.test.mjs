@@ -155,7 +155,7 @@ test("provides consistent labels for correct, partial, incorrect and unanswered 
   const { buildQuestionAssessmentGuidance } = await import("../lib/evaluation-policy.mjs");
   const guidance = buildQuestionAssessmentGuidance();
   for (const label of ["Correct", "Partially correct", "Incorrect", "Unanswered"]) {
-    assert.match(guidance, new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, "\\\\$&")));
+    assert.ok(guidance.includes(label), `Missing assessment label: ${label}`);
   }
   assert.match(guidance, /conflict.*human review/i);
   assert.match(guidance, /Do not infer dishonesty/);
