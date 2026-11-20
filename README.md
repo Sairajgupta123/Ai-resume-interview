@@ -28,6 +28,7 @@ A resume- and job-description-aware interview application powered by xAI Grok.
 - Employer can record shortlist, review or reject decisions with notes and an immutable decision history
 - Employer decision audit feed displays the latest 100 decision-history events with candidate, role, decision, timestamp and notes; it is an accountability view, not a full security access log
 - Employer privacy dashboard provides an authenticated, read-only retention preview for completed interviews using INTERVIEW_RETENTION_DAYS; in-progress sessions are excluded, missing consent metadata is reported, and no records are automatically deleted
+- Candidate deletion requests support a 30-minute one-time email verification link (Resend), hashed token storage, attempt limits, a separate employer approval step, and an auditable event trail; approval still does not execute deletion
 - Employer privacy deletion requests use candidate identity matching, explicit typed confirmation, one request per interview, duplicate protection, and a separate event history; requests remain pending verification and approval and do not delete candidate data
 
 ## Technology
