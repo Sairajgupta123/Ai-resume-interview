@@ -61,7 +61,6 @@ export default function Home() {
   const recordingUploadInProgressRef = useRef(false);
   const recordingChunkIndexRef = useRef(0);
   const recordingPersistenceRef = useRef<Promise<void>>(Promise.resolve());
-  const recordingPersistenceFailedRef = useRef(false);
   const finishStartedRef = useRef(false);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const transcriptEndRef = useRef<HTMLDivElement>(null);
@@ -348,7 +347,6 @@ export default function Home() {
       const chunks: BlobPart[] = [];
       recordingChunkIndexRef.current = 0;
       recordingPersistenceRef.current = Promise.resolve();
-      recordingPersistenceFailedRef.current = false;
       recordingCompleteRef.current = new Promise<boolean>(resolve => { resolveCompletion = resolve; });
       recorder.ondataavailable = event => {
         if (!event.data.size) return;
@@ -358,7 +356,6 @@ export default function Home() {
           recordingPersistenceRef.current = recordingPersistenceRef.current.then(() =>
             cacheRecordingChunk(targetSessionId, index, event.data, recorder.mimeType || "video/webm")
           ).catch(() => {
-            recordingPersistenceFailedRef.current = true;
             setError("Local recording backup failed. Keep this tab open until the recording is uploaded.");
           });
         }
@@ -488,7 +485,7 @@ export default function Home() {
             <button className={mode === "live" ? "mode-card selected" : "mode-card"} disabled={!!sessionId} onClick={() => setMode("live")}><span className="mode-symbol">◉</span><span><b>Live interview</b><small>Two-way conversation with camera and mic</small></span><span className="radio-dot" /></button>
             <button className={mode === "recorded" ? "mode-card selected" : "mode-card"} disabled={!!sessionId} onClick={() => setMode("recorded")}><span className="mode-symbol">▣</span><span><b>Recorded interview</b><small>Capture a video recording for employer review</small></span><span className="radio-dot" /></button>
           </div>
-          <label className="consent"><input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} /><span>I understand that my resume, job details and interview answers are processed by xAI Grok to generate questions and an assessment. If I grant camera and microphone permission, audio and video recording starts automatically and is uploaded to the interview server for employer review. I can stop recording at any time. The assessment is based on my answers, not my appearance, accent or voice characteristics.</span></label>
+          <label className="consent"><input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} /><span>I understand that my resume, job details and interview answers are processed by xAI Grok to generate questions and an assessment. If I grant camera and microphone permission, audio and video recording starts automatically and is uploaded to the interview server for employer review. I can stop recording at any time. The browser temporarily saves recording segments on this device until upload succeeds, so an unfinished upload may be recoverable after a refresh. The assessment is based on my answers, not my appearance, accent or voice characteristics.</span></label>
           {error && <div className="error-box">{error}</div>}
           <button className="primary-btn" onClick={startInterview} disabled={busy}>{busy ? "Preparing interviewer..." : "Start 15-minute interview"} <span>↗</span></button>
           <p className="privacy-note">Your API key stays on the server. Candidate data is sent to Grok to generate interview questions and evaluation.</p>
