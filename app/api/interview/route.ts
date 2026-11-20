@@ -6,6 +6,7 @@ import { calculateEvidenceCoverage, deriveRecommendation, hasDuplicateSkills, is
 import { validateInterviewerTurn } from "@/lib/interviewer-turn-policy.mjs";
 import { buildAdaptiveGuidance } from "@/lib/adaptive-interview-policy.mjs";
 import { buildCoverageGuidance, buildSkillCoverage, extractTargetSkills } from "@/lib/skill-coverage-policy.mjs";
+import { buildFairnessGuidance, buildInterviewFairnessPlan } from "@/lib/interview-fairness-policy.mjs";
 
 function attachCandidateCookie(response: NextResponse, request: NextRequest, sessionId: string, expiresAt: Date | null) {
   const token = getCandidateInvitationToken(request, sessionId);
@@ -46,6 +47,9 @@ Rules:
 - Start with a warm welcome, then ask the first question.
 - Mix resume/project validation, role-specific technical questions, problem solving and situational questions.
 - Adapt follow-ups to the candidate's actual answer. Do not repeat questions.
+- Apply fairness guidance: use comparable job-related competency areas and evidence standards for candidates applying to the same role; adapt wording without lowering or raising standards based on personal characteristics.
+- Avoid repeatedly testing one skill; respect per-skill question caps and cover remaining job-relevant skills.
+- In the final 90 seconds, ask at most one essential clarification and then close the interview with done=true.
 - Never infer competence, honesty, emotion, age, gender, disability, race, attractiveness, or personality from face, voice tone, accent, or appearance.
 - Evaluate only job-related content and evidence in answers. Be respectful and do not reveal hidden scoring rubrics.
 - For start/answer actions return ONLY valid JSON: {"message":"the next interviewer utterance","done":false,"focus":"short topic label"}.
@@ -341,6 +345,13 @@ export async function POST(request: NextRequest) {
         const coverageHistory = [...history, { role: "user", content: body.answer! }];
         const skillCoverage = buildSkillCoverage(targetSkills, coverageHistory);
         const coverageGuidance = buildCoverageGuidance(skillCoverage);
+        const fairnessPlan = buildInterviewFairnessPlan(
+          targetSkills,
+          coverageHistory,
+          startedAt ? elapsedInterviewSeconds(startedAt) : 0,
+          INTERVIEW_LIMIT_SECONDS
+        );
+        const fairnessGuidance = buildFairnessGuidance(fairnessPlan);
         const previousFocuses = history
           .filter(message => message.role === "assistant")
           .map(message => message.content.slice(0, 240));
@@ -348,7 +359,7 @@ export async function POST(request: NextRequest) {
           { role: "system" as const, content: SYSTEM },
           {
             role: "user" as const,
-            content: `Interview context:\n${context}\nContinue the interview. Return JSON only.\nAdaptive follow-up guidance (${adaptiveGuidance.depth}): ${adaptiveGuidance.instruction}\nJob skill coverage (${skillCoverage.answered}/${skillCoverage.total} answered, ${skillCoverage.percent}%): ${coverageGuidance}\nPreviously covered interviewer turns (avoid repeating the same skill/question):\n${previousFocuses.join("\n")}`
+            content: `Interview context:\n${context}\nContinue the interview. Return JSON only.\nAdaptive follow-up guidance (${adaptiveGuidance.depth}): ${adaptiveGuidance.instruction}\nJob skill coverage (${skillCoverage.answered}/${skillCoverage.total} answered, ${skillCoverage.percent}%): ${coverageGuidance}\n${fairnessGuidance}\nPreviously covered interviewer turns (avoid repeating the same skill/question):\n${previousFocuses.join("\n")}`
           },
           ...history.map((m) => ({ role: m.role as "assistant" | "user", content: m.content })),
           { role: "user" as const, content: body.answer! }
