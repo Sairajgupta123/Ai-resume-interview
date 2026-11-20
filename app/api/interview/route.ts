@@ -161,6 +161,7 @@ export async function POST(request: NextRequest) {
     }
 
     let startedAt: Date | null = null;
+    let invitationExpiresAt: Date | null = null;
     let startLockAt: Date | null = null;
     if (body.sessionId) {
       const session = await db.interview.findUnique({
@@ -182,6 +183,7 @@ export async function POST(request: NextRequest) {
       body.jobDescription = session.jobDescription;
       body.mode = session.mode === "recorded" ? "recorded" : "live";
       startedAt = session.startedAt;
+      invitationExpiresAt = session.inviteExpiresAt;
 
       if (body.action === "start") {
         if (startedAt) {
@@ -268,13 +270,13 @@ export async function POST(request: NextRequest) {
         const response = NextResponse.json(parsed);
         if (body.sessionId) {
           const invitationToken = getCandidateInvitationToken(request, body.sessionId);
-          if (invitationToken && session.inviteExpiresAt) {
+          if (invitationToken && invitationExpiresAt) {
             response.cookies.set(candidateInvitationCookieName(body.sessionId), invitationToken, {
               httpOnly: true,
               secure: process.env.NODE_ENV === "production",
               sameSite: "lax",
               path: "/",
-              maxAge: Math.max(0, Math.floor((session.inviteExpiresAt.getTime() - Date.now()) / 1000))
+              maxAge: Math.max(0, Math.floor((invitationExpiresAt.getTime() - Date.now()) / 1000))
             });
           }
         }
