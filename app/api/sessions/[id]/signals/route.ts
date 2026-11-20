@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { isEmployerAuthenticated } from "@/lib/auth";
-import { hasValidCandidateInvitation } from "@/lib/invitation";
+import { getCandidateInvitationToken, hasValidCandidateInvitation } from "@/lib/invitation";
 
 export const runtime = "nodejs";
 type Context = { params: Promise<{ id: string }> };
@@ -10,7 +10,7 @@ const allowed = new Set(["offer", "answer", "ice", "hangup"]);
 async function access(request: NextRequest, id: string) {
   const employer = await isEmployerAuthenticated();
   if (employer) return "employer" as const;
-  const token = request.headers.get("x-interview-invite");
+  const token = getCandidateInvitationToken(request, id);
   if (await hasValidCandidateInvitation(id, token)) return "candidate" as const;
   return null;
 }
