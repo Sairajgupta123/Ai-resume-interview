@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { parseByteRange } from "../lib/recording-range.mjs";
+import { parseByteRange, validateRecordingStorageResponse } from "../lib/recording-range.mjs";
 
 test("parses a bounded byte range", () => {
   assert.deepEqual(parseByteRange("bytes=10-19", 100), { ok: true, start: 10, end: 19, length: 10 });
@@ -31,8 +31,6 @@ test("rejects ranges for empty files", () => {
 test("rejects unsafe sizes", () => {
   assert.deepEqual(parseByteRange("bytes=0-1", Number.MAX_SAFE_INTEGER + 1), { ok: false, status: 416 });
 });
-
-import { validateRecordingStorageResponse } from "../lib/recording-range.mjs";
 
 test("accepts a remote full-file response with the exact content length", () => {
   assert.equal(validateRecordingStorageResponse({
@@ -67,11 +65,19 @@ test("rejects unexpected partial or malformed full-file responses", () => {
   }, { size: 100, partial: false, start: 0, end: 99 }), false);
 });
 
-test("rejects missing and unsafe storage response lengths", () => {
+test("rejects missing, non-decimal, and unsafe storage response lengths", () => {
+  for (const contentLength of [null, "", "-1", "1e2", "9007199254740992"]) {
+    assert.equal(validateRecordingStorageResponse({
+      status: 200, contentRange: null, contentLength
+    }, { size: 0, partial: false, start: 0, end: -1 }), false);
+  }
   assert.equal(validateRecordingStorageResponse({
     status: 206, contentRange: "bytes 10-19/100", contentLength: null
   }, { size: 100, partial: true, start: 10, end: 19 }), false);
+});
+
+test("rejects invalid expected partial ranges", () => {
   assert.equal(validateRecordingStorageResponse({
-    status: 206, contentRange: "bytes 10-19/100", contentLength: "9007199254740992"
-  }, { size: 100, partial: true, start: 10, end: 19 }), false);
+    status: 206, contentRange: "bytes 10-19/100", contentLength: "10"
+  }, { size: 100, partial: true, start: 10, end: 100 }), false);
 });
