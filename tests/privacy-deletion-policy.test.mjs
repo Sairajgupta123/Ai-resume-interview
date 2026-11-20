@@ -28,10 +28,13 @@ test("requires exact recorded email when the interview has an email", () => {
   assert.equal(result.ok, false);
 });
 
-test("does not invent an email when no email is stored", () => {
+test("rejects a deletion request when no candidate email is stored for verification", () => {
   const result = validateDeletionRequestInput({ ...valid, candidateEmail: "" }, { ...interview, candidateEmail: null });
-  assert.equal(result.ok, true);
-  if (result.ok) assert.equal(result.value.candidateEmail, null);
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.equal(result.status, 409);
+    assert.match(result.error, /candidate email must be on the interview record/i);
+  }
 });
 
 test("requires explicit confirmation phrase and a meaningful reason", () => {
