@@ -230,6 +230,50 @@ test("privacy deletion transaction removes interview data and retains an anonymi
 
     assert.equal(receipt.events[0].action, "deletion_completed");
 
+    // Finalization must bind the lease to the interview recorded on the request.
+    const boundInterview = await prisma.interview.create({
+      data: {
+        candidateName: "Lease Binding Candidate",
+        role: "Engineer",
+        resumeText: "Dummy resume",
+        jobDescription: "Dummy job"
+      }
+    });
+    const unrelatedInterview = await prisma.interview.create({
+      data: {
+        candidateName: "Unrelated Candidate",
+        role: "Engineer",
+        resumeText: "Must remain",
+        jobDescription: "Dummy job"
+      }
+    });
+    const boundRequest = await prisma.privacyDeletionRequest.create({
+      data: {
+        interviewId: boundInterview.id,
+        candidateNameSnapshot: boundInterview.candidateName,
+        roleSnapshot: boundInterview.role,
+        reason: "Lease binding integration test",
+        requestedBy: "candidate",
+        status: "deletion_in_progress",
+        verifiedAt: new Date(),
+        executionStartedAt: new Date(),
+        executionLeaseToken: "bound-worker-token"
+      }
+    });
+    await assert.rejects(
+      () => finalizeDeletionExecution(prisma, {
+        requestId: boundRequest.id,
+        interviewId: unrelatedInterview.id,
+        leaseToken: "bound-worker-token"
+      }),
+      { message: "DELETION_LEASE_LOST" }
+    );
+    assert.notEqual(await prisma.interview.findUnique({ where: { id: boundInterview.id } }), null);
+    assert.notEqual(await prisma.interview.findUnique({ where: { id: unrelatedInterview.id } }), null);
+    const boundReceipt = await prisma.privacyDeletionRequest.findUnique({ where: { id: boundRequest.id } });
+    assert.equal(boundReceipt.status, "deletion_in_progress");
+    assert.equal(boundReceipt.executionLeaseToken, "bound-worker-token");
+
     // A reclaimed lease must prevent the previous worker from deleting candidate data.
     const protectedInterview = await prisma.interview.create({
       data: {
