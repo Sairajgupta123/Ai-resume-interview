@@ -189,6 +189,16 @@ export default function Home() {
     if (typeof window !== "undefined" && window.speechSynthesis) window.speechSynthesis.cancel();
   }, []);
 
+  useEffect(() => {
+    if (!recording && !uploadingRecording) return;
+    const warnBeforeLeaving = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warnBeforeLeaving);
+    return () => window.removeEventListener("beforeunload", warnBeforeLeaving);
+  }, [recording, uploadingRecording]);
+
   const callApi = async (payload: Record<string, unknown>) => {
     const token = inviteToken || (typeof payload.inviteToken === "string" ? payload.inviteToken : "");
     const { inviteToken: _token, ...requestPayload } = payload;
