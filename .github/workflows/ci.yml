@@ -44,6 +44,8 @@ jobs:
               }));
             }
           ' "$RUNNER_TEMP/npm-audit.json"
+      - name: Fail on moderate or higher dependency vulnerabilities
+        run: npm audit --audit-level=moderate
       - name: Unit tests
         run: npm test
       - name: Type check
