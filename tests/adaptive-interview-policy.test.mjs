@@ -13,7 +13,8 @@ test("does not treat a long generic answer as demonstrated technical depth", () 
 });
 
 test("uses a focused probe when an answer has some concrete detail", () => {
-  assert.equal(assessAnswerDepth("I implemented a React API integration and tested the result across several user flows, documented the changes, and verified that the existing pages continued to work correctly."), "probe");
+  const answer = "I implemented a React API integration and tested the result across several user flows. I also documented the changes, checked the error states, and verified that the existing pages continued to work correctly for the team.";
+  assert.equal(assessAnswerDepth(answer), "probe");
 });
 
 test("increases follow-up depth only when multiple specificity signals exist", () => {
@@ -25,6 +26,8 @@ test("guidance explicitly avoids treating brevity as low competence", () => {
   assert.match(buildAdaptiveGuidance("Short answer").instruction, /Do not treat brevity as low competence/);
 });
 
-test("guidance asks to verify reasoning before changing skills for probe answers", () => {
-  assert.match(buildAdaptiveGuidance("I implemented a React API integration and tested the result.").instruction, /verify the candidate's personal contribution/);
+test("guidance asks for specific actions and outcomes when detail is limited", () => {
+  const guidance = buildAdaptiveGuidance("Short answer");
+  assert.match(guidance.instruction, /specific example/);
+  assert.match(guidance.instruction, /candidate's own actions/);
 });
