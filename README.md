@@ -12,6 +12,7 @@ A resume- and job-description-aware interview application powered by xAI Grok.
 - SQLite persistence for interview sessions, transcripts and reports
 - Employer login and dashboard with interview search, candidate review, report and transcript
 - Employer-created candidate invitations with 72-hour expiring, hashed tokens and protected candidate API access
+- Candidate refresh recovery: invitation tokens are exchanged for session-scoped HttpOnly cookies; in-progress transcripts and elapsed interview time are restored after reload
 - Employer review recommendation is advisory; hiring decisions remain human-led
 - Employer can record shortlist, review or reject decisions with notes and an immutable decision history
 
@@ -27,8 +28,8 @@ A resume- and job-description-aware interview application powered by xAI Grok.
 
 ## Setup (Windows PowerShell)
 ```powershell
-git clone https://github.com/Sairajgupta123/Ai-resume.git
-cd Ai-resume
+git clone https://github.com/Sairajgupta123/Ai-resume-interview.git
+cd Ai-resume-interview
 npm install
 Copy-Item .env.example .env.local
 ```
