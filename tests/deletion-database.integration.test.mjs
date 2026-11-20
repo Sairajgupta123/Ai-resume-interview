@@ -97,7 +97,57 @@ test("privacy deletion transaction removes interview data and retains an anonymi
     assert.equal(receipt.roleSnapshot, "[deleted]");
     assert.equal(receipt.executionLeaseToken, null);
     assert.equal(receipt.events.length, 1);
+
     assert.equal(receipt.events[0].action, "deletion_completed");
+
+    // A reclaimed lease must prevent the previous worker from deleting candidate data.
+    const protectedInterview = await prisma.interview.create({
+      data: {
+        candidateName: "Stale Worker Test Candidate",
+        role: "QA Engineer",
+        resumeText: "Dummy resume",
+        jobDescription: "Dummy job description"
+      }
+    });
+    const protectedRequest = await prisma.privacyDeletionRequest.create({
+      data: {
+        interviewId: protectedInterview.id,
+        candidateNameSnapshot: protectedInterview.candidateName,
+        roleSnapshot: protectedInterview.role,
+        reason: "Stale worker integration test",
+        requestedBy: "candidate",
+        status: "deletion_in_progress",
+        verifiedAt: new Date(),
+        executionStartedAt: new Date(),
+        executionLeaseToken: "new-worker-token"
+      }
+    });
+
+    const staleWorkerResult = await prisma.$transaction(async tx => {
+      const ownership = await tx.privacyDeletionRequest.updateMany({
+        where: {
+          id: protectedRequest.id,
+          status: "deletion_in_progress",
+          executionLeaseToken: "old-worker-token"
+        },
+        data: { executionStartedAt: new Date() }
+      });
+      if (ownership.count !== 1) return "lease-lost";
+
+      await tx.interview.delete({ where: { id: protectedInterview.id } });
+      return "deleted";
+    });
+
+    assert.equal(staleWorkerResult, "lease-lost");
+    assert.notEqual(
+      await prisma.interview.findUnique({ where: { id: protectedInterview.id } }),
+      null
+    );
+    const protectedReceipt = await prisma.privacyDeletionRequest.findUnique({
+      where: { id: protectedRequest.id }
+    });
+    assert.equal(protectedReceipt.status, "deletion_in_progress");
+    assert.equal(protectedReceipt.executionLeaseToken, "new-worker-token");
   } finally {
     if (prisma) await prisma.$disconnect();
     await rm(tempDir, { recursive: true, force: true });
