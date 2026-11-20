@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { isEmployerAuthenticated } from "@/lib/auth";
 import { createDeletionVerificationToken, hashDeletionVerificationToken, DELETION_VERIFICATION_TTL_MS, DELETION_VERIFICATION_RESEND_COOLDOWN_MS, canSendDeletionVerification } from "@/lib/deletion-verification-policy.mjs";
+import { reserveDeletionVerificationEmail } from "@/lib/deletion-verification-service.mjs";
 
 export const runtime = "nodejs";
 type Context = { params: Promise<{ id: string }> };
@@ -33,24 +34,14 @@ export async function POST(request: Request, context: Context) {
   const token = createDeletionVerificationToken();
   const tokenHash = hashDeletionVerificationToken(token);
   const expiresAt = new Date(now.getTime() + DELETION_VERIFICATION_TTL_MS);
-  const resendAllowedBefore = new Date(now.getTime() - DELETION_VERIFICATION_RESEND_COOLDOWN_MS);
-  const updated = await db.privacyDeletionRequest.updateMany({
-    where: {
-      id: deletion.id,
-      status: "pending_candidate_verification",
-      OR: [
-        { verificationSentAt: null },
-        { verificationSentAt: { lte: resendAllowedBefore } }
-      ]
-    },
-    data: {
-      verificationTokenHash: tokenHash,
-      verificationExpiresAt: expiresAt,
-      verificationSentAt: now,
-      verificationAttempts: 0
-    }
+  const reserved = await reserveDeletionVerificationEmail(db, {
+    requestId: deletion.id,
+    tokenHash,
+    now,
+    expiresAt,
+    cooldownMs: DELETION_VERIFICATION_RESEND_COOLDOWN_MS
   });
-  if (updated.count !== 1) return NextResponse.json({ error: "Deletion request changed. Refresh and try again." }, { status: 409 });
+  if (!reserved) return NextResponse.json({ error: "Deletion request changed. Refresh and try again." }, { status: 409 });
 
   const verifyUrl = new URL("/privacy/verify-deletion", process.env.NEXT_PUBLIC_APP_URL);
   verifyUrl.searchParams.set("request", deletion.id);
