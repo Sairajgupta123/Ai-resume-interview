@@ -1,6 +1,7 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { db } from "@/lib/db";
 import { canExchangeCandidateInvitation, isCandidateInvitationActive } from "./invitation-policy.mjs";
+import { rotateCandidateInvitationToken } from "./invitation-service.mjs";
 
 export function hashInvitationToken(token: string) {
   return createHash("sha256").update(token).digest("hex");
@@ -39,22 +40,13 @@ export async function exchangeCandidateInvitation(sessionId: string, token: stri
   // The emailed bearer token is single-use. Replace its hash atomically with a
   // fresh browser-session token so replaying the original link cannot authenticate.
   const sessionToken = createInvitationToken();
-  const now = new Date();
-  const consumed = await db.interview.updateMany({
-    where: {
-      id: sessionId,
-      invitationTokenHash: interview.invitationTokenHash,
-      status: "invited",
-      startedAt: null,
-      inviteUsedAt: null,
-      inviteExpiresAt: { gt: now }
-    },
-    data: {
-      invitationTokenHash: hashInvitationToken(sessionToken),
-      inviteUsedAt: now
-    }
+  const rotated = await rotateCandidateInvitationToken(db, {
+    sessionId,
+    currentTokenHash: interview.invitationTokenHash,
+    sessionTokenHash: hashInvitationToken(sessionToken),
+    now: new Date()
   });
-  return consumed.count === 1 ? sessionToken : null;
+  return rotated ? sessionToken : null;
 }
 
 export function candidateInvitationCookieName(sessionId: string) {
