@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { candidateInvitationCookieName, getCandidateInvitationToken, hasValidCandidateInvitation } from "@/lib/invitation";
+import { candidateInvitationCookieName, exchangeCandidateInvitation, getCandidateInvitationToken, hasValidCandidateInvitation } from "@/lib/invitation";
 
 type Context = { params: Promise<{ id: string }> };
 
-async function candidateResponse(id: string, token: string | null) {
-  if (!(await hasValidCandidateInvitation(id, token))) {
+async function candidateResponse(id: string, token: string | null, exchange = false) {
+  const authorized = exchange
+    ? await exchangeCandidateInvitation(id, token)
+    : await hasValidCandidateInvitation(id, token);
+  if (!authorized) {
     return NextResponse.json({ error: "This interview invitation is invalid or expired. Contact the employer for a new link." }, { status: 401, headers: { "Cache-Control": "private, no-store" } });
   }
 
@@ -54,7 +57,7 @@ export async function POST(request: NextRequest, context: Context) {
   try {
     const body = await request.json();
     const token = typeof body.token === "string" ? body.token : null;
-    return candidateResponse(id, token);
+    return candidateResponse(id, token, true);
   } catch {
     return NextResponse.json({ error: "Invalid invitation request." }, { status: 400, headers: { "Cache-Control": "private, no-store" } });
   }
