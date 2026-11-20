@@ -281,6 +281,13 @@ export default function Home() {
         setRecording(false);
       }
       const recordingSavedOk = recordingCompleteRef.current ? await recordingCompleteRef.current : recordingSaved;
+      if (!recordingSavedOk && sessionId) {
+        const cached = await getCachedRecording(sessionId).catch(() => null);
+        if (cached?.chunks.length) {
+          setRecoverableRecording(true);
+          throw new Error("Your recording is still saved on this device but has not uploaded. Recover it from the camera panel, then end the interview again.");
+        }
+      }
       const data = await callApi({ action: "report", candidateName, role, resume, jobDescription, history: transcript, sessionId }) as Report;
       // The report endpoint records authoritative duration and completes the session atomically.
       // Do not call the general session update endpoint after completion.
