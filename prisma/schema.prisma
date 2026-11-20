@@ -96,6 +96,11 @@ model PrivacyDeletionRequest {
   reason                String
   status                String   @default("pending_candidate_verification")
   requestedBy           String
+  verificationTokenHash String?  @unique
+  verificationExpiresAt DateTime?
+  verificationSentAt    DateTime?
+  verifiedAt            DateTime?
+  verificationAttempts  Int      @default(0)
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
   events                PrivacyDeletionEvent[]
