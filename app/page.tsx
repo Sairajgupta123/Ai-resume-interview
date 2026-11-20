@@ -66,8 +66,6 @@ export default function Home() {
     const invitedId = params.get("candidateInterviewId");
     const token = params.get("token");
     if (!invitedId) return;
-    // Keep only the opaque session ID in the URL; the bearer token is exchanged for an HttpOnly cookie.
-    window.history.replaceState({}, "", `/?candidateInterviewId=${encodeURIComponent(invitedId)}`);
     let cancelled = false;
     const invitationUrl = `/api/sessions/${invitedId}/candidate${token ? `?token=${encodeURIComponent(token)}` : ""}`;
     fetch(invitationUrl, { credentials: "same-origin", cache: "no-store" })
@@ -78,6 +76,8 @@ export default function Home() {
       })
       .then(interview => {
         if (cancelled) return;
+        // The response has now set the HttpOnly cookie; remove the bearer token safely.
+        window.history.replaceState({}, "", `/?candidateInterviewId=${encodeURIComponent(invitedId)}`);
         setSessionId(interview.id);
         setCandidateName(interview.candidateName);
         setRole(interview.role);
