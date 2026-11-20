@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createHmac } from "node:crypto";
 import { db } from "@/lib/db";
 import { isEmployerAuthenticated } from "@/lib/auth";
-import { hasValidCandidateInvitation } from "@/lib/invitation";
+import { getCandidateInvitationToken, hasValidCandidateInvitation } from "@/lib/invitation";
 
 export const runtime = "nodejs";
 type Context = { params: Promise<{ id: string }> };
@@ -10,7 +10,7 @@ type Context = { params: Promise<{ id: string }> };
 export async function GET(request: NextRequest, context: Context) {
   const { id } = await context.params;
   const employer = await isEmployerAuthenticated();
-  const candidateToken = request.headers.get("x-interview-invite");
+  const candidateToken = getCandidateInvitationToken(request, id);
   const candidate = !employer && await hasValidCandidateInvitation(id, candidateToken);
   if (!employer && !candidate) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
 
