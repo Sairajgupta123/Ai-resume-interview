@@ -330,8 +330,10 @@ export async function POST(request: NextRequest) {
           throw new Error("AI returned an invalid follow-up question. Please retry.");
         }
         if (body.sessionId) {
-          if (!startedAt || elapsedSeconds(startedAt) >= INTERVIEW_LIMIT_SECONDS || !answerLockAt) {
-            return NextResponse.json({ error: "The 15-minute interview time limit was reached while processing your answer." }, { status: 409 });
+          // The request passed the deadline check before the provider call. Preserve that
+          // in-flight answer even if Grok finishes just after the 15-minute boundary.
+          if (!startedAt || !answerLockAt) {
+            return NextResponse.json({ error: "The interview answer could not be committed. Please retry." }, { status: 409 });
           }
           await db.$transaction(async (tx) => {
             const current = await tx.interview.findUnique({
@@ -351,7 +353,10 @@ export async function POST(request: NextRequest) {
           });
           answerLockAt = null;
         }
-        return NextResponse.json(parsed);
+        return NextResponse.json({
+          ...parsed,
+          timeLimitReached: !!startedAt && elapsedSeconds(startedAt) >= INTERVIEW_LIMIT_SECONDS
+        });
       } finally {
         if (body.sessionId && answerLockAt) {
           await db.interview.updateMany({
