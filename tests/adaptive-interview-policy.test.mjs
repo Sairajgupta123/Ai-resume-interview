@@ -18,7 +18,7 @@ test("uses a focused probe when an answer has some concrete detail", () => {
 });
 
 test("increases follow-up depth only when multiple specificity signals exist", () => {
-  const detailed = "I implemented a Node.js API and optimized PostgreSQL queries, reducing latency by 40%. We compared a Redis cache alternative because the database was the bottleneck, then tested the change with representative traffic and documented the before and after results for the engineering team. I also reviewed the deployment logs, checked error handling under a temporary database slowdown, and confirmed the rollback procedure with the team before recommending the optimization for production.";
+  const detailed = "I implemented a Node.js API and optimized PostgreSQL queries, reducing request latency by 40%. We compared a Redis cache alternative because database reads were the bottleneck, then tested the change with representative traffic and documented the before and after results. I reviewed deployment logs, checked error handling during a temporary database slowdown, measured response times across several workloads, and confirmed the rollback procedure with the engineering team before recommending the optimization for production. The team also monitored error rates after release and retained the previous query plan as a fallback.";;
   assert.equal(assessAnswerDepth(detailed), "deepen");
 });
 
