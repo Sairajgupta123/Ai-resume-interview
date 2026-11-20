@@ -137,3 +137,15 @@ test("rejects unsupported and empty skill evidence", () => {
   ]), false);
   assert.equal(isSkillEvidenceLinkedToQuestion("React", "I used React", []), false);
 });
+
+
+test("provides a consistent evidence-based rubric for skill ratings", async () => {
+  const { buildSkillEvaluationGuidance } = await import("../lib/evaluation-policy.mjs");
+  const guidance = buildSkillEvaluationGuidance();
+  assert.match(guidance, /Strong: the answer is materially correct/);
+  assert.match(guidance, /Good: the answer is mostly correct/);
+  assert.match(guidance, /Developing: the answer shows some relevant understanding/);
+  assert.match(guidance, /unanswered or unassessed competency as a failure/);
+  assert.match(guidance, /answer length, speaking speed, accent/);
+  assert.match(guidance, /concrete action, design, debugging step, or outcome/);
+});
