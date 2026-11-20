@@ -6,7 +6,8 @@ import { join, resolve } from "node:path";
 import { test } from "node:test";
 import { createDeletionVerificationToken, hashDeletionVerificationToken } from "../lib/deletion-verification-policy.mjs";
 import { approveVerifiedDeletionRequest } from "../lib/deletion-approval-service.mjs";
-import { verifyDeletionRequest } from "../lib/deletion-verification-service.mjs";
+import { verifyDeletionRequest, reserveDeletionVerificationEmail } from "../lib/deletion-verification-service.mjs";
+import { DELETION_VERIFICATION_RESEND_COOLDOWN_MS } from "../lib/deletion-verification-policy.mjs";
 import { finalizeDeletionExecution, markDeletionExecutionFailed } from "../lib/deletion-execution-service.mjs";
 
 test("privacy deletion transaction removes interview data and retains an anonymized receipt", async () => {
@@ -354,6 +355,51 @@ test("privacy deletion transaction removes interview data and retains an anonymi
       (await prisma.privacyDeletionRequest.findUnique({ where: { id: unverifiedRequest.id } })).status,
       "approved_for_deletion"
     );
+
+    // Concurrent email-resend requests must have exactly one reservation winner.
+    const resendInterview = await prisma.interview.create({
+      data: {
+        candidateName: "Concurrent Resend Candidate",
+        role: "Engineer",
+        resumeText: "Dummy resume",
+        jobDescription: "Dummy job",
+        candidateEmail: "resend@example.test"
+      }
+    });
+    const resendRequest = await prisma.privacyDeletionRequest.create({
+      data: {
+        interviewId: resendInterview.id,
+        candidateNameSnapshot: resendInterview.candidateName,
+        candidateEmailSnapshot: resendInterview.candidateEmail,
+        roleSnapshot: resendInterview.role,
+        reason: "Concurrent resend test",
+        requestedBy: "employer",
+        status: "pending_candidate_verification"
+      }
+    });
+    const resendNow = new Date();
+    const resendReservations = await Promise.all([
+      reserveDeletionVerificationEmail(prisma, {
+        requestId: resendRequest.id,
+        tokenHash: hashDeletionVerificationToken(createDeletionVerificationToken()),
+        now: resendNow,
+        expiresAt: new Date(resendNow.getTime() + 30 * 60 * 1000),
+        cooldownMs: DELETION_VERIFICATION_RESEND_COOLDOWN_MS
+      }),
+      reserveDeletionVerificationEmail(prisma, {
+        requestId: resendRequest.id,
+        tokenHash: hashDeletionVerificationToken(createDeletionVerificationToken()),
+        now: resendNow,
+        expiresAt: new Date(resendNow.getTime() + 30 * 60 * 1000),
+        cooldownMs: DELETION_VERIFICATION_RESEND_COOLDOWN_MS
+      })
+    ]);
+    assert.deepEqual(resendReservations.sort(), [false, true]);
+    const resendWinner = await prisma.privacyDeletionRequest.findUnique({
+      where: { id: resendRequest.id }
+    });
+    assert.equal(resendWinner.verificationSentAt.getTime(), resendNow.getTime());
+    assert.ok(resendWinner.verificationTokenHash);
 
     // A storage failure should leave interview data intact and permit a safe retry.
     const retryInterview = await prisma.interview.create({
