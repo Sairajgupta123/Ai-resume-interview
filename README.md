@@ -30,6 +30,7 @@ A resume- and job-description-aware interview application powered by xAI Grok.
 - Employer privacy dashboard provides an authenticated, read-only retention preview for completed interviews using INTERVIEW_RETENTION_DAYS; in-progress sessions are excluded, missing consent metadata is reported, and no records are automatically deleted
 - Candidate deletion requests support a 30-minute one-time email verification link (Resend), hashed token storage, attempt limits, separate employer approval and an auditable event trail; approved requests can be executed by an authenticated employer, removing the private recording, transcript, report, interview metadata and related signals/decision history while retaining a minimal anonymized deletion receipt. Failed storage operations remain retryable and never silently mark a request complete. Candidate verification also attempts to clear the interview's IndexedDB recording cache on the browser/device used to open the verification link; a different device cannot remotely clear another browser's local storage.
 - Employer privacy deletion requests use candidate identity matching, explicit typed confirmation, one request per interview, duplicate protection, and a separate event history; requests remain pending verification and approval and do not delete candidate data
+- Candidate-data storage locations, deletion behavior, external-provider boundaries and a required feature-review checklist are documented in [the privacy data inventory](docs/privacy-data-inventory.md)
 
 ## Technology
 - Next.js 15, React 19, TypeScript
