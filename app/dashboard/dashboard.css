@@ -105,3 +105,7 @@
 
 /* Playback state feedback */
 .recording-state.is-buffering{color:#9a762f}.recording-state.is-buffering i{background:#c69a3c}
+
+.recording-access-card{margin:18px 0}
+.recording-access-card .table-heading{align-items:flex-end}
+.recording-method{display:inline-flex;min-width:42px;justify-content:center;padding:5px 8px;border:1px solid #dce8df;border-radius:6px;background:#f7faf7;color:#355b42;font-size:9px;font-weight:800;letter-spacing:.5px}
