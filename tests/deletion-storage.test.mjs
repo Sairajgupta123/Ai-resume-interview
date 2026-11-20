@@ -79,6 +79,9 @@ test("S3 deletion signs a private path-style DELETE request", async () => {
     assert.match(captured.options.headers.authorization, /^AWS4-HMAC-SHA256 Credential=test-access-key\//);
     assert.equal(captured.options.headers.host, "storage.example.test");
     assert.equal(captured.options.cache, "no-store");
+    assert.equal(captured.options.redirect, "error");
+    assert.ok(captured.options.signal instanceof AbortSignal);
+    assert.equal(captured.options.signal.aborted, false);
   } finally {
     globalThis.fetch = originalFetch;
     restoreEnv();
