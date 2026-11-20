@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { clearCachedRecording } from "@/lib/recording-cache";
 
 export default function VerifyDeletionPage() {
   const [token, setToken] = useState("");
@@ -22,7 +23,12 @@ export default function VerifyDeletionPage() {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Verification failed.");
-      setMessage(data.message || "Your request has been verified.");
+      let localNote = " If this is the same browser used for the interview, its locally cached recording segments were also cleared.";
+      if (data.localRecordingSessionId) {
+        try { await clearCachedRecording(data.localRecordingSessionId); }
+        catch { localNote = " Local browser recording cache could not be reached from this device; clear the interview browser data on the original device if it is still present."; }
+      }
+      setMessage((data.message || "Your request has been verified.") + localNote);
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : "Verification failed.");
     } finally { setBusy(false); }
