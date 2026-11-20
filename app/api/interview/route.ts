@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { candidateInvitationCookieName, getCandidateInvitationToken, hasValidCandidateInvitation } from "@/lib/invitation";
 import { elapsedInterviewSeconds, INTERVIEW_LIMIT_SECONDS, isVerifiableEvidenceQuote } from "@/lib/interview-policy.mjs";
 import { calculateEvidenceCoverage, deriveRecommendation, hasDuplicateSkills, isRatingEvidenceConsistent } from "@/lib/evaluation-policy.mjs";
+import { validateInterviewerTurn } from "@/lib/interviewer-turn-policy.mjs";
 
 function attachCandidateCookie(response: NextResponse, request: NextRequest, sessionId: string, expiresAt: Date | null) {
   const token = getCandidateInvitationToken(request, sessionId);
@@ -266,9 +267,11 @@ export async function POST(request: NextRequest) {
           { role: "user", content: `Begin the interview. Context:\n${context}\nReturn JSON only.` }
         ]);
         const parsed = parseJson(content);
-        if (typeof parsed.message !== "string" || !parsed.message.trim()) {
-          throw new Error("AI returned an invalid opening question. Please retry.");
+        const validatedTurn = validateInterviewerTurn(parsed, []);
+        if (!validatedTurn.ok) {
+          throw new Error("AI returned an invalid opening question (" + validatedTurn.reason + "). Please retry.");
         }
+        Object.assign(parsed, validatedTurn.value);
         if (body.sessionId) {
           if (!startLockAt) throw new Error("Interview start lock was not acquired.");
           const startedAt = new Date();
@@ -339,9 +342,14 @@ export async function POST(request: NextRequest) {
         ];
         const content = await askGrok(messages);
         const parsed = parseJson(content);
-        if (typeof parsed.message !== "string" || !parsed.message.trim()) {
-          throw new Error("AI returned an invalid follow-up question. Please retry.");
+        const previousAssistantMessages = history
+          .filter(message => message.role === "assistant")
+          .map(message => message.content);
+        const validatedTurn = validateInterviewerTurn(parsed, previousAssistantMessages);
+        if (!validatedTurn.ok) {
+          throw new Error("AI returned an invalid follow-up question (" + validatedTurn.reason + "). Please retry.");
         }
+        Object.assign(parsed, validatedTurn.value);
         if (body.sessionId) {
           // The request passed the deadline check before the provider call. Preserve that
           // in-flight answer even if Grok finishes just after the 15-minute boundary.
