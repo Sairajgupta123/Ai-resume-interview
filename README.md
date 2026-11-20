@@ -12,7 +12,9 @@ A resume- and job-description-aware interview application powered by xAI Grok.
 - SQLite persistence for interview sessions, transcripts and reports
 - Employer login and dashboard with interview search, candidate review, report and transcript
 - Employer-created candidate invitations with 72-hour expiring, hashed tokens and protected candidate API access
-- Candidate refresh recovery: invitation tokens are exchanged for session-scoped HttpOnly cookies; in-progress transcripts and elapsed interview time are restored after reload
+- Candidate refresh recovery: invitation tokens are exchanged through a POST request body for session-scoped HttpOnly cookies; refresh uses the cookie, and in-progress transcripts and elapsed interview time are restored after reload
+- Live WebRTC signaling authenticates through the same HttpOnly candidate cookie, so a refreshed candidate session can reconnect after granting camera/microphone permission
+- Automated unit tests cover interview time-limit boundaries, evidence quote integrity and employer login rate-limit policy
 - Employer review recommendation is advisory; hiring decisions remain human-led
 - Employer can record shortlist, review or reject decisions with notes and an immutable decision history
 
@@ -52,7 +54,7 @@ The dev command runs Prisma schema sync and starts Next.js. Open http://localhos
 Open http://localhost:3000/dashboard and sign in with `EMPLOYER_USERNAME` and `EMPLOYER_PASSWORD` from `.env.local`. Use **Invite candidate** to create an interview and generate a private link. Copy the link and send it to the candidate manually; outbound email delivery is not configured yet.
 
 ## Important current boundaries
-- After candidate consent and camera/microphone permission, audio-video recording starts automatically in both live and recorded modes. Candidates can stop recording; the recording is uploaded over an authenticated endpoint before the report screen is shown. The recording bytes are not stored in SQLite. Local development uses `data/recordings`; production requires private S3-compatible object storage configured with `S3_ENDPOINT`, `S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY_ID` and `S3_SECRET_ACCESS_KEY`. The bucket must remain private; never expose object credentials to the browser. Browser recording support and upload size limits apply (100 MB maximum).
+- After candidate consent and camera/microphone permission, audio-video recording starts automatically in both live and recorded modes. Candidates can stop recording; the recording is uploaded over an authenticated endpoint before the report screen is shown. The app warns before leaving while recording or upload is active, but browser recording chunks are currently held in memory until the upload completes; an unexpected tab/browser crash can still lose an unfinished recording. The recording bytes are not stored in SQLite. Local development uses `data/recordings`; production requires private S3-compatible object storage configured with `S3_ENDPOINT`, `S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY_ID` and `S3_SECRET_ACCESS_KEY`. The bucket must remain private; never expose object credentials to the browser. Browser recording support and upload size limits apply (100 MB maximum).
 - Voice input uses the browser Web Speech API and spoken interviewer prompts use browser speech synthesis. Availability and language quality vary by browser/device. Text entry remains available.
 - SQLite is suitable for local evaluation/single-machine use. For production or multiple app instances, move to managed PostgreSQL and configure secure private object storage. The current S3-compatible adapter uses path-style requests and AWS Signature Version 4; verify endpoint, bucket, region and credentials with a test upload before processing real candidates.
 - Candidate invitations are generated as expiring private links, but the app does not send emails automatically; employers copy and send the link themselves.
