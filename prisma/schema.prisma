@@ -38,8 +38,20 @@ model Interview {
   messages        InterviewMessage[]
   decisionHistory EmployerDecisionHistory[]
   signals         InterviewSignal[]
+  recordingAccessEvents RecordingAccessEvent[]
   @@index([createdAt])
   @@index([candidateName])
+}
+
+model RecordingAccessEvent {
+  id          String    @id @default(cuid())
+  interviewId String
+  method      String
+  outcome     String
+  createdAt   DateTime  @default(now())
+  interview   Interview @relation(fields: [interviewId], references: [id], onDelete: Cascade)
+
+  @@index([interviewId, createdAt])
 }
 
 model LoginAttempt {
@@ -73,7 +85,6 @@ model EmployerDecisionHistory {
 
   @@index([interviewId, createdAt])
 }
-
 
 model InterviewSignal {
   id          String    @id @default(cuid())
