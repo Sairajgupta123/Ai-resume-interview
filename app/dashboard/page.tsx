@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { buildCsv } from "@/lib/csv-export.mjs";
 import RecordingPlayer from "./recording-player";
+import { parseQuestionAssessment, summarizeQuestionAssessments } from "@/lib/report-view-policy.mjs";
 
 type Item = { id: string; candidateName: string; role: string; mode: string; status: string; overallScore: number | null; recommendation: string | null; employerDecision: string | null; durationSeconds: number; createdAt: string };
 type Detail = Item & { candidateEmail?: string | null; resumeText: string; jobDescription: string; recordingPath: string | null; reportJson: string | null; employerNotes: string | null; decisionAt: string | null; decisionHistory: { id: string; decision: string; notes: string | null; createdAt: string }[]; messages: { role: string; content: string }[] };
@@ -449,5 +450,48 @@ export default function Dashboard() {
 function ReportView({json}:{json:string}) {
   let report: any = {};
   try { report = JSON.parse(json); } catch { return <p>Report data could not be read.</p>; }
-  return <div className="drawer-report"><div className="drawer-score"><strong>{report.overallScore ?? "—"}</strong><span>/100 · {report.recommendation || "Needs review"}</span></div><p>{report.summary}</p><p className="drawer-sub">Evidence coverage: {Number.isFinite(report.evidenceCoverage) ? `${report.evidenceCoverage}% overall` : "Not available"} · {Number.isFinite(report.skillEvidenceCoverage) ? `${report.skillEvidenceCoverage}% job-related skills` : "Skill coverage not available"}</p><h3>Strengths</h3><ul>{(report.strengths||[]).map((x:string,i:number)=><li key={i}>{x}</li>)}</ul><h3>Development areas</h3><ul>{(report.improvementAreas||[]).map((x:string,i:number)=><li key={i}>{x}</li>)}</ul><h3>Skill assessment</h3>{(report.skills||[]).map((x:any,i:number)=><div className="drawer-skill" key={i}><b>{x.skill}</b><span>{x.rating}</span><p>{x.evidence}</p></div>)}<h3>Question-by-question evidence</h3>{(report.questionFeedback||[]).map((x:any,i:number)=><div className="drawer-skill" key={i}><b>Q{i+1}. {x.question}</b><p>{x.assessment}</p><small>Competencies: {Array.isArray(x.testedSkills) && x.testedSkills.length ? x.testedSkills.join(", ") : "No required skill mapping available"}</small><p><small>Evidence from this answer: {x.evidence}</small></p></div>)}</div>;
+  const skills = Array.isArray(report.skills) ? report.skills : [];
+  const questions = Array.isArray(report.questionFeedback) ? report.questionFeedback : [];
+  const questionSummary = summarizeQuestionAssessments(questions);
+  const statusCounts = [
+    { label: "Correct", value: questionSummary.Correct },
+    { label: "Partially correct", value: questionSummary["Partially correct"] },
+    { label: "Incorrect", value: questionSummary.Incorrect },
+    { label: "Unanswered", value: questionSummary.Unanswered },
+    { label: "Unclassified", value: questionSummary.Unclassified }
+  ].filter(item => item.value > 0);
+  return <div className="drawer-report">
+    <div className="drawer-score"><strong>{report.overallScore ?? "—"}</strong><span>/100 · {report.recommendation || "Needs review"}</span></div>
+    <p>{report.summary || "No summary was provided."}</p>
+    <p className="drawer-sub">Evidence coverage: {Number.isFinite(report.evidenceCoverage) ? `${report.evidenceCoverage}% overall` : "Not available"} · {Number.isFinite(report.skillEvidenceCoverage) ? `${report.skillEvidenceCoverage}% job-related skills` : "Skill coverage not available"}</p>
+    <p className="report-review-note">AI recommendations are advisory. Missing evidence means the interview did not establish the competency; it does not prove the candidate lacks that skill.</p>
+    <h3>Strengths</h3>
+    {Array.isArray(report.strengths) && report.strengths.length ? <ul>{report.strengths.map((x:string,i:number)=><li key={i}>{x}</li>)}</ul> : <p className="report-empty">No strengths were recorded.</p>}
+    <h3>Development areas</h3>
+    {Array.isArray(report.improvementAreas) && report.improvementAreas.length ? <ul>{report.improvementAreas.map((x:string,i:number)=><li key={i}>{x}</li>)}</ul> : <p className="report-empty">No development areas were recorded.</p>}
+    <div className="report-section-heading"><h3>Job-related skill assessment</h3><small>{skills.length} competencies assessed</small></div>
+    {skills.length ? <div className="report-skill-list">{skills.map((x:any,i:number)=>{
+      const rating = typeof x.rating === "string" ? x.rating : "Insufficient evidence";
+      const ratingClass = rating.toLowerCase().replaceAll(" ", "-");
+      const hasEvidence = typeof x.evidence === "string" && x.evidence !== "Insufficient evidence";
+      return <article className="report-skill-card" key={`${x.skill || "skill"}-${i}`}>
+        <div className="report-skill-heading"><b>{x.skill || "Unnamed competency"}</b><span className={`report-rating rating-${ratingClass}`}>{rating}</span></div>
+        <p>{hasEvidence ? x.evidence : "Insufficient interview evidence was available to assess this competency."}</p>
+      </article>;
+    })}</div> : <p className="report-empty">No job-related skill assessments are available.</p>}
+    <div className="report-section-heading"><h3>Question-by-question review</h3><small>{questionSummary.total} questions</small></div>
+    {statusCounts.length > 0 && <div className="report-question-summary">{statusCounts.map(item=><span className={`question-count count-${item.label.toLowerCase().replaceAll(" ", "-")}`} key={item.label}><b>{item.value}</b> {item.label}</span>)}</div>}
+    {questions.length ? questions.map((x:any,i:number)=>{
+      const assessment = parseQuestionAssessment(x.assessment);
+      const statusClass = assessment.status.toLowerCase().replaceAll(" ", "-");
+      const evidenceAvailable = typeof x.evidence === "string" && x.evidence !== "Insufficient evidence";
+      return <article className="report-question-card" key={i}>
+        <div className="report-question-heading"><b>Q{i+1}. {x.question || "Interview question"}</b><span className={`question-status status-${statusClass}`}>{assessment.status}</span></div>
+        <p>{assessment.detail || (assessment.status === "Unanswered" ? "No candidate answer was recorded for this question." : "No explanation was provided.")}</p>
+        <small className="report-competencies">Competencies: {Array.isArray(x.testedSkills) && x.testedSkills.length ? x.testedSkills.join(", ") : "No required skill mapping available"}</small>
+        <div className="report-answer-evidence"><small>Evidence from this answer</small><p>{evidenceAvailable ? x.evidence : "Insufficient evidence from the paired answer."}</p></div>
+      </article>;
+    }) : <p className="report-empty">No question-level evidence is available.</p>}
+    {report.disclaimer && <p className="report-review-note">{report.disclaimer}</p>}
+  </div>;
 }
