@@ -98,12 +98,15 @@ async function readRecording(storedPath: string) {
 
 async function deleteRecording(storedPath: string) {
   if (isRemoteRecordingPath(storedPath)) {
-    await s3Request("DELETE", recordingObjectKey(storedPath)).catch(() => undefined);
+    await s3Request("DELETE", recordingObjectKey(storedPath));
     return;
   }
   const normalized = storedPath.replace(/\\/g, "/");
   const filename = normalized.split("/").pop() || "";
-  if (normalized === "data/recordings/" + filename && isSafeRecordingFilename(filename)) await unlink(join(process.cwd(), "data", "recordings", filename)).catch(() => undefined);
+  if (normalized !== "data/recordings/" + filename || !isSafeRecordingFilename(filename)) {
+    throw new Error("Recording storage reference is invalid.");
+  }
+  await unlink(join(process.cwd(), "data", "recordings", filename));
 }
 
 export async function POST(request: NextRequest, context: Context) {
@@ -145,15 +148,38 @@ export async function POST(request: NextRequest, context: Context) {
 
     const filename = randomUUID() + extension;
     const relativePath = await saveRecording(bytes, mimeType, filename);
-    const saved = await db.interview.updateMany({
-      where: { id, status: { not: "completed" }, recordingPath: interview.recordingPath },
-      data: { recordingPath: relativePath }
-    });
+    let saved;
+    try {
+      saved = await db.interview.updateMany({
+        where: { id, status: "in_progress", recordingPath: interview.recordingPath },
+        data: { recordingPath: relativePath }
+      });
+    } catch (databaseError) {
+      try {
+        await deleteRecording(relativePath);
+      } catch (cleanupError) {
+        console.error("Recording cleanup failed after database update error.", cleanupError);
+      }
+      throw databaseError;
+    }
+
     if (saved.count !== 1) {
-      await deleteRecording(relativePath);
+      try {
+        await deleteRecording(relativePath);
+      } catch (cleanupError) {
+        console.error("Recording cleanup failed after concurrent interview update.", cleanupError);
+      }
       return NextResponse.json({ error: "The interview changed while this recording was uploading. Please retry." }, { status: 409 });
     }
-    if (interview.recordingPath) await deleteRecording(interview.recordingPath);
+
+    if (interview.recordingPath) {
+      try {
+        await deleteRecording(interview.recordingPath);
+      } catch (cleanupError) {
+        // The new recording is already committed. Log old-object cleanup failure for operational follow-up.
+        console.error("Previous recording cleanup failed after replacement.", cleanupError);
+      }
+    }
     return NextResponse.json({ ok: true, message: "Recording saved to private storage." });
   } catch (error) {
     const message = error instanceof Error ? error.message : "";
