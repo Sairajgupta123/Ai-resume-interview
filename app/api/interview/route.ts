@@ -163,7 +163,7 @@ function validateReport(raw: any, candidateAnswers: string[], requiredSkills: st
   });
   // A skill rating must be grounded in the answer to a question mapped to
   // that same required skill. Quotes from unrelated answers are not enough.
-  const supportedReportedSkills = reportedSkills.map(item => {
+  const supportedReportedSkills: Array<{ skill: string; rating: "Strong" | "Good" | "Developing" | "Insufficient evidence"; evidence: string }> = reportedSkills.map(item => {
     const linked = isSkillEvidenceLinkedToQuestion(item.skill, item.evidence, questionFeedback);
     return linked
       ? item
