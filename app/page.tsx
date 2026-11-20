@@ -220,7 +220,7 @@ export default function Home() {
       const initial = [{ role: "assistant" as const, content: data.message }];
       setHistory(initial);
       setPhase("interview"); setSeconds(0); speak(data.message);
-      await enableCamera();
+      await enableCamera(activeSessionId, activeInviteToken);
     } catch (e) { setError(e instanceof Error ? e.message : "Could not start interview."); }
     finally { setBusy(false); }
   };
@@ -265,7 +265,7 @@ export default function Home() {
     finally { setBusy(false); }
   };
 
-  const startRecording = (stream: MediaStream) => {
+  const startRecording = (stream: MediaStream, targetSessionId = sessionId, targetInviteToken = inviteToken) => {
     if (typeof MediaRecorder === "undefined") {
       setError("Video recording is not supported in this browser. You can continue the interview, but no video file will be saved.");
       return;
@@ -297,13 +297,13 @@ export default function Home() {
           const extension = type.includes("mp4") ? "mp4" : "webm";
           const filename = `mzobs-interview-${Date.now()}.${extension}`;
           const blob = new Blob(chunks, { type });
-          if (!sessionId) throw new Error("Interview session is not available for recording upload.");
+          if (!targetSessionId) throw new Error("Interview session is not available for recording upload.");
           if (blob.size < 1) throw new Error("The browser did not produce a video recording. Please retry.");
           const form = new FormData();
           form.append("recording", blob, filename);
-          const response = await fetch(`/api/sessions/${sessionId}/recording`, {
+          const response = await fetch(`/api/sessions/${targetSessionId}/recording`, {
             method: "POST",
-            headers: inviteToken ? { "x-interview-invite": inviteToken } : {},
+            headers: targetInviteToken ? { "x-interview-invite": targetInviteToken } : {},
             body: form
           });
           const data = await response.json();
@@ -328,13 +328,13 @@ export default function Home() {
     }
   };
 
-  const enableCamera = async () => {
+  const enableCamera = async (targetSessionId = sessionId, targetInviteToken = inviteToken) => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
       streamRef.current = stream;
       if (videoRef.current) videoRef.current.srcObject = stream;
       setCameraOn(true);
-      startRecording(stream);
+      startRecording(stream, targetSessionId, targetInviteToken);
     } catch { setError("Camera/microphone permission was not granted. You can still answer by typing."); }
   };
 
