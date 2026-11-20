@@ -195,14 +195,21 @@ test("privacy deletion transaction removes interview data and retains an anonymi
       data: {
         interviewId: interview.id,
         candidateNameSnapshot: interview.candidateName,
-        candidateEmailSnapshot: null,
+        candidateEmailSnapshot: "candidate@example.test",
         roleSnapshot: interview.role,
-        reason: "Integration test deletion",
+        reason: "Private deletion reason with candidate@example.test",
         requestedBy: "candidate",
         status: "deletion_in_progress",
         verifiedAt: new Date(),
         executionStartedAt: new Date(),
-        executionLeaseToken: "current-worker-token"
+        executionLeaseToken: "current-worker-token",
+        events: {
+          create: [{
+            action: "verification_email_sent",
+            actor: "system",
+            details: "Sent private verification link to candidate@example.test"
+          }]
+        }
       }
     });
 
@@ -224,11 +231,17 @@ test("privacy deletion transaction removes interview data and retains an anonymi
     assert.equal(receipt.status, "deletion_completed");
     assert.equal(receipt.interviewId, `deleted:${request.id}`);
     assert.equal(receipt.candidateNameSnapshot, "[deleted]");
+    assert.equal(receipt.candidateEmailSnapshot, null);
     assert.equal(receipt.roleSnapshot, "[deleted]");
+    assert.equal(receipt.reason, "Candidate data deletion completed.");
+    assert.equal(receipt.verificationTokenHash, null);
+    assert.equal(receipt.verificationExpiresAt, null);
+    assert.equal(receipt.lastErrorCode, null);
     assert.equal(receipt.executionLeaseToken, null);
-    assert.equal(receipt.events.length, 1);
-
-    assert.equal(receipt.events[0].action, "deletion_completed");
+    assert.equal(receipt.events.length, 2);
+    assert.equal(receipt.events.some(event => event.action === "deletion_completed"), true);
+    assert.equal(receipt.events.every(event => event.details === "Workflow metadata retained for deletion accountability; candidate content is not retained."), true);
+    assert.equal(receipt.events.some(event => event.details?.includes("candidate@example.test")), false);
 
     // Finalization must bind the lease to the interview recorded on the request.
     const boundInterview = await prisma.interview.create({
