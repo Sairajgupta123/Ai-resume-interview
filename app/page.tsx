@@ -250,7 +250,7 @@ export default function Home() {
       const initial = [{ role: "assistant" as const, content: data.message }];
       if (history.length === 0) setHistory(initial);
       setPhase("interview"); speak(data.message);
-      await enableCamera(activeSessionId, activeInviteToken);
+      await enableCamera(activeSessionId);
     } catch (e) { setError(e instanceof Error ? e.message : "Could not start interview."); }
     finally { setBusy(false); }
   };
@@ -327,7 +327,7 @@ export default function Home() {
     }
   };
 
-  const startRecording = (stream: MediaStream, targetSessionId = sessionId, targetInviteToken = inviteToken) => {
+  const startRecording = (stream: MediaStream, targetSessionId = sessionId) => {
     if (typeof MediaRecorder === "undefined") {
       setError("Video recording is not supported in this browser. You can continue the interview, but no video file will be saved.");
       return;
@@ -393,6 +393,11 @@ export default function Home() {
           settleCompletion(true);
         } catch (error) {
           setError(error instanceof Error ? error.message : "Could not upload recording.");
+          if (targetSessionId) {
+            void getCachedRecording(targetSessionId).then(cached => {
+              if (cached?.chunks.length) setRecoverableRecording(true);
+            }).catch(() => {});
+          }
           settleCompletion(false);
         } finally {
           recordingUploadInProgressRef.current = false;
@@ -408,13 +413,13 @@ export default function Home() {
     }
   };
 
-  const enableCamera = async (targetSessionId = sessionId, targetInviteToken = inviteToken) => {
+  const enableCamera = async (targetSessionId = sessionId) => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
       streamRef.current = stream;
       if (videoRef.current) videoRef.current.srcObject = stream;
       setCameraOn(true);
-      startRecording(stream, targetSessionId, targetInviteToken);
+      startRecording(stream, targetSessionId);
     } catch { setError("Camera/microphone permission was not granted. You can still answer by typing."); }
   };
 
