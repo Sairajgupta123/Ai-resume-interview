@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { isEmployerAuthenticated } from "@/lib/auth";
 import { createDeletionVerificationToken, hashDeletionVerificationToken, DELETION_VERIFICATION_TTL_MS, DELETION_VERIFICATION_RESEND_COOLDOWN_MS, canSendDeletionVerification } from "@/lib/deletion-verification-policy.mjs";
-import { reserveDeletionVerificationEmail } from "@/lib/deletion-verification-service.mjs";
+import { reserveDeletionVerificationEmail, recordDeletionVerificationEmailSent } from "@/lib/deletion-verification-service.mjs";
 
 export const runtime = "nodejs";
 type Context = { params: Promise<{ id: string }> };
@@ -81,8 +81,11 @@ export async function POST(request: Request, context: Context) {
     return NextResponse.json({ error: "Verification email could not be sent. You can safely retry; no data has been deleted." }, { status: 502, headers: { "Cache-Control": "no-store" } });
   }
 
-  await db.privacyDeletionEvent.create({
-    data: { requestId: deletion.id, action: "verification_email_sent", actor: "employer", details: "A time-limited verification link was sent to the candidate email stored on the interview." }
-  });
+  const auditRecorded = await recordDeletionVerificationEmailSent(db, deletion.id, tokenHash);
+  if (!auditRecorded) {
+    return NextResponse.json({
+      error: "The email was sent, but this verification link has since been replaced. Ask the candidate to use the newest email."
+    }, { status: 409, headers: { "Cache-Control": "no-store" } });
+  }
   return NextResponse.json({ ok: true, expiresAt, message: "Verification email sent. The candidate must open the link and confirm. No data has been deleted." }, { headers: { "Cache-Control": "no-store" } });
 }
