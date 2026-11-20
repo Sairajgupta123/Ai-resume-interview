@@ -126,7 +126,7 @@ export async function POST(request: NextRequest, context: Context) {
     if (!employer && !candidate) return NextResponse.json({ error: "Unauthorized recording upload." }, { status: 401 });
 
     const contentLength = Number(request.headers.get("content-length") || 0);
-    if (contentLength > MAX_RECORDING_BYTES + 1024 * 1024) {
+    if (contentLength < 0 || contentLength > MAX_RECORDING_BYTES + 1024 * 1024) {
       return NextResponse.json({ error: "Recording upload exceeds the 100 MB limit." }, { status: 413 });
     }
     const form = await request.formData();
