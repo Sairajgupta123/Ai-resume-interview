@@ -167,7 +167,7 @@ export async function POST(request: NextRequest) {
         where: { id: body.sessionId },
         select: {
           invitationTokenHash: true, status: true, candidateName: true, role: true,
-          resumeText: true, jobDescription: true, mode: true, startedAt: true, consentAcceptedAt: true
+          resumeText: true, jobDescription: true, mode: true, startedAt: true, consentAcceptedAt: true, inviteExpiresAt: true
         }
       });
       if (!session) return NextResponse.json({ error: "Interview session not found." }, { status: 404 });
@@ -265,7 +265,20 @@ export async function POST(request: NextRequest) {
             });
           });
         }
-        return NextResponse.json(parsed);
+        const response = NextResponse.json(parsed);
+        if (body.sessionId) {
+          const invitationToken = getCandidateInvitationToken(request, body.sessionId);
+          if (invitationToken && session.inviteExpiresAt) {
+            response.cookies.set(candidateInvitationCookieName(body.sessionId), invitationToken, {
+              httpOnly: true,
+              secure: process.env.NODE_ENV === "production",
+              sameSite: "lax",
+              path: "/",
+              maxAge: Math.max(0, Math.floor((session.inviteExpiresAt.getTime() - Date.now()) / 1000))
+            });
+          }
+        }
+        return response;
       } finally {
         if (body.sessionId && startLockAt) {
           await db.interview.updateMany({
