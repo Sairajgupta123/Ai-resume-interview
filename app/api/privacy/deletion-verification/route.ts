@@ -8,13 +8,18 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const token = typeof body.token === "string" ? body.token : "";
-    if (token.length < 32 || token.length > 256) return NextResponse.json({ error: "Verification link is invalid or expired." }, { status: 400, headers: { "Cache-Control": "no-store" } });
+    const requestId = typeof body.requestId === "string" ? body.requestId : "";
+    if (!requestId || token.length < 32 || token.length > 256) return NextResponse.json({ error: "Verification link is invalid or expired." }, { status: 400, headers: { "Cache-Control": "no-store" } });
     const tokenHash = hashDeletionVerificationToken(token);
-    const deletion = await db.privacyDeletionRequest.findUnique({ where: { verificationTokenHash: tokenHash } });
+    const deletion = await db.privacyDeletionRequest.findUnique({ where: { id: requestId } });
     if (!deletion || !canVerifyDeletionRequest(deletion)) {
       return NextResponse.json({ error: "Verification link is invalid, expired, or no longer active." }, { status: 400, headers: { "Cache-Control": "no-store" } });
     }
     if (!verifyDeletionVerificationToken(token, deletion.verificationTokenHash)) {
+      await db.privacyDeletionRequest.updateMany({
+        where: { id: deletion.id, status: "pending_candidate_verification", verificationAttempts: { lt: 5 } },
+        data: { verificationAttempts: { increment: 1 } }
+      });
       return NextResponse.json({ error: "Verification link is invalid or expired." }, { status: 400, headers: { "Cache-Control": "no-store" } });
     }
     const result = await db.$transaction(async tx => {
