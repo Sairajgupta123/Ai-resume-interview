@@ -174,7 +174,12 @@ function validateReport(raw: any, candidateAnswers: string[], requiredSkills: st
   if (hasDuplicateSkills(skills)) {
     throw new Error("AI report validation failed: duplicate or empty skill names.");
   }
-  const publicQuestionFeedback = questionFeedback.map(({ pairedAnswer: _pairedAnswer, ...item }) => item);
+  const publicQuestionFeedback = questionFeedback.map(item => ({
+    question: item.question,
+    assessment: item.assessment,
+    evidence: item.evidence,
+    testedSkills: item.testedSkills
+  }));
   const evidenceCoverage = calculateEvidenceCoverage([...skills, ...publicQuestionFeedback]);
   const skillEvidenceCoverage = calculateEvidenceCoverage(skills);
   return {
