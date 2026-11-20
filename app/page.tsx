@@ -85,9 +85,15 @@ export default function Home() {
         // The response has now set the HttpOnly cookie; remove the bearer token safely.
         window.history.replaceState({}, "", `/?candidateInterviewId=${encodeURIComponent(invitedId)}`);
         setSessionId(interview.id);
-        void getCachedRecording(interview.id).then(cached => {
-          if (cached?.chunks.length) setRecoverableRecording(true);
-        }).catch(() => setError("A locally saved recording could not be checked. Your interview answers remain available."));
+        if (interview.recordingSaved) {
+          recordingSavedRef.current = true;
+          setRecordingSaved(true);
+          void clearCachedRecording(interview.id).catch(() => {});
+        } else {
+          void getCachedRecording(interview.id).then(cached => {
+            if (cached?.chunks.length) setRecoverableRecording(true);
+          }).catch(() => setError("A locally saved recording could not be checked. Your interview answers remain available."));
+        }
         setCandidateName(interview.candidateName);
         setRole(interview.role);
         setResume(interview.resumeText);
