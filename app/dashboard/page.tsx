@@ -23,6 +23,7 @@ export default function Dashboard() {
   const [analyticsError, setAnalyticsError] = useState("");
   const [auditEvents, setAuditEvents] = useState<any[]>([]);
   const [auditError, setAuditError] = useState("");
+  const [recordingAccessEvents, setRecordingAccessEvents] = useState<any[]>([]);
   const [retentionPreview, setRetentionPreview] = useState<any | null>(null);
   const [retentionError, setRetentionError] = useState("");
   const [deletionRequests, setDeletionRequests] = useState<any[]>([]);
@@ -144,6 +145,7 @@ export default function Dashboard() {
       const auditData = await auditResponse.json();
       if (!auditResponse.ok) throw new Error(auditData.error || "Audit history unavailable.");
       setAuditEvents(auditData.events || []);
+      setRecordingAccessEvents(auditData.recordingEvents || []);
       setAuditError("");
       const retentionResponse = await fetch("/api/employer/privacy/retention", { cache: "no-store" });
       const retentionData = await retentionResponse.json();
@@ -392,6 +394,22 @@ export default function Dashboard() {
         {!auditEvents.length && <tr><td colSpan={6} className="empty-cell">Employer decisions will appear here after they are recorded.</td></tr>}
       </tbody></table></div>}
       <p className="analytics-disclaimer">This feed records hiring decisions and notes. It is not a complete security access log and does not record every page view or data access.</p>
+    </section>
+    <section className="dashboard-table-card audit-card recording-access-card">
+      <div className="table-heading"><div><div className="eyebrow">RECORDING SECURITY</div><h2>Recording access history</h2><p>Latest 100 authorized recording response events.</p></div><span className="analytics-updated">Newest first</span></div>
+      {auditError && <div className="error-box">{auditError}</div>}
+      {!auditError && <div className="table-scroll"><table><thead><tr><th>DATE &amp; TIME</th><th>CANDIDATE</th><th>ROLE</th><th>REQUEST</th><th>RECORDED OUTCOME</th><th /></tr></thead><tbody>
+        {recordingAccessEvents.map((event: any) => <tr key={event.id}>
+          <td>{date(event.createdAt)}</td>
+          <td>{event.interview.candidateName}</td>
+          <td>{event.interview.role}</td>
+          <td><span className="recording-method">{event.method}</span></td>
+          <td>{String(event.outcome).replaceAll("_", " ")}</td>
+          <td><button className="view-btn" onClick={() => openDetail(event.interview.id)}>Review →</button></td>
+        </tr>)}
+        {!recordingAccessEvents.length && <tr><td colSpan={6} className="empty-cell">Recording access events will appear when an authorized employer requests a recording.</td></tr>}
+      </tbody></table></div>}
+      <p className="analytics-disclaimer">A GET or HEAD event means the server prepared an authorized response. It does not confirm that the video played, was watched, or was watched in full. Browser playback may generate multiple requests for one viewing. Only minimal access metadata is shown here.</p>
     </section>
     {compared.length > 0 && <section className="dashboard-table-card"><div className="table-heading"><div><h2>Candidate comparison</h2><p>Compare up to three candidates side by side. AI scores are advisory, not hiring decisions.</p></div><button className="outline-btn" onClick={runEvidenceComparison} disabled={compareIds.length < 2 || comparisonBusy}>{comparisonBusy ? "Comparing…" : "Compare skill evidence"}</button><button className="outline-btn" onClick={() => { setCompareIds([]); setComparison(null); }}>Clear comparison</button></div><div className="table-scroll"><table><thead><tr><th>Measure</th>{compared.map(item=><th key={item.id}>{item.candidateName}<small> · {item.role}</small></th>)}</tr></thead><tbody>{([{label:"AI score",value:(item:Item)=>item.overallScore === null ? "—" : `${item.overallScore}/100`},{label:"AI recommendation",value:(item:Item)=>item.recommendation || "—"},{label:"Employer decision",value:(item:Item)=>item.employerDecision || "Pending"},{label:"Interview status",value:(item:Item)=>item.status},{label:"Interview mode",value:(item:Item)=>item.mode},{label:"Duration",value:(item:Item)=>`${Math.floor(item.durationSeconds/60)}m ${item.durationSeconds%60}s`}]).map(metric=><tr key={metric.label}><th>{metric.label}</th>{compared.map(item=><td key={item.id}>{metric.value(item)}</td>)}</tr>)}</tbody></table></div>
       {comparison && <div className="evidence-comparison">
