@@ -20,6 +20,29 @@ jobs:
           node-version: 20
       - name: Install dependencies
         run: npm install
+      - name: Dependency security audit (report only)
+        run: |
+          npm audit --json > "$RUNNER_TEMP/npm-audit.json" || true
+          node -e '
+            const report = require(process.argv[1]);
+            const entries = Object.entries(report.vulnerabilities || {});
+            console.log("Vulnerability summary:", JSON.stringify(report.metadata?.vulnerabilities || {}));
+            for (const [name, item] of entries) {
+              console.log(JSON.stringify({
+                package: name,
+                severity: item.severity,
+                direct: item.isDirect,
+                range: item.range,
+                fixAvailable: item.fixAvailable,
+                advisories: (item.via || []).filter(v => typeof v === "object").map(v => ({
+                  title: v.title,
+                  url: v.url,
+                  range: v.range,
+                  severity: v.severity
+                }))
+              }));
+            }
+          ' "$RUNNER_TEMP/npm-audit.json"
       - name: Unit tests
         run: npm test
       - name: Type check
