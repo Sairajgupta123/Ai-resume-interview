@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { isEmployerAuthenticated } from "@/lib/auth";
 import { createDeletionVerificationToken, hashDeletionVerificationToken, DELETION_VERIFICATION_TTL_MS, DELETION_VERIFICATION_RESEND_COOLDOWN_MS, canSendDeletionVerification } from "@/lib/deletion-verification-policy.mjs";
-import { reserveDeletionVerificationEmail, recordDeletionVerificationEmailSent } from "@/lib/deletion-verification-service.mjs";
+import { reserveDeletionVerificationEmail, recordDeletionVerificationEmailSent, recordDeletionVerificationEmailFailure } from "@/lib/deletion-verification-service.mjs";
 
 export const runtime = "nodejs";
 type Context = { params: Promise<{ id: string }> };
@@ -65,19 +65,8 @@ export async function POST(request: Request, context: Context) {
   }
 
   if (!deliverySucceeded) {
-    // Clear only this attempt's token; a newer resend must remain untouched.
-    await db.privacyDeletionRequest.updateMany({
-      where: {
-        id: deletion.id,
-        status: "pending_candidate_verification",
-        verificationTokenHash: hashDeletionVerificationToken(token)
-      },
-      data: {
-        verificationTokenHash: null,
-        verificationExpiresAt: null,
-        verificationSentAt: null
-      }
-    });
+    // Invalidate only this attempt's token and audit the failure atomically.
+    await recordDeletionVerificationEmailFailure(db, deletion.id, tokenHash);
     return NextResponse.json({ error: "Verification email could not be sent. You can safely retry; no data has been deleted." }, { status: 502, headers: { "Cache-Control": "no-store" } });
   }
 
