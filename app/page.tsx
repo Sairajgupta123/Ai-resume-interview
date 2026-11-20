@@ -295,6 +295,38 @@ export default function Home() {
     finally { setBusy(false); }
   };
 
+  const recoverSavedRecording = async () => {
+    if (!sessionId || recordingUploadInProgressRef.current) return;
+    recordingUploadInProgressRef.current = true;
+    setUploadingRecording(true);
+    setError("");
+    try {
+      const cached = await getCachedRecording(sessionId);
+      if (!cached || cached.chunks.length === 0) throw new Error("No recoverable recording segments were found.");
+      const blob = new Blob(cached.chunks, { type: cached.mimeType || "video/webm" });
+      if (blob.size < 1) throw new Error("The recovered recording is empty.");
+      const extension = cached.mimeType.includes("mp4") ? "mp4" : "webm";
+      const form = new FormData();
+      form.append("recording", blob, `mzobs-recovered-${Date.now()}.${extension}`);
+      const response = await fetch(`/api/sessions/${sessionId}/recording`, {
+        method: "POST",
+        credentials: "same-origin",
+        body: form
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Could not recover the saved recording.");
+      await clearCachedRecording(sessionId);
+      setRecoverableRecording(false);
+      setRecordingSaved(true);
+      recordingSavedRef.current = true;
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Could not recover the saved recording.");
+    } finally {
+      recordingUploadInProgressRef.current = false;
+      setUploadingRecording(false);
+    }
+  };
+
   const startRecording = (stream: MediaStream, targetSessionId = sessionId, targetInviteToken = inviteToken) => {
     if (typeof MediaRecorder === "undefined") {
       setError("Video recording is not supported in this browser. You can continue the interview, but no video file will be saved.");
