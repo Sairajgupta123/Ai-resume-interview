@@ -89,7 +89,10 @@ export async function POST(request: NextRequest, context: Context) {
       request: result.created,
       message: "Deletion request recorded. Candidate verification and a separate approval are still required; no candidate data has been deleted."
     }, { status: 201, headers: { "Cache-Control": "no-store" } });
-  } catch {
+  } catch (error) {
+    if (typeof error === "object" && error !== null && "code" in error && error.code === "P2002") {
+      return NextResponse.json({ error: "A deletion request already exists for this interview." }, { status: 409, headers: { "Cache-Control": "no-store" } });
+    }
     return NextResponse.json({ error: "Could not create the privacy deletion request." }, { status: 500, headers: { "Cache-Control": "no-store" } });
   }
 }
