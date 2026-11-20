@@ -102,10 +102,6 @@ function validateReport(raw: any, candidateAnswers: string[]) {
   if (!Number.isInteger(raw.overallScore) || raw.overallScore < 0 || raw.overallScore > 100) {
     throw new Error("AI report validation failed: overall score must be an integer from 0 to 100.");
   }
-  const recommendations = ["Strong match", "Consider", "Needs review"];
-  if (!recommendations.includes(raw.recommendation)) {
-    throw new Error("AI report validation failed: recommendation is not supported.");
-  }
   const validateEvidence = (value: unknown, field: string) => {
     const evidence = boundedText(value, field, 1200);
     if (!isVerifiableEvidenceQuote(evidence, candidateAnswers)) {
