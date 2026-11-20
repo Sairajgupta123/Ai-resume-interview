@@ -149,3 +149,15 @@ test("provides a consistent evidence-based rubric for skill ratings", async () =
   assert.match(guidance, /answer length, speaking speed, accent/);
   assert.match(guidance, /concrete action, design, debugging step, or outcome/);
 });
+
+
+test("provides consistent labels for correct, partial, incorrect and unanswered responses", async () => {
+  const { buildQuestionAssessmentGuidance } = await import("../lib/evaluation-policy.mjs");
+  const guidance = buildQuestionAssessmentGuidance();
+  for (const label of ["Correct", "Partially correct", "Incorrect", "Unanswered"]) {
+    assert.match(guidance, new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, "\\\\$&")));
+  }
+  assert.match(guidance, /conflict.*human review/i);
+  assert.match(guidance, /Do not infer dishonesty/);
+  assert.match(guidance, /candidate answer immediately following that question/);
+});
