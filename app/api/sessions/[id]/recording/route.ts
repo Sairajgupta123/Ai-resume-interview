@@ -66,6 +66,17 @@ async function s3Request(method: "PUT" | "GET" | "HEAD" | "DELETE", key: string,
   return response;
 }
 
+async function recordRecordingAccess(interviewId: string, method: "GET" | "HEAD") {
+  try {
+    await db.recordingAccessEvent.create({
+      data: { interviewId, method, outcome: "response_prepared" }
+    });
+  } catch (error) {
+    // Audit persistence must never interrupt an authorized recording response.
+    console.error("Recording access audit write failed.", error);
+  }
+}
+
 function isRemoteRecordingPath(value: string) {
   return value.startsWith("s3://");
 }
@@ -254,10 +265,12 @@ export async function GET(request: NextRequest, context: Context) {
         await response.body?.cancel();
         throw new Error("Recording storage returned inconsistent playback metadata.");
       }
+      await recordRecordingAccess(id, "GET");
       return new NextResponse(response.body, { status, headers: baseHeaders });
     }
 
     const stream = createReadStream(localRecordingPath(storedPath), { start, end });
+    await recordRecordingAccess(id, "GET");
     return new NextResponse(Readable.toWeb(stream) as ReadableStream, { status, headers: baseHeaders });
   } catch (error) {
     const remote = isRemoteRecordingPath(interview.recordingPath);
@@ -281,6 +294,7 @@ export async function HEAD(_request: NextRequest, context: Context) {
       : storedPath.split("/").pop() || "";
     const size = await recordingSize(storedPath);
     const contentType = filename.endsWith(".mp4") ? "video/mp4" : filename.endsWith(".mov") ? "video/quicktime" : "video/webm";
+    await recordRecordingAccess(id, "HEAD");
     return new NextResponse(null, {
       status: 200,
       headers: {
