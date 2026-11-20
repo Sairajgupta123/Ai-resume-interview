@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
 import { createDeletionVerificationToken, hashDeletionVerificationToken } from "../lib/deletion-verification-policy.mjs";
+import { approveVerifiedDeletionRequest } from "../lib/deletion-approval-service.mjs";
 
 test("privacy deletion transaction removes interview data and retains an anonymized receipt", async () => {
   const tempDir = await mkdtemp(join(tmpdir(), "ai-interview-deletion-"));
@@ -178,27 +179,9 @@ test("privacy deletion transaction removes interview data and retains an anonymi
     });
     assert.equal(prematureApproval.count, 0);
 
-    const employerApproval = await prisma.$transaction(async tx => {
-      const changed = await tx.privacyDeletionRequest.updateMany({
-        where: {
-          id: lifecycleRequest.id,
-          status: "verified_pending_approval",
-          verifiedAt: { not: null }
-        },
-        data: { status: "approved_for_deletion" }
-      });
-      if (changed.count !== 1) return false;
-      await tx.privacyDeletionEvent.create({
-        data: {
-          requestId: lifecycleRequest.id,
-          action: "employer_approved",
-          actor: "employer",
-          details: "Lifecycle integration test; execution remains separate."
-        }
-      });
-      return true;
-    });
+    const employerApproval = await approveVerifiedDeletionRequest(prisma, lifecycleRequest.id);
     assert.equal(employerApproval, true);
+    assert.equal(await approveVerifiedDeletionRequest(prisma, lifecycleRequest.id), false);
     const lifecycleReceipt = await prisma.privacyDeletionRequest.findUnique({
       where: { id: lifecycleRequest.id },
       include: { events: true }
