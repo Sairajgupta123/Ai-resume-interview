@@ -99,17 +99,17 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (phase !== "interview" || mode !== "live" || !cameraOn || !sessionId || !inviteToken || !streamRef.current) return;
+    if (phase !== "interview" || mode !== "live" || !cameraOn || !sessionId || !streamRef.current) return;
     let stopped = false;
     let timer: number | undefined;
     let peer: RTCPeerConnection | null = null;
     let cursor = "";
     let cursorId = "";
     const pendingIce: RTCIceCandidateInit[] = [];
-    const headers = { "Content-Type": "application/json", "x-interview-invite": inviteToken };
+    const headers = { "Content-Type": "application/json" };
     const init = async () => {
       try {
-        const iceResponse = await fetch(`/api/sessions/${sessionId}/ice`, { headers: { "x-interview-invite": inviteToken }, cache: "no-store" });
+        const iceResponse = await fetch(`/api/sessions/${sessionId}/ice`, { headers: {}, credentials: "same-origin", cache: "no-store" });
         if (!iceResponse.ok) throw new Error("Could not load secure live video connection settings.");
         const { iceServers } = await iceResponse.json();
         if (stopped) return;
@@ -121,13 +121,13 @@ export default function Home() {
         streamRef.current!.getTracks().forEach(track => peer!.addTrack(track, streamRef.current!));
         peer.onicecandidate = event => {
           if (event.candidate && !stopped) void fetch(`/api/sessions/${sessionId}/signals`, {
-            method: "POST", headers, body: JSON.stringify({ kind: "ice", payload: JSON.stringify(event.candidate.toJSON()) })
+            method: "POST", headers, credentials: "same-origin", body: JSON.stringify({ kind: "ice", payload: JSON.stringify(event.candidate.toJSON()) })
           });
         };
         const offer = await peer.createOffer();
         await peer.setLocalDescription(offer);
         const offerResponse = await fetch(`/api/sessions/${sessionId}/signals`, {
-          method: "POST", headers, body: JSON.stringify({ kind: "offer", payload: JSON.stringify(peer.localDescription) })
+          method: "POST", headers, credentials: "same-origin", body: JSON.stringify({ kind: "offer", payload: JSON.stringify(peer.localDescription) })
         });
         if (!offerResponse.ok) throw new Error("Could not start live video call.");
         let polling = false;
@@ -135,7 +135,7 @@ export default function Home() {
           if (stopped || !peer || polling) return;
           polling = true;
           try {
-            const response = await fetch(`/api/sessions/${sessionId}/signals?since=${encodeURIComponent(cursor)}&afterId=${encodeURIComponent(cursorId)}`, { headers: { "x-interview-invite": inviteToken }, cache: "no-store" });
+            const response = await fetch(`/api/sessions/${sessionId}/signals?since=${encodeURIComponent(cursor)}&afterId=${encodeURIComponent(cursorId)}`, { headers: {}, credentials: "same-origin", cache: "no-store" });
             if (!response.ok) return;
             const data = await response.json();
             for (const signal of data.signals || []) {
@@ -166,7 +166,7 @@ export default function Home() {
       stopped = true;
       if (timer !== undefined) window.clearInterval(timer);
       if (peer && peer.connectionState !== "closed") void fetch(`/api/sessions/${sessionId}/signals`, {
-        method: "POST", headers, body: JSON.stringify({ kind: "hangup", payload: "candidate-ended" })
+        method: "POST", headers, credentials: "same-origin", body: JSON.stringify({ kind: "hangup", payload: "candidate-ended" })
       }).catch(() => {});
       peer?.close();
       if (peerConnectionRef.current === peer) peerConnectionRef.current = null;
