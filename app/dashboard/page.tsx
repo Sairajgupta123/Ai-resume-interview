@@ -17,6 +17,8 @@ export default function Dashboard() {
   const [selected, setSelected] = useState<Detail | null>(null);
   const [query, setQuery] = useState("");
   const [compareIds, setCompareIds] = useState<string[]>([]);
+  const [comparison, setComparison] = useState<any | null>(null);
+  const [comparisonBusy, setComparisonBusy] = useState(false);
   const [decisionNotes, setDecisionNotes] = useState("");
   const [decisionBusy, setDecisionBusy] = useState(false);
   const employerVideoRef = useRef<HTMLVideoElement>(null);
@@ -156,7 +158,27 @@ export default function Dashboard() {
   const logout = async () => { await fetch("/api/auth/logout", { method: "POST" }); setAuthenticated(false); setSelected(null); };
   const filtered = items.filter(x => `${x.candidateName} ${x.role}`.toLowerCase().includes(query.toLowerCase()));
   const compared = items.filter(x => compareIds.includes(x.id));
-  const toggleCompare = (id: string) => setCompareIds(current => current.includes(id) ? current.filter(value => value !== id) : current.length < 3 ? [...current, id] : current);
+  const toggleCompare = (id: string) => {
+    setComparison(null);
+    setCompareIds(current => current.includes(id) ? current.filter(value => value !== id) : current.length < 3 ? [...current, id] : current);
+  };
+  const runEvidenceComparison = async () => {
+    if (compareIds.length < 2 || comparisonBusy) return;
+    setComparisonBusy(true); setError("");
+    try {
+      const response = await fetch("/api/employer/compare", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ interviewIds: compareIds })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Could not compare candidates.");
+      setComparison(data.comparison);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Could not compare candidates.");
+    } finally {
+      setComparisonBusy(false);
+    }
+  };
   const exportCsv = () => {
     const columns = ["Candidate", "Role", "Mode", "Status", "AI score", "AI recommendation", "Employer decision", "Duration seconds", "Created at"];
     const rows = items.map(item => [item.candidateName, item.role, item.mode, item.status, item.overallScore ?? "", item.recommendation ?? "", item.employerDecision ?? "", item.durationSeconds, item.createdAt]);
@@ -175,7 +197,16 @@ export default function Dashboard() {
     <header className="dashboard-header"><a className="brand" href="/"><span className="brand-mark">M</span><span>mzobs<span className="brand-dot">.</span><small>EMPLOYER WORKSPACE</small></span></a><div className="header-actions"><span className="secure"><i/> Signed in</span><button className="outline-btn" onClick={logout}>Sign out</button></div></header>
     <section className="dashboard-title"><div><div className="eyebrow">HIRING INTELLIGENCE</div><h1>Interview <em>overview.</em></h1><p>Review candidate conversations, role alignment and evidence-backed AI reports.</p></div><a className="primary-link" href="/dashboard/new">＋ Invite candidate</a></section>
     <div className="metric-row"><div className="metric"><small>TOTAL INTERVIEWS</small><strong>{items.length}</strong></div><div className="metric"><small>COMPLETED</small><strong>{items.filter(x=>x.status==="completed").length}</strong></div><div className="metric"><small>AVERAGE SCORE</small><strong>{items.filter(x=>x.overallScore!==null).length ? Math.round(items.reduce((a,x)=>a+(x.overallScore||0),0)/items.filter(x=>x.overallScore!==null).length) : "—"}</strong></div></div>
-    {compared.length > 0 && <section className="dashboard-table-card"><div className="table-heading"><div><h2>Candidate comparison</h2><p>Compare up to three candidates side by side. AI scores are advisory, not hiring decisions.</p></div><button className="outline-btn" onClick={() => setCompareIds([])}>Clear comparison</button></div><div className="table-scroll"><table><thead><tr><th>Measure</th>{compared.map(item=><th key={item.id}>{item.candidateName}<small> · {item.role}</small></th>)}</tr></thead><tbody>{([{label:"AI score",value:(item:Item)=>item.overallScore === null ? "—" : `${item.overallScore}/100`},{label:"AI recommendation",value:(item:Item)=>item.recommendation || "—"},{label:"Employer decision",value:(item:Item)=>item.employerDecision || "Pending"},{label:"Interview status",value:(item:Item)=>item.status},{label:"Interview mode",value:(item:Item)=>item.mode},{label:"Duration",value:(item:Item)=>`${Math.floor(item.durationSeconds/60)}m ${item.durationSeconds%60}s`}]).map(metric=><tr key={metric.label}><th>{metric.label}</th>{compared.map(item=><td key={item.id}>{metric.value(item)}</td>)}</tr>)}</tbody></table></div></section>}
+    {compared.length > 0 && <section className="dashboard-table-card"><div className="table-heading"><div><h2>Candidate comparison</h2><p>Compare up to three candidates side by side. AI scores are advisory, not hiring decisions.</p></div><button className="outline-btn" onClick={runEvidenceComparison} disabled={compareIds.length < 2 || comparisonBusy}>{comparisonBusy ? "Comparing…" : "Compare skill evidence"}</button><button className="outline-btn" onClick={() => { setCompareIds([]); setComparison(null); }}>Clear comparison</button></div><div className="table-scroll"><table><thead><tr><th>Measure</th>{compared.map(item=><th key={item.id}>{item.candidateName}<small> · {item.role}</small></th>)}</tr></thead><tbody>{([{label:"AI score",value:(item:Item)=>item.overallScore === null ? "—" : `${item.overallScore}/100`},{label:"AI recommendation",value:(item:Item)=>item.recommendation || "—"},{label:"Employer decision",value:(item:Item)=>item.employerDecision || "Pending"},{label:"Interview status",value:(item:Item)=>item.status},{label:"Interview mode",value:(item:Item)=>item.mode},{label:"Duration",value:(item:Item)=>`${Math.floor(item.durationSeconds/60)}m ${item.durationSeconds%60}s`}]).map(metric=><tr key={metric.label}><th>{metric.label}</th>{compared.map(item=><td key={item.id}>{metric.value(item)}</td>)}</tr>)}</tbody></table></div>
+      {comparison && <div className="evidence-comparison">
+        <h3>Skill evidence comparison</h3>
+        <p>{comparison.comparisonNote}</p>
+        <div className="table-scroll"><table><thead><tr><th>Job-related skill</th>{comparison.candidates.map((candidate: any) => <th key={candidate.id}>{candidate.candidateName}<small> · {candidate.role}</small></th>)}</tr></thead>
+          <tbody>{comparison.skills.map((skill: any) => <tr key={skill.skill}><th>{skill.skill}</th>{skill.candidates.map((item: any) => <td key={item.candidateId}><b>{item.rating}</b><small className="evidence-quote">{item.evidence}</small></td>)}</tr>)}</tbody>
+        </table></div>
+        <p className="drawer-sub">Scores and AI recommendations remain advisory. Missing evidence is not proof that a candidate lacks the skill.</p>
+      </div>}
+    </section>}
     <section className="dashboard-table-card"><div className="table-heading"><div><h2>Candidate interviews</h2><p>Open an interview to review its transcript and report.</p></div><div className="header-actions"><input className="search-input" placeholder="Search candidate or role…" value={query} onChange={e=>setQuery(e.target.value)} /><button className="outline-btn" onClick={exportCsv} disabled={!items.length}>Export CSV</button></div></div>
       {error && <div className="error-box">{error}</div>}
       <div className="table-scroll"><table><thead><tr><th>COMPARE / CANDIDATE</th><th>ROLE</th><th>FORMAT</th><th>STATUS</th><th>SCORE</th><th>DATE</th><th /></tr></thead><tbody>
