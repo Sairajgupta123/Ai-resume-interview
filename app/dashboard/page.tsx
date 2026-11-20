@@ -25,6 +25,10 @@ export default function Dashboard() {
   const [auditError, setAuditError] = useState("");
   const [retentionPreview, setRetentionPreview] = useState<any | null>(null);
   const [retentionError, setRetentionError] = useState("");
+  const [deletionRequests, setDeletionRequests] = useState<any[]>([]);
+  const [deletionQueueError, setDeletionQueueError] = useState("");
+  const [deletionActionBusy, setDeletionActionBusy] = useState("");
+  const [deletionQueueMessage, setDeletionQueueMessage] = useState("");
   const [decisionNotes, setDecisionNotes] = useState("");
   const [decisionBusy, setDecisionBusy] = useState(false);
   const [deletionReason, setDeletionReason] = useState("");
@@ -146,6 +150,11 @@ export default function Dashboard() {
       if (!retentionResponse.ok) throw new Error(retentionData.error || "Retention preview unavailable.");
       setRetentionPreview(retentionData.preview);
       setRetentionError("");
+      const deletionQueueResponse = await fetch("/api/employer/privacy/deletion-requests", { cache: "no-store" });
+      const deletionQueueData = await deletionQueueResponse.json();
+      if (!deletionQueueResponse.ok) throw new Error(deletionQueueData.error || "Deletion queue unavailable.");
+      setDeletionRequests(deletionQueueData.requests || []);
+      setDeletionQueueError("");
     } catch (analyticsFailure) {
       setAnalyticsError(analyticsFailure instanceof Error ? analyticsFailure.message : "Analytics unavailable.");
     }
@@ -208,6 +217,22 @@ export default function Dashboard() {
     } finally {
       setComparisonBusy(false);
     }
+  };
+  const runDeletionAction = async (requestId: string, interviewId: string, action: "send" | "approve") => {
+    const key = requestId + ":" + action;
+    setDeletionActionBusy(key); setDeletionQueueMessage(""); setDeletionQueueError("");
+    try {
+      const endpoint = action === "send"
+        ? "/api/employer/privacy/deletion-requests/" + encodeURIComponent(interviewId) + "/send-verification"
+        : "/api/employer/privacy/deletion-requests/" + encodeURIComponent(requestId) + "/approve";
+      const response = await fetch(endpoint, { method: "POST" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Privacy action failed.");
+      setDeletionQueueMessage(data.message || "Privacy workflow updated.");
+      await load();
+    } catch (failure) {
+      setDeletionQueueError(failure instanceof Error ? failure.message : "Privacy action failed.");
+    } finally { setDeletionActionBusy(""); }
   };
   const createDeletionRequest = async () => {
     if (!selected) return;
@@ -304,6 +329,24 @@ export default function Dashboard() {
         <div className="retention-policy-note">Consent metadata present: <b>{retentionPreview.consentedInterviews}</b> · Missing consent timestamp or version: <b>{retentionPreview.missingConsentMetadata}</b></div>
         <p className="analytics-disclaimer">This preview never includes in-progress interviews and does not delete resumes, transcripts, reports or recordings. Review applicable legal requirements and candidate notices before setting a retention period. Deletion workflow is not enabled.</p>
       </>}
+    </section>
+    <section className="dashboard-table-card privacy-deletion-queue">
+      <div className="table-heading"><div><div className="eyebrow">PRIVACY WORKFLOW</div><h2>Candidate deletion requests</h2><p>Candidate verification and employer approval are separate steps. Approval does not delete data.</p></div><span className="analytics-updated">Latest 100</span></div>
+      {deletionQueueError && <div className="error-box">{deletionQueueError}</div>}
+      {deletionQueueMessage && <div className="success-box">{deletionQueueMessage}</div>}
+      {!deletionQueueError && <div className="table-scroll"><table><thead><tr><th>REQUESTED</th><th>CANDIDATE</th><th>ROLE</th><th>STATUS</th><th>WORKFLOW</th></tr></thead><tbody>
+        {deletionRequests.map((request: any) => <tr key={request.id}>
+          <td>{date(request.createdAt)}</td><td>{request.candidateNameSnapshot}<small className="audit-notes">{request.candidateEmailSnapshot || "No email recorded"}</small></td><td>{request.roleSnapshot}</td>
+          <td><span className="audit-decision audit-review">{request.status.replaceAll("_", " ")}</span></td>
+          <td className="privacy-workflow-actions">
+            {request.status === "pending_candidate_verification" && <button className="view-btn" disabled={!!deletionActionBusy} onClick={() => runDeletionAction(request.id, request.interviewId, "send")}>{deletionActionBusy === request.id + ":send" ? "Sending…" : "Send verification"}</button>}
+            {request.status === "verified_pending_approval" && <button className="view-btn" disabled={!!deletionActionBusy} onClick={() => runDeletionAction(request.id, request.interviewId, "approve")}>{deletionActionBusy === request.id + ":approve" ? "Approving…" : "Approve request"}</button>}
+            {request.status === "approved_for_deletion" && <span className="analytics-updated">Ready for execution phase</span>}
+          </td>
+        </tr>)}
+        {!deletionRequests.length && <tr><td colSpan={5} className="empty-cell">No candidate deletion requests have been created.</td></tr>}
+      </tbody></table></div>}
+      <p className="analytics-disclaimer">Verification links expire after 30 minutes. No candidate data is deleted by this workflow yet.</p>
     </section>
     <section className="dashboard-table-card audit-card">
       <div className="table-heading"><div><div className="eyebrow">ACCOUNTABILITY</div><h2>Decision audit history</h2><p>Latest 100 employer hiring decisions, with timestamps and recorded notes.</p></div><span className="analytics-updated">Newest first</span></div>
