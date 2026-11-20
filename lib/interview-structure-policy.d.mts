@@ -8,3 +8,11 @@ export function buildInterviewStructurePlan(history: Array<{ role: string; conte
   phase: "wrap_up" | "opening" | "assessment";
 };
 export function buildInterviewStructureGuidance(plan: ReturnType<typeof buildInterviewStructurePlan> | null): string;
+
+export type InterviewDifficultyLevel = "foundation" | "applied" | "advanced";
+export function buildInterviewDifficultyPlan(history: Array<{ role: string; content: string }>): {
+  answeredTurns: number;
+  level: InterviewDifficultyLevel;
+  guidance: string;
+};
+export function buildInterviewDifficultyGuidance(plan: ReturnType<typeof buildInterviewDifficultyPlan> | null): string;
