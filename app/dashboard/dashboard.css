@@ -109,3 +109,33 @@
 .recording-access-card{margin:18px 0}
 .recording-access-card .table-heading{align-items:flex-end}
 .recording-method{display:inline-flex;min-width:42px;justify-content:center;padding:5px 8px;border:1px solid #dce8df;border-radius:6px;background:#f7faf7;color:#355b42;font-size:9px;font-weight:800;letter-spacing:.5px}
+
+
+/* Evidence-first employer report */
+.report-review-note{padding:10px 12px;border:1px solid #e4ece5;border-radius:8px;background:#f7faf7;color:#637268!important;font-size:10px!important;line-height:1.6}
+.report-section-heading{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-top:22px}
+.report-section-heading h3{margin:0 0 9px}
+.report-section-heading>small{font-size:9px;color:#87938a}
+.report-skill-list{display:grid;gap:8px}
+.report-skill-card,.report-question-card{padding:12px 13px;border:1px solid #e8eee9;border-radius:9px;background:#fff}
+.report-skill-heading,.report-question-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.report-skill-heading>b,.report-question-heading>b{font-size:11px;line-height:1.5;color:#34483a}
+.report-rating,.question-status{flex:none;padding:4px 7px;border-radius:5px;font-size:9px;font-weight:800;background:#f0f3f0;color:#647268}
+.rating-strong,.status-correct,.count-correct{background:#eaf5ed;color:#286442}
+.rating-good{background:#eff5ef;color:#426d4c}
+.rating-developing,.status-partially-correct,.count-partially-correct{background:#fbf3e5;color:#8a692c}
+.rating-insufficient-evidence,.status-unanswered,.count-unanswered{background:#f1f2ef;color:#737d75}
+.status-incorrect,.count-incorrect{background:#f8ecea;color:#9a5148}
+.status-unclassified,.count-unclassified{background:#f0f2f0;color:#68766d}
+.report-skill-card>p{margin:7px 0 0;font-size:10px;line-height:1.6;color:#718077}
+.report-question-summary{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 12px}
+.question-count{display:inline-flex;align-items:center;gap:5px;padding:5px 7px;border-radius:6px;font-size:9px;background:#f1f4f1;color:#637268}
+.question-count b{font-size:11px}
+.report-question-card{margin:9px 0}
+.report-question-card>p{margin:8px 0;font-size:10px;line-height:1.6;color:#65746a}
+.report-competencies{display:block;margin-top:8px;font-size:9px;line-height:1.5;color:#839087}
+.report-answer-evidence{margin-top:10px;padding:9px 10px;border-radius:7px;background:#f7faf7}
+.report-answer-evidence>small{font-size:8px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;color:#819087}
+.report-answer-evidence>p{margin:5px 0 0;font-size:10px;line-height:1.6;color:#53675a}
+.report-empty{font-size:10px;color:#8a958d}
+@media(max-width:520px){.report-skill-heading,.report-question-heading{align-items:flex-start;flex-direction:column;gap:7px}.report-section-heading{align-items:flex-start;flex-direction:column;gap:0}}
