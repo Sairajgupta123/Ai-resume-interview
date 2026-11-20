@@ -86,3 +86,30 @@ model InterviewSignal {
 
   @@index([interviewId, createdAt])
 }
+
+model PrivacyDeletionRequest {
+  id                    String   @id @default(cuid())
+  interviewId           String
+  candidateNameSnapshot String
+  candidateEmailSnapshot String?
+  roleSnapshot          String
+  reason                String
+  status                String   @default("pending_candidate_verification")
+  requestedBy           String
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  events                PrivacyDeletionEvent[]
+  @@index([interviewId, status])
+  @@index([createdAt])
+}
+
+model PrivacyDeletionEvent {
+  id          String   @id @default(cuid())
+  requestId   String
+  action      String
+  actor       String
+  details     String?
+  createdAt   DateTime @default(now())
+  request     PrivacyDeletionRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  @@index([requestId, createdAt])
+}
