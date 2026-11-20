@@ -5,7 +5,7 @@ import { buildCsv } from "@/lib/csv-export.mjs";
 import RecordingPlayer from "./recording-player";
 
 type Item = { id: string; candidateName: string; role: string; mode: string; status: string; overallScore: number | null; recommendation: string | null; employerDecision: string | null; durationSeconds: number; createdAt: string };
-type Detail = Item & { resumeText: string; jobDescription: string; recordingPath: string | null; reportJson: string | null; employerNotes: string | null; decisionAt: string | null; decisionHistory: { id: string; decision: string; notes: string | null; createdAt: string }[]; messages: { role: string; content: string }[] };
+type Detail = Item & { candidateEmail?: string | null; resumeText: string; jobDescription: string; recordingPath: string | null; reportJson: string | null; employerNotes: string | null; decisionAt: string | null; decisionHistory: { id: string; decision: string; notes: string | null; createdAt: string }[]; messages: { role: string; content: string }[] };
 
 export default function Dashboard() {
   const [authenticated, setAuthenticated] = useState(false);
@@ -27,6 +27,11 @@ export default function Dashboard() {
   const [retentionError, setRetentionError] = useState("");
   const [decisionNotes, setDecisionNotes] = useState("");
   const [decisionBusy, setDecisionBusy] = useState(false);
+  const [deletionReason, setDeletionReason] = useState("");
+  const [deletionConfirmation, setDeletionConfirmation] = useState("");
+  const [deletionBusy, setDeletionBusy] = useState(false);
+  const [deletionMessage, setDeletionMessage] = useState("");
+  const [deletionError, setDeletionError] = useState("");
   const employerVideoRef = useRef<HTMLVideoElement>(null);
   const employerLocalRef = useRef<HTMLVideoElement>(null);
   const [liveCallState, setLiveCallState] = useState("Waiting for candidate…");
@@ -204,6 +209,33 @@ export default function Dashboard() {
       setComparisonBusy(false);
     }
   };
+  const createDeletionRequest = async () => {
+    if (!selected) return;
+    setDeletionBusy(true);
+    setDeletionMessage("");
+    setDeletionError("");
+    try {
+      const response = await fetch("/api/employer/privacy/deletion-requests/" + encodeURIComponent(selected.id), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          candidateName: selected.candidateName,
+          candidateEmail: selected.candidateEmail || "",
+          reason: deletionReason,
+          confirmation: deletionConfirmation
+        })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Could not create deletion request.");
+      setDeletionMessage("Request recorded. Candidate verification and separate approval are still required. No data has been deleted.");
+      setDeletionReason("");
+      setDeletionConfirmation("");
+    } catch (failure) {
+      setDeletionError(failure instanceof Error ? failure.message : "Could not create deletion request.");
+    } finally {
+      setDeletionBusy(false);
+    }
+  };
   const exportCsv = () => {
     const columns = ["Candidate", "Role", "Mode", "Status", "AI score", "AI recommendation", "Employer decision", "Duration seconds", "Created at"];
     const rows = items.map(item => [item.candidateName, item.role, item.mode, item.status, item.overallScore ?? "", item.recommendation ?? "", item.employerDecision ?? "", item.durationSeconds, item.createdAt]);
@@ -302,6 +334,16 @@ export default function Dashboard() {
     {selected && <div className="detail-backdrop" onClick={()=>setSelected(null)}><section className="detail-drawer" onClick={e=>e.stopPropagation()}><button className="drawer-close" onClick={()=>setSelected(null)}>×</button><div className="eyebrow">CANDIDATE REVIEW</div><h2>{selected.candidateName}</h2><p className="drawer-sub">{selected.role} · {selected.mode} interview</p><a className="outline-btn" href={`/api/sessions/${selected.id}/export`}>Download full interview report CSV ↓</a>
       {selected.reportJson ? <ReportView json={selected.reportJson}/> : <p className="drawer-sub">No completed report is available for this interview.</p>}
       <div className="employer-decision"><div className="eyebrow">EMPLOYER DECISION</div><p>AI recommendation is advisory. Record your independent hiring decision.</p><textarea rows={3} value={decisionNotes} onChange={e=>setDecisionNotes(e.target.value)} placeholder="Optional notes for the hiring team…" /><div className="decision-actions"><button disabled={decisionBusy} onClick={()=>saveDecision("shortlist")}>Shortlist</button><button disabled={decisionBusy} onClick={()=>saveDecision("review")}>Needs review</button><button disabled={decisionBusy} onClick={()=>saveDecision("reject")}>Reject</button></div>{selected.employerDecision && <small>Current decision: <b>{selected.employerDecision}</b>{selected.decisionAt ? ` · ${date(selected.decisionAt)}` : ""}</small>}{selected.decisionHistory?.length > 0 && <div className="decision-history"><b>Decision history</b>{selected.decisionHistory.map(item=><div key={item.id}><span>{item.decision}</span><small>{date(item.createdAt)}</small>{item.notes && <p>{item.notes}</p>}</div>)}</div>}</div>
+      {selected.status === "completed" && <div className="privacy-deletion-request">
+        <div className="eyebrow">PRIVACY MANAGEMENT</div>
+        <h3>Request candidate data deletion</h3>
+        <p>This creates a tracked request only. It does not delete the candidate profile, resume, transcript, report or recording. Candidate verification and a separate approval workflow are required before any deletion.</p>
+        <label>Reason for request<textarea rows={3} value={deletionReason} onChange={e=>setDeletionReason(e.target.value)} placeholder="Explain the candidate request or applicable retention reason (10–1000 characters)." /></label>
+        <label>Type REQUEST DELETION to confirm<input value={deletionConfirmation} onChange={e=>setDeletionConfirmation(e.target.value)} placeholder="REQUEST DELETION" /></label>
+        {deletionError && <div className="error-box">{deletionError}</div>}
+        {deletionMessage && <div className="success-box">{deletionMessage}</div>}
+        <button className="outline-btn" disabled={deletionBusy || deletionConfirmation !== "REQUEST DELETION" || deletionReason.trim().length < 10} onClick={createDeletionRequest}>{deletionBusy ? "Submitting…" : "Create deletion request"}</button>
+      </div>}
       {selected.mode === "live" && selected.status !== "completed" && <div className="drawer-live-call"><h3>Live interview room</h3><p>{liveCallState}</p><video ref={employerVideoRef} autoPlay playsInline /><div className="employer-self-preview"><video ref={employerLocalRef} autoPlay muted playsInline /><span>Your camera</span></div><small>Keep this review panel open while the candidate joins. Browser camera and microphone permission is required.</small></div>}{selected.recordingPath && <RecordingPlayer src={`/api/sessions/${selected.id}/recording`} candidateName={selected.candidateName} />}<h3>Interview transcript</h3><div className="drawer-transcript">{selected.messages.map((m,i)=><div key={i} className="drawer-message"><small>{m.role==="assistant"?"AI INTERVIEWER":"CANDIDATE"}</small><p>{m.content}</p></div>)}</div>
     </section></div>}
   </main>;
