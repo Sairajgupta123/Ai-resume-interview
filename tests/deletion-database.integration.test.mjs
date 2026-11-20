@@ -147,7 +147,131 @@ test("privacy deletion transaction removes interview data and retains an anonymi
       where: { id: protectedRequest.id }
     });
     assert.equal(protectedReceipt.status, "deletion_in_progress");
+
     assert.equal(protectedReceipt.executionLeaseToken, "new-worker-token");
+
+    // Two workers racing for the same approved request must not both acquire it.
+    const raceInterview = await prisma.interview.create({
+      data: {
+        candidateName: "Concurrent Claim Test Candidate",
+        role: "Backend Engineer",
+        resumeText: "Dummy resume",
+        jobDescription: "Dummy job description"
+      }
+    });
+    const raceRequest = await prisma.privacyDeletionRequest.create({
+      data: {
+        interviewId: raceInterview.id,
+        candidateNameSnapshot: raceInterview.candidateName,
+        roleSnapshot: raceInterview.role,
+        reason: "Concurrent claim integration test",
+        requestedBy: "candidate",
+        status: "approved_for_deletion",
+        verifiedAt: new Date()
+      }
+    });
+
+    const raceClaims = await Promise.all([
+      prisma.privacyDeletionRequest.updateMany({
+        where: { id: raceRequest.id, status: "approved_for_deletion" },
+        data: {
+          status: "deletion_in_progress",
+          executionStartedAt: new Date(),
+          executionLeaseToken: "racing-worker-one"
+        }
+      }),
+      prisma.privacyDeletionRequest.updateMany({
+        where: { id: raceRequest.id, status: "approved_for_deletion" },
+        data: {
+          status: "deletion_in_progress",
+          executionStartedAt: new Date(),
+          executionLeaseToken: "racing-worker-two"
+        }
+      })
+    ]);
+    assert.deepEqual(raceClaims.map(result => result.count).sort(), [0, 1]);
+    const raceWinner = await prisma.privacyDeletionRequest.findUnique({
+      where: { id: raceRequest.id }
+    });
+    assert.equal(raceWinner.status, "deletion_in_progress");
+    assert.ok(["racing-worker-one", "racing-worker-two"].includes(raceWinner.executionLeaseToken));
+
+    // A storage failure should leave interview data intact and permit a safe retry.
+    const retryInterview = await prisma.interview.create({
+      data: {
+        candidateName: "Retry Test Candidate",
+        role: "Data Analyst",
+        resumeText: "Dummy resume",
+        jobDescription: "Dummy job description"
+      }
+    });
+    const retryRequest = await prisma.privacyDeletionRequest.create({
+      data: {
+        interviewId: retryInterview.id,
+        candidateNameSnapshot: retryInterview.candidateName,
+        roleSnapshot: retryInterview.role,
+        reason: "Retry integration test",
+        requestedBy: "candidate",
+        status: "deletion_in_progress",
+        verifiedAt: new Date(),
+        executionStartedAt: new Date(),
+        executionLeaseToken: "failed-worker-token"
+      }
+    });
+
+    await prisma.$transaction(async tx => {
+      const failed = await tx.privacyDeletionRequest.updateMany({
+        where: {
+          id: retryRequest.id,
+          status: "deletion_in_progress",
+          executionLeaseToken: "failed-worker-token"
+        },
+        data: {
+          status: "deletion_failed",
+          lastErrorCode: "DELETION_EXECUTION_FAILED",
+          executionStartedAt: null,
+          executionLeaseToken: null
+        }
+      });
+      assert.equal(failed.count, 1);
+      await tx.privacyDeletionEvent.create({
+        data: {
+          requestId: retryRequest.id,
+          action: "deletion_failed",
+          actor: "system",
+          details: "Integration test simulated a storage failure."
+        }
+      });
+    });
+
+    assert.notEqual(
+      await prisma.interview.findUnique({ where: { id: retryInterview.id } }),
+      null
+    );
+    const failedReceipt = await prisma.privacyDeletionRequest.findUnique({
+      where: { id: retryRequest.id }
+    });
+    assert.equal(failedReceipt.status, "deletion_failed");
+    assert.equal(failedReceipt.executionLeaseToken, null);
+    assert.equal(failedReceipt.lastErrorCode, "DELETION_EXECUTION_FAILED");
+
+    const retryClaim = await prisma.privacyDeletionRequest.updateMany({
+      where: { id: retryRequest.id, status: "deletion_failed" },
+      data: {
+        status: "deletion_in_progress",
+        executionStartedAt: new Date(),
+        executionLeaseToken: "retry-worker-token",
+        lastErrorCode: null,
+        deletionAttempts: { increment: 1 }
+      }
+    });
+    assert.equal(retryClaim.count, 1);
+    const retriedReceipt = await prisma.privacyDeletionRequest.findUnique({
+      where: { id: retryRequest.id }
+    });
+    assert.equal(retriedReceipt.status, "deletion_in_progress");
+    assert.equal(retriedReceipt.executionLeaseToken, "retry-worker-token");
+    assert.equal(retriedReceipt.lastErrorCode, null);
   } finally {
     if (prisma) await prisma.$disconnect();
     await rm(tempDir, { recursive: true, force: true });
