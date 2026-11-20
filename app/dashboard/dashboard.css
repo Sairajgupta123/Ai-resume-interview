@@ -102,3 +102,6 @@
 .privacy-workflow-actions{min-width:170px;display:flex;gap:8px;align-items:center}
 .privacy-workflow-actions .view-btn{white-space:nowrap}
 .privacy-deletion-queue .table-heading{align-items:flex-end}
+
+/* Playback state feedback */
+.recording-state.is-buffering{color:#9a762f}.recording-state.is-buffering i{background:#c69a3c}
