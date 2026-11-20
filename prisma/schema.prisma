@@ -101,6 +101,10 @@ model PrivacyDeletionRequest {
   verificationSentAt    DateTime?
   verifiedAt            DateTime?
   verificationAttempts  Int      @default(0)
+  deletionAttempts      Int      @default(0)
+  executionStartedAt    DateTime?
+  completedAt           DateTime?
+  lastErrorCode         String?
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
   events                PrivacyDeletionEvent[]
