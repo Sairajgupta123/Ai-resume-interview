@@ -97,3 +97,8 @@
 .privacy-deletion-request input:focus,.privacy-deletion-request textarea:focus{outline:2px solid #b9d4c0;outline-offset:1px}
 .success-box{margin:10px 0;padding:10px 12px;border-radius:8px;background:#edf6ef;color:#28613d;font-size:10px;line-height:1.5}
 .privacy-deletion-request button:disabled{opacity:.45;cursor:not-allowed}
+
+.privacy-deletion-queue{margin:18px 0}
+.privacy-workflow-actions{min-width:170px;display:flex;gap:8px;align-items:center}
+.privacy-workflow-actions .view-btn{white-space:nowrap}
+.privacy-deletion-queue .table-heading{align-items:flex-end}
