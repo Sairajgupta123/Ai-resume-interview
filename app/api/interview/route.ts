@@ -127,7 +127,7 @@ function validateReport(raw: any, candidateAnswers: string[], requiredSkills: st
     throw new Error("AI report validation failed: invalid skills list.");
   }
   const ratings = ["Strong", "Good", "Developing", "Insufficient evidence"];
-  const reportedSkills: Array<{ skill: string; rating: string; evidence: string }> = raw.skills.map((item: any, index: number) => {
+  const reportedSkills: Array<{ skill: string; rating: "Strong" | "Good" | "Developing" | "Insufficient evidence"; evidence: string }> = raw.skills.map((item: any, index: number) => {
     if (!item || typeof item !== "object" || !ratings.includes(item.rating)) {
       throw new Error(`AI report validation failed: invalid skill rating at item ${index + 1}.`);
     }
