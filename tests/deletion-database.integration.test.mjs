@@ -252,22 +252,14 @@ test("privacy deletion transaction removes interview data and retains an anonymi
       }
     });
 
-    const staleWorkerResult = await prisma.$transaction(async tx => {
-      const ownership = await tx.privacyDeletionRequest.updateMany({
-        where: {
-          id: protectedRequest.id,
-          status: "deletion_in_progress",
-          executionLeaseToken: "old-worker-token"
-        },
-        data: { executionStartedAt: new Date() }
-      });
-      if (ownership.count !== 1) return "lease-lost";
-
-      await tx.interview.delete({ where: { id: protectedInterview.id } });
-      return "deleted";
-    });
-
-    assert.equal(staleWorkerResult, "lease-lost");
+    await assert.rejects(
+      () => finalizeDeletionExecution(prisma, {
+        requestId: protectedRequest.id,
+        interviewId: protectedInterview.id,
+        leaseToken: "old-worker-token"
+      }),
+      { message: "DELETION_LEASE_LOST" }
+    );
     assert.notEqual(
       await prisma.interview.findUnique({ where: { id: protectedInterview.id } }),
       null
