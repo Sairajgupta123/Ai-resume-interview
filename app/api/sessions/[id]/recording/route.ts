@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
+import { mkdir, stat, unlink, writeFile } from "node:fs/promises";
+import { createReadStream } from "node:fs";
+import { Readable } from "node:stream";
 import { randomUUID, createHash, createHmac } from "node:crypto";
 import { join } from "node:path";
 import { db } from "@/lib/db";
@@ -7,6 +9,7 @@ import { isEmployerAuthenticated } from "@/lib/auth";
 import { getCandidateInvitationToken, hasValidCandidateInvitation } from "@/lib/invitation";
 import { MAX_RECORDING_BYTES, inspectRecordingUpload, isSafeRecordingFilename } from "@/lib/recording-policy.mjs";
 import { commitRecordingReplacement } from "@/lib/recording-replacement.mjs";
+import { parseByteRange } from "@/lib/recording-range.mjs";
 
 export const runtime = "nodejs";
 
@@ -37,7 +40,7 @@ function s3RequestUrl(endpoint: URL, bucket: string, key: string) {
   return url;
 }
 
-async function s3Request(method: "PUT" | "GET" | "DELETE", key: string, body?: Buffer, contentType?: string) {
+async function s3Request(method: "PUT" | "GET" | "HEAD" | "DELETE", key: string, body?: Buffer, contentType?: string, range?: string) {
   const config = remoteStorageConfig();
   if (!config) throw new Error("Private cloud recording storage is not configured.");
   const url = s3RequestUrl(config.endpoint, config.bucket, key);
@@ -46,6 +49,7 @@ async function s3Request(method: "PUT" | "GET" | "DELETE", key: string, body?: B
   const payloadHash = createHash("sha256").update(body || Buffer.alloc(0)).digest("hex");
   const headers: Record<string, string> = { host: url.host, "x-amz-content-sha256": payloadHash, "x-amz-date": amzDate };
   if (contentType) headers["content-type"] = contentType;
+  if (range) headers.range = range;
   const signedHeaders = Object.keys(headers).sort().join(";");
   const canonicalHeaders = Object.keys(headers).sort().map(name => name + ":" + headers[name].trim() + "\n").join("");
   const canonicalRequest = [method, url.pathname, url.searchParams.toString(), canonicalHeaders, signedHeaders, payloadHash].join("\n");
@@ -86,15 +90,25 @@ async function saveRecording(bytes: Buffer, contentType: string, filename: strin
   return "data/recordings/" + filename;
 }
 
-async function readRecording(storedPath: string) {
-  if (isRemoteRecordingPath(storedPath)) {
-    const response = await s3Request("GET", recordingObjectKey(storedPath));
-    return Buffer.from(await response.arrayBuffer());
-  }
+function localRecordingPath(storedPath: string) {
   const normalized = storedPath.replace(/\\/g, "/");
   const filename = normalized.split("/").pop() || "";
-  if (normalized !== "data/recordings/" + filename || !isSafeRecordingFilename(filename)) throw new Error("Recording storage reference is invalid.");
-  return readFile(join(process.cwd(), "data", "recordings", filename));
+  if (normalized !== "data/recordings/" + filename || !isSafeRecordingFilename(filename)) {
+    throw new Error("Recording storage reference is invalid.");
+  }
+  return join(process.cwd(), "data", "recordings", filename);
+}
+
+async function recordingSize(storedPath: string) {
+  if (isRemoteRecordingPath(storedPath)) {
+    const response = await s3Request("HEAD", recordingObjectKey(storedPath));
+    const size = Number(response.headers.get("content-length"));
+    if (!Number.isSafeInteger(size) || size < 0) throw new Error("Recording storage returned invalid metadata.");
+    return size;
+  }
+  const metadata = await stat(localRecordingPath(storedPath));
+  if (!Number.isSafeInteger(metadata.size) || metadata.size < 0) throw new Error("Recording file size is invalid.");
+  return metadata.size;
 }
 
 async function deleteRecording(storedPath: string) {
@@ -180,23 +194,92 @@ export async function POST(request: NextRequest, context: Context) {
   }
 }
 
-export async function GET(_request: NextRequest, context: Context) {
-  if (!(await isEmployerAuthenticated())) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+export async function GET(request: NextRequest, context: Context) {
+  if (!(await isEmployerAuthenticated())) {
+    return NextResponse.json({ error: "Unauthorized." }, { status: 401, headers: { "Cache-Control": "no-store" } });
+  }
   const { id } = await context.params;
   const interview = await db.interview.findUnique({ where: { id }, select: { recordingPath: true } });
   if (!interview?.recordingPath) return NextResponse.json({ error: "No recording is available." }, { status: 404 });
+
   try {
     const storedPath = interview.recordingPath;
-    const filename = isRemoteRecordingPath(storedPath) ? recordingObjectKey(storedPath).split("/").pop() || "" : storedPath.split("/").pop() || "";
-    const file = await readRecording(storedPath);
+    const remote = isRemoteRecordingPath(storedPath);
+    const filename = remote
+      ? recordingObjectKey(storedPath).split("/").pop() || ""
+      : storedPath.split("/").pop() || "";
     const contentType = filename.endsWith(".mp4") ? "video/mp4" : filename.endsWith(".mov") ? "video/quicktime" : "video/webm";
-    return new NextResponse(file, { headers: { "Content-Type": contentType, "Content-Length": String(file.byteLength), "Content-Disposition": "inline", "Cache-Control": "private, no-store" } });
+    const size = await recordingSize(storedPath);
+    const rangeHeader = request.headers.get("range");
+    const range = rangeHeader ? parseByteRange(rangeHeader, size) : null;
+    const baseHeaders: Record<string, string> = {
+      "Content-Type": contentType,
+      "Accept-Ranges": "bytes",
+      "Content-Disposition": "inline; filename=\"" + filename + "\"",
+      "Cache-Control": "private, no-store",
+      "X-Content-Type-Options": "nosniff"
+    };
+
+    if (range && !range.ok) {
+      return new NextResponse(null, {
+        status: 416,
+        headers: { ...baseHeaders, "Content-Range": "bytes */" + size, "Content-Length": "0" }
+      });
+    }
+
+    if (size === 0) {
+      return new NextResponse(null, { status: 200, headers: { ...baseHeaders, "Content-Length": "0" } });
+    }
+
+    const start = range?.ok ? range.start : 0;
+    const end = range?.ok ? range.end : size - 1;
+    const length = range?.ok ? range.length : size;
+    const status = range?.ok ? 206 : 200;
+    if (range?.ok) baseHeaders["Content-Range"] = "bytes " + start + "-" + end + "/" + size;
+    baseHeaders["Content-Length"] = String(length);
+
+    if (remote) {
+      const response = await s3Request("GET", recordingObjectKey(storedPath), undefined, undefined, range?.ok ? rangeHeader || undefined : undefined);
+      if (range?.ok && response.status !== 206) throw new Error("Recording storage did not honor the requested byte range.");
+      return new NextResponse(response.body, { status, headers: baseHeaders });
+    }
+
+    const stream = createReadStream(localRecordingPath(storedPath), { start, end });
+    return new NextResponse(Readable.toWeb(stream) as ReadableStream, { status, headers: baseHeaders });
   } catch (error) {
     const remote = isRemoteRecordingPath(interview.recordingPath);
     return NextResponse.json({
       error: remote
         ? "Private recording storage is temporarily unavailable."
         : "Recording file is missing from server storage."
-    }, { status: remote ? 502 : 404 });
+    }, { status: remote ? 502 : 404, headers: { "Cache-Control": "no-store" } });
+  }
+}
+
+export async function HEAD(_request: NextRequest, context: Context) {
+  if (!(await isEmployerAuthenticated())) return new NextResponse(null, { status: 401, headers: { "Cache-Control": "no-store" } });
+  const { id } = await context.params;
+  const interview = await db.interview.findUnique({ where: { id }, select: { recordingPath: true } });
+  if (!interview?.recordingPath) return new NextResponse(null, { status: 404, headers: { "Cache-Control": "no-store" } });
+  try {
+    const storedPath = interview.recordingPath;
+    const filename = isRemoteRecordingPath(storedPath)
+      ? recordingObjectKey(storedPath).split("/").pop() || ""
+      : storedPath.split("/").pop() || "";
+    const size = await recordingSize(storedPath);
+    const contentType = filename.endsWith(".mp4") ? "video/mp4" : filename.endsWith(".mov") ? "video/quicktime" : "video/webm";
+    return new NextResponse(null, {
+      status: 200,
+      headers: {
+        "Content-Type": contentType,
+        "Content-Length": String(size),
+        "Accept-Ranges": "bytes",
+        "Content-Disposition": "inline; filename=\"" + filename + "\"",
+        "Cache-Control": "private, no-store",
+        "X-Content-Type-Options": "nosniff"
+      }
+    });
+  } catch {
+    return new NextResponse(null, { status: isRemoteRecordingPath(interview.recordingPath) ? 502 : 404, headers: { "Cache-Control": "no-store" } });
   }
 }
