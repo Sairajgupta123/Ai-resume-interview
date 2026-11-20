@@ -1,6 +1,6 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { db } from "@/lib/db";
-import { isCandidateInvitationActive } from "./invitation-policy.mjs";
+import { canExchangeCandidateInvitation, isCandidateInvitationActive } from "./invitation-policy.mjs";
 
 export function hashInvitationToken(token: string) {
   return createHash("sha256").update(token).digest("hex");
@@ -32,7 +32,8 @@ export async function exchangeCandidateInvitation(sessionId: string, token: stri
   });
   if (!interview?.invitationTokenHash) return false;
   if (!isCandidateInvitationActive(token, interview.inviteExpiresAt, interview.status)) return false;
-  if (interview.status !== "invited" || interview.startedAt || interview.inviteUsedAt) return false;
+  if (!canExchangeCandidateInvitation(interview.status, interview.startedAt, interview.inviteExpiresAt)) return false;
+  if (interview.inviteUsedAt) return false;
   if (!tokenMatches(token, interview.invitationTokenHash)) return false;
 
   const now = new Date();
