@@ -66,6 +66,8 @@ export default function Home() {
     const invitedId = params.get("candidateInterviewId");
     const token = params.get("token");
     if (!invitedId || !token) return;
+    // Remove the bearer token from the visible URL immediately, before any async request.
+    window.history.replaceState({}, "", "/");
     let cancelled = false;
     fetch(`/api/sessions/${invitedId}/candidate?token=${encodeURIComponent(token)}`)
       .then(async response => {
@@ -82,7 +84,6 @@ export default function Home() {
         setResume(interview.resumeText);
         setJobDescription(interview.jobDescription);
         setMode(interview.mode === "recorded" ? "recorded" : "live");
-        window.history.replaceState({}, "", "/");
       })
       .catch(e => { if (!cancelled) setError(e instanceof Error ? e.message : "Could not load invitation."); });
     return () => { cancelled = true; };
