@@ -34,6 +34,7 @@ jobs:
                 direct: item.isDirect,
                 range: item.range,
                 fixAvailable: item.fixAvailable,
+                via: item.via,
                 advisories: (item.via || []).filter(v => typeof v === "object").map(v => ({
                   title: v.title,
                   url: v.url,
