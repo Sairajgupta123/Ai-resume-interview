@@ -11,11 +11,11 @@ A resume- and job-description-aware interview application powered by xAI Grok.
 - Candidate and employer browser video/audio can connect peer-to-peer using WebRTC during live interview mode; recordings use private S3-compatible object storage in production and local disk only for development
 - SQLite persistence for interview sessions, transcripts and reports
 - Employer login and dashboard with interview search, candidate review, report and transcript
-- Employer-created candidate invitations with 72-hour expiring, hashed tokens and protected candidate API access
+- Employer-created candidate invitations with 72-hour expiring, hashed tokens, atomic one-time link exchange, session-scoped HttpOnly cookies and protected candidate API access
 - Candidate refresh recovery: invitation tokens are exchanged through a POST request body or the interview-start response for session-scoped HttpOnly cookies; refresh uses the cookie, and in-progress transcripts and elapsed interview time are restored after reload
 - Recording resilience: browser recording segments are periodically saved to IndexedDB on the candidate device; if the tab is refreshed or an upload fails, the candidate can recover and upload saved segments before completing the interview
 - Live WebRTC signaling authenticates through the same HttpOnly candidate cookie, so a refreshed candidate session can reconnect after granting camera/microphone permission
-- Automated unit tests cover interview time-limit boundaries, evidence quote integrity, employer login rate-limit policy, employer session-expiry boundaries and CSV export formatting/formula-injection protection
+- Automated unit tests cover interview time-limit boundaries, evidence quote integrity, employer login rate-limit policy, employer session-expiry boundaries, candidate invitation expiry/one-time exchange policy and CSV export formatting/formula-injection protection
 - Employer review recommendation is advisory; hiring decisions remain human-led
 - Employer can record shortlist, review or reject decisions with notes and an immutable decision history
 
