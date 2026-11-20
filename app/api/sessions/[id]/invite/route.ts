@@ -19,5 +19,8 @@ export async function POST(_request: NextRequest, context: Context) {
     inviteUsedAt: null
   } });
   const base = process.env.NEXT_PUBLIC_APP_URL || new URL(_request.url).origin;
-  return NextResponse.json({ inviteUrl: `${base}/candidate/${id}?token=${token}`, expiresAt });
+  return NextResponse.json(
+    { inviteUrl: `${base}/candidate/${id}?token=${token}`, expiresAt },
+    { headers: { "Cache-Control": "private, no-store, max-age=0" } }
+  );
 }
