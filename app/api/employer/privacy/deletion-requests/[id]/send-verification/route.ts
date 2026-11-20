@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { isEmployerAuthenticated } from "@/lib/auth";
-import { createDeletionVerificationToken, hashDeletionVerificationToken, DELETION_VERIFICATION_TTL_MS } from "@/lib/deletion-verification-policy.mjs";
+import { createDeletionVerificationToken, hashDeletionVerificationToken, DELETION_VERIFICATION_TTL_MS, DELETION_VERIFICATION_RESEND_COOLDOWN_MS, canSendDeletionVerification } from "@/lib/deletion-verification-policy.mjs";
 
 export const runtime = "nodejs";
 type Context = { params: Promise<{ id: string }> };
@@ -19,14 +19,34 @@ export async function POST(request: Request, context: Context) {
     return NextResponse.json({ error: "Candidate verification email is not configured. Set RESEND_API_KEY, PRIVACY_FROM_EMAIL and NEXT_PUBLIC_APP_URL." }, { status: 503 });
   }
 
+  const now = new Date();
+  if (!canSendDeletionVerification(deletion, now)) {
+    const retryAt = deletion.verificationSentAt
+      ? new Date(new Date(deletion.verificationSentAt).getTime() + DELETION_VERIFICATION_RESEND_COOLDOWN_MS)
+      : new Date(now.getTime() + DELETION_VERIFICATION_RESEND_COOLDOWN_MS);
+    return NextResponse.json(
+      { error: "Please wait before requesting another verification email.", retryAt },
+      { status: 429, headers: { "Cache-Control": "no-store", "Retry-After": String(Math.max(1, Math.ceil((retryAt.getTime() - now.getTime()) / 1000))) } }
+    );
+  }
+
   const token = createDeletionVerificationToken();
-  const expiresAt = new Date(Date.now() + DELETION_VERIFICATION_TTL_MS);
+  const tokenHash = hashDeletionVerificationToken(token);
+  const expiresAt = new Date(now.getTime() + DELETION_VERIFICATION_TTL_MS);
+  const resendAllowedBefore = new Date(now.getTime() - DELETION_VERIFICATION_RESEND_COOLDOWN_MS);
   const updated = await db.privacyDeletionRequest.updateMany({
-    where: { id: deletion.id, status: "pending_candidate_verification" },
+    where: {
+      id: deletion.id,
+      status: "pending_candidate_verification",
+      OR: [
+        { verificationSentAt: null },
+        { verificationSentAt: { lte: resendAllowedBefore } }
+      ]
+    },
     data: {
-      verificationTokenHash: hashDeletionVerificationToken(token),
+      verificationTokenHash: tokenHash,
       verificationExpiresAt: expiresAt,
-      verificationSentAt: new Date(),
+      verificationSentAt: now,
       verificationAttempts: 0
     }
   });
