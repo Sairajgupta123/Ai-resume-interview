@@ -63,3 +63,7 @@ test("matches skills followed by punctuation and preserves plus and dot aliases"
 test("does not match a skill name embedded inside a longer word", () => {
   assert.deepEqual(extractTargetSkills("The role needs JavaScript engineering."), ["JavaScript"]);
 });
+
+test("does not interpret the js suffix in Node.js as JavaScript", () => {
+  assert.deepEqual(extractTargetSkills("We need Node.js for backend development."), ["Node.js"]);
+});
