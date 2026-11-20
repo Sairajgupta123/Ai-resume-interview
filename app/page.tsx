@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { cacheRecordingChunk, clearCachedRecording, getCachedRecording } from "@/lib/recording-cache";
 
 type ChatMessage = { role: "assistant" | "user"; content: string };
 type Report = {
@@ -47,6 +48,7 @@ export default function Home() {
   const [recording, setRecording] = useState(false);
   const [uploadingRecording, setUploadingRecording] = useState(false);
   const [recordingSaved, setRecordingSaved] = useState(false);
+  const [recoverableRecording, setRecoverableRecording] = useState(false);
   const [seconds, setSeconds] = useState(0);
   const [listening, setListening] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -57,6 +59,9 @@ export default function Home() {
   const recordingCompleteRef = useRef<Promise<boolean> | null>(null);
   const recordingSavedRef = useRef(false);
   const recordingUploadInProgressRef = useRef(false);
+  const recordingChunkIndexRef = useRef(0);
+  const recordingPersistenceRef = useRef<Promise<void>>(Promise.resolve());
+  const recordingPersistenceFailedRef = useRef(false);
   const finishStartedRef = useRef(false);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const transcriptEndRef = useRef<HTMLDivElement>(null);
@@ -81,6 +86,9 @@ export default function Home() {
         // The response has now set the HttpOnly cookie; remove the bearer token safely.
         window.history.replaceState({}, "", `/?candidateInterviewId=${encodeURIComponent(invitedId)}`);
         setSessionId(interview.id);
+        void getCachedRecording(interview.id).then(cached => {
+          if (cached?.chunks.length) setRecoverableRecording(true);
+        }).catch(() => setError("A locally saved recording could not be checked. Your interview answers remain available."));
         setCandidateName(interview.candidateName);
         setRole(interview.role);
         setResume(interview.resumeText);
@@ -306,12 +314,28 @@ export default function Home() {
       const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
       recorderRef.current = recorder;
       const chunks: BlobPart[] = [];
+      recordingChunkIndexRef.current = 0;
+      recordingPersistenceRef.current = Promise.resolve();
+      recordingPersistenceFailedRef.current = false;
       recordingCompleteRef.current = new Promise<boolean>(resolve => { resolveCompletion = resolve; });
-      recorder.ondataavailable = event => { if (event.data.size) chunks.push(event.data); };
+      recorder.ondataavailable = event => {
+        if (!event.data.size) return;
+        chunks.push(event.data);
+        const index = recordingChunkIndexRef.current++;
+        if (targetSessionId) {
+          recordingPersistenceRef.current = recordingPersistenceRef.current.then(() =>
+            cacheRecordingChunk(targetSessionId, index, event.data, recorder.mimeType || "video/webm")
+          ).catch(() => {
+            recordingPersistenceFailedRef.current = true;
+            setError("Local recording backup failed. Keep this tab open until the recording is uploaded.");
+          });
+        }
+      };
       recorder.onerror = () => {
         setError("The browser encountered a video recording error. The recording may be incomplete; the interview answers can still be submitted.");
       };
       recorder.onstop = async () => {
+        await recordingPersistenceRef.current;
         recordingUploadInProgressRef.current = true;
         setUploadingRecording(true);
         try {
@@ -325,13 +349,15 @@ export default function Home() {
           form.append("recording", blob, filename);
           const response = await fetch(`/api/sessions/${targetSessionId}/recording`, {
             method: "POST",
-            headers: targetInviteToken ? { "x-interview-invite": targetInviteToken } : {},
+            credentials: "same-origin",
             body: form
           });
           const data = await response.json();
           if (!response.ok) throw new Error(data.error || "Recording upload failed.");
           recordingSavedRef.current = true;
           setRecordingSaved(true);
+          setRecoverableRecording(false);
+          await clearCachedRecording(targetSessionId).catch(() => {});
           settleCompletion(true);
         } catch (error) {
           setError(error instanceof Error ? error.message : "Could not upload recording.");
