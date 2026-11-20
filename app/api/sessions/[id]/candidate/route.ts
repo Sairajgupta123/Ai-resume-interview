@@ -5,10 +5,13 @@ import { candidateInvitationCookieName, exchangeCandidateInvitation, getCandidat
 type Context = { params: Promise<{ id: string }> };
 
 async function candidateResponse(id: string, token: string | null, exchange = false) {
-  const authorized = exchange
+  const sessionToken = exchange
     ? await exchangeCandidateInvitation(id, token)
-    : await hasValidCandidateInvitation(id, token);
-  if (!authorized) {
+    : token;
+  const authorized = exchange
+    ? Boolean(sessionToken)
+    : await hasValidCandidateInvitation(id, sessionToken);
+  if (!authorized || !sessionToken) {
     return NextResponse.json({ error: "This interview invitation is invalid or expired. Contact the employer for a new link." }, { status: 401, headers: { "Cache-Control": "private, no-store" } });
   }
 
@@ -41,7 +44,7 @@ async function candidateResponse(id: string, token: string | null, exchange = fa
   const response = NextResponse.json({
     interview: { ...candidateInterview, recordingSaved: Boolean(recordingPath) }
   }, { headers: { "Cache-Control": "private, no-store" } });
-  response.cookies.set(candidateInvitationCookieName(id), token!, {
+  response.cookies.set(candidateInvitationCookieName(id), sessionToken, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
