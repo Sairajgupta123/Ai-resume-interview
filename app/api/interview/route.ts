@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { candidateInvitationCookieName, getCandidateInvitationToken, hasValidCandidateInvitation } from "@/lib/invitation";
 import { elapsedInterviewSeconds, findCandidateAnswerForQuestion, INTERVIEW_LIMIT_SECONDS, isVerifiableEvidenceQuote } from "@/lib/interview-policy.mjs";
-import { buildSkillEvaluationGuidance, calculateEvidenceCoverage, completeRequiredSkillEvaluations, deriveRecommendation, hasDuplicateSkills, isRatingEvidenceConsistent, isSkillEvidenceLinkedToQuestion } from "@/lib/evaluation-policy.mjs";
+import { buildQuestionAssessmentGuidance, buildSkillEvaluationGuidance, calculateEvidenceCoverage, completeRequiredSkillEvaluations, deriveRecommendation, hasDuplicateSkills, isRatingEvidenceConsistent, isSkillEvidenceLinkedToQuestion } from "@/lib/evaluation-policy.mjs";
 import { validateInterviewerTurn } from "@/lib/interviewer-turn-policy.mjs";
 import { buildAdaptiveGuidance } from "@/lib/adaptive-interview-policy.mjs";
 import { buildCoverageGuidance, buildSkillCoverage, extractRequiredJobSkills, resolveQuestionSkills } from "@/lib/skill-coverage-policy.mjs";
@@ -490,7 +490,7 @@ export async function POST(request: NextRequest) {
         const transcript = history.map(m => `${m.role}: ${m.content}`).join("\n").slice(-24000);
         const content = await askGrok([
           { role: "system", content: SYSTEM },
-          { role: "user", content: `Generate the employer-facing evidence-based interview report from this saved server-side transcript. Do not infer anything from video or voice appearance.\n${context}\nEvaluation standards:\n${buildSkillEvaluationGuidance()}\nTranscript:\n${transcript}\nReturn report JSON only.` }
+          { role: "user", content: `Generate the employer-facing evidence-based interview report from this saved server-side transcript. Do not infer anything from video or voice appearance.\n${context}\nEvaluation standards:\n${buildSkillEvaluationGuidance()}\nQuestion assessment standards:\n${buildQuestionAssessmentGuidance()}\nTranscript:\n${transcript}\nReturn report JSON only.` }
         ]);
         const rawReport = parseJson(content);
         const candidateAnswers = history.filter(message => message.role === "user").map(message => message.content);
