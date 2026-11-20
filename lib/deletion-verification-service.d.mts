@@ -15,3 +15,18 @@ export function verifyDeletionRequest(
   tokenHash: string,
   now?: Date
 ): Promise<boolean>;
+
+export function reserveDeletionVerificationEmail(
+  db: {
+    privacyDeletionRequest: {
+      updateMany(args: unknown): Promise<{ count: number }>;
+    };
+  },
+  input: {
+    requestId: string;
+    tokenHash: string;
+    now: Date;
+    expiresAt: Date;
+    cooldownMs: number;
+  }
+): Promise<boolean>;
