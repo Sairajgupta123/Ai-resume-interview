@@ -1,11 +1,15 @@
 "use client";
 
-import { useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useEffect, useState } from "react";
 
 export default function VerifyDeletionPage() {
-  const params = useSearchParams();
-  const token = params.get("token") || "";
+  const [token, setToken] = useState("");
+  const [requestId, setRequestId] = useState("");
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    setToken(params.get("token") || "");
+    setRequestId(params.get("request") || "");
+  }, []);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -14,7 +18,7 @@ export default function VerifyDeletionPage() {
     try {
       const response = await fetch("/api/privacy/deletion-verification", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token, requestId: params.get("request") || "" })
+        body: JSON.stringify({ token, requestId })
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Verification failed.");
