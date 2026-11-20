@@ -327,7 +327,7 @@ export default function Dashboard() {
             : <>No valid retention policy is configured. Set <code>INTERVIEW_RETENTION_DAYS</code> on the server to enable eligibility previews.</>}
         </div>
         <div className="retention-policy-note">Consent metadata present: <b>{retentionPreview.consentedInterviews}</b> · Missing consent timestamp or version: <b>{retentionPreview.missingConsentMetadata}</b></div>
-        <p className="analytics-disclaimer">This preview never includes in-progress interviews and does not delete resumes, transcripts, reports or recordings. Review applicable legal requirements and candidate notices before setting a retention period. Deletion workflow is not enabled.</p>
+        <p className="analytics-disclaimer">This preview never includes in-progress interviews and does not delete resumes, transcripts, reports or recordings. Review applicable legal requirements and candidate notices before setting a retention period. Deletion requests can be verified by candidates and separately approved by employers; the irreversible deletion execution phase is not enabled.</p>
       </>}
     </section>
     <section className="dashboard-table-card privacy-deletion-queue">
