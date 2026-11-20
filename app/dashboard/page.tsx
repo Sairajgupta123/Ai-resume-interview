@@ -163,8 +163,8 @@ export default function Dashboard() {
       const safe = typeof value === "string" && /^[\t\r\n ]*[-=+@]/.test(raw) ? "'" + raw : raw;
       return `"${safe.replace(/"/g, '""')}"`;
     };
-    const csv = [columns, ...rows].map(row => row.map(escapeCsv).join(",")).join("\\r\\n");
-    const url = URL.createObjectURL(new Blob(["\\uFEFF", csv], { type: "text/csv;charset=utf-8" }));
+    const csv = [columns, ...rows].map(row => row.map(escapeCsv).join(",")).join("\r\n");
+    const url = URL.createObjectURL(new Blob(["\uFEFF", csv], { type: "text/csv;charset=utf-8" }));
     const link = document.createElement("a");
     link.href = url; link.download = "mzobs-interview-candidates.csv"; link.click();
     URL.revokeObjectURL(url);
