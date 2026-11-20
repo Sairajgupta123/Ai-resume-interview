@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { getCandidateInvitationToken, hasValidCandidateInvitation } from "@/lib/invitation";
+import { candidateInvitationCookieName, getCandidateInvitationToken, hasValidCandidateInvitation } from "@/lib/invitation";
 
 export const runtime = "nodejs";
 const INTERVIEW_LIMIT_SECONDS = 15 * 60;
@@ -426,7 +426,17 @@ export async function POST(request: NextRequest) {
           });
           reportLockAt = null;
         }
-        return NextResponse.json(report);
+        const response = NextResponse.json(report);
+        if (body.sessionId) {
+          response.cookies.set(candidateInvitationCookieName(body.sessionId), "", {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === "production",
+            sameSite: "lax",
+            path: "/",
+            maxAge: 0
+          });
+        }
+        return response;
       } finally {
         if (body.sessionId && reportLockAt) {
           await db.interview.updateMany({
