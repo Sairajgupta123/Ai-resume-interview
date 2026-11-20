@@ -10,3 +10,4 @@ export function completeRequiredSkillEvaluations(requiredSkills: string[], evalu
 
 export function isSkillEvidenceLinkedToQuestion(skill: string, evidence: string, questionFeedback: Array<{ testedSkills: string[]; pairedAnswer?: string | null }>): boolean;
 export function buildSkillEvaluationGuidance(): string;
+export function buildQuestionAssessmentGuidance(): string;
