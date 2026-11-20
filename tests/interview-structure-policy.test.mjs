@@ -20,7 +20,7 @@ test("plans the least-covered question category first", () => {
   assert.equal(plan.categoryCounts.project, 1);
   assert.equal(plan.categoryCounts.practical, 0);
   assert.equal(plan.categoryCounts.situational, 0);
-  assert.equal(plan.nextCategory, "situational");
+  assert.equal(plan.nextCategory, "practical");
 });
 
 test("wrap-up takes priority in the final 90 seconds", () => {
@@ -45,4 +45,10 @@ test("guidance describes the next category without scoring the candidate", () =>
   const guidance = buildInterviewStructureGuidance(plan);
   assert.match(guidance, /Technical foundations/);
   assert.match(guidance, /not a candidate score/);
+});
+
+test("starts with technical foundations before moving to other categories", () => {
+  const plan = buildInterviewStructurePlan([]);
+  assert.equal(plan.phase, "opening");
+  assert.equal(plan.nextCategory, "technical");
 });
