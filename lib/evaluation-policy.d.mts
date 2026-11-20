@@ -9,3 +9,4 @@ export type SkillEvaluation = { skill: string; rating: "Strong" | "Good" | "Deve
 export function completeRequiredSkillEvaluations(requiredSkills: string[], evaluatedSkills: SkillEvaluation[]): SkillEvaluation[];
 
 export function isSkillEvidenceLinkedToQuestion(skill: string, evidence: string, questionFeedback: Array<{ testedSkills: string[]; pairedAnswer?: string | null }>): boolean;
+export function buildSkillEvaluationGuidance(): string;
