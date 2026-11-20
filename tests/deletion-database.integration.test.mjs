@@ -4,6 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
+import { createDeletionVerificationToken, hashDeletionVerificationToken } from "../lib/deletion-verification-policy.mjs";
 
 test("privacy deletion transaction removes interview data and retains an anonymized receipt", async () => {
   const tempDir = await mkdtemp(join(tmpdir(), "ai-interview-deletion-"));
@@ -21,6 +22,125 @@ test("privacy deletion transaction removes interview data and retains an anonymi
     const { PrismaClient } = await import("@prisma/client");
     prisma = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
     await prisma.$connect();
+
+    // Exercise candidate verification followed by separate employer approval.
+    const lifecycleInterview = await prisma.interview.create({
+      data: {
+        candidateName: "Verification Lifecycle Candidate",
+        role: "Full Stack Engineer",
+        resumeText: "Lifecycle fixture resume",
+        jobDescription: "Lifecycle fixture job",
+        candidateEmail: "candidate@example.test"
+      }
+    });
+    const lifecycleToken = createDeletionVerificationToken();
+    const lifecycleRequest = await prisma.privacyDeletionRequest.create({
+      data: {
+        interviewId: lifecycleInterview.id,
+        candidateNameSnapshot: lifecycleInterview.candidateName,
+        candidateEmailSnapshot: lifecycleInterview.candidateEmail,
+        roleSnapshot: lifecycleInterview.role,
+        reason: "Lifecycle integration test",
+        requestedBy: "candidate",
+        status: "pending_candidate_verification",
+        verificationTokenHash: hashDeletionVerificationToken(lifecycleToken),
+        verificationExpiresAt: new Date(Date.now() + 30 * 60 * 1000),
+        verificationSentAt: new Date()
+      }
+    });
+
+    const invalidAttempt = await prisma.privacyDeletionRequest.updateMany({
+      where: {
+        id: lifecycleRequest.id,
+        status: "pending_candidate_verification",
+        verificationAttempts: { lt: 5 }
+      },
+      data: { verificationAttempts: { increment: 1 } }
+    });
+    assert.equal(invalidAttempt.count, 1);
+
+    const candidateVerified = await prisma.$transaction(async tx => {
+      const changed = await tx.privacyDeletionRequest.updateMany({
+        where: {
+          id: lifecycleRequest.id,
+          status: "pending_candidate_verification",
+          verificationTokenHash: hashDeletionVerificationToken(lifecycleToken),
+          verificationExpiresAt: { gt: new Date() },
+          verificationAttempts: { lt: 5 }
+        },
+        data: {
+          status: "verified_pending_approval",
+          verifiedAt: new Date(),
+          verificationTokenHash: null,
+          verificationExpiresAt: null
+        }
+      });
+      if (changed.count !== 1) return false;
+      await tx.privacyDeletionEvent.create({
+        data: {
+          requestId: lifecycleRequest.id,
+          action: "candidate_verified",
+          actor: "candidate",
+          details: "Lifecycle integration test"
+        }
+      });
+      return true;
+    });
+    assert.equal(candidateVerified, true);
+
+    // The one-time token cannot verify the same request a second time.
+    const replayedVerification = await prisma.privacyDeletionRequest.updateMany({
+      where: {
+        id: lifecycleRequest.id,
+        status: "pending_candidate_verification",
+        verificationTokenHash: hashDeletionVerificationToken(lifecycleToken)
+      },
+      data: { status: "verified_pending_approval" }
+    });
+    assert.equal(replayedVerification.count, 0);
+
+    // Employer approval is a separate transition and requires verifiedAt.
+    const prematureApproval = await prisma.privacyDeletionRequest.updateMany({
+      where: {
+        id: lifecycleRequest.id,
+        status: "pending_candidate_verification",
+        verifiedAt: { not: null }
+      },
+      data: { status: "approved_for_deletion" }
+    });
+    assert.equal(prematureApproval.count, 0);
+
+    const employerApproval = await prisma.$transaction(async tx => {
+      const changed = await tx.privacyDeletionRequest.updateMany({
+        where: {
+          id: lifecycleRequest.id,
+          status: "verified_pending_approval",
+          verifiedAt: { not: null }
+        },
+        data: { status: "approved_for_deletion" }
+      });
+      if (changed.count !== 1) return false;
+      await tx.privacyDeletionEvent.create({
+        data: {
+          requestId: lifecycleRequest.id,
+          action: "employer_approved",
+          actor: "employer",
+          details: "Lifecycle integration test; execution remains separate."
+        }
+      });
+      return true;
+    });
+    assert.equal(employerApproval, true);
+    const lifecycleReceipt = await prisma.privacyDeletionRequest.findUnique({
+      where: { id: lifecycleRequest.id },
+      include: { events: true }
+    });
+    assert.equal(lifecycleReceipt.status, "approved_for_deletion");
+    assert.equal(lifecycleReceipt.events.length, 2);
+    assert.equal(
+      await prisma.interview.findUnique({ where: { id: lifecycleInterview.id } }) !== null,
+      true
+    );
 
     const interview = await prisma.interview.create({
       data: {
