@@ -10,6 +10,10 @@ export default function VerifyDeletionPage() {
     const params = new URLSearchParams(window.location.search);
     setToken(params.get("token") || "");
     setRequestId(params.get("request") || "");
+
+    // Keep the one-time credential in component memory, not in the visible URL
+    // or subsequent same-tab navigation history.
+    window.history.replaceState(null, "", window.location.pathname);
   }, []);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
