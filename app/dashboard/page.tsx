@@ -257,6 +257,7 @@ export default function Dashboard() {
       setDeletionMessage("Request recorded. Candidate verification and separate approval are still required. No data has been deleted.");
       setDeletionReason("");
       setDeletionConfirmation("");
+      await load();
     } catch (failure) {
       setDeletionError(failure instanceof Error ? failure.message : "Could not create deletion request.");
     } finally {
