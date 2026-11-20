@@ -99,6 +99,50 @@ test("privacy deletion transaction removes interview data and retains an anonymi
     });
     assert.equal(replayedVerification.count, 0);
 
+    // Expired links and requests at the attempt limit must not verify.
+    const expiredInterview = await prisma.interview.create({
+      data: {
+        candidateName: "Expired Link Candidate",
+        role: "Engineer",
+        resumeText: "Dummy resume",
+        jobDescription: "Dummy job"
+      }
+    });
+    const expiredToken = createDeletionVerificationToken();
+    const expiredRequest = await prisma.privacyDeletionRequest.create({
+      data: {
+        interviewId: expiredInterview.id,
+        candidateNameSnapshot: expiredInterview.candidateName,
+        roleSnapshot: expiredInterview.role,
+        reason: "Expired token test",
+        requestedBy: "candidate",
+        status: "pending_candidate_verification",
+        verificationTokenHash: hashDeletionVerificationToken(expiredToken),
+        verificationExpiresAt: new Date(Date.now() - 1_000)
+      }
+    });
+    const expiredClaim = await prisma.privacyDeletionRequest.updateMany({
+      where: {
+        id: expiredRequest.id,
+        status: "pending_candidate_verification",
+        verificationTokenHash: hashDeletionVerificationToken(expiredToken),
+        verificationExpiresAt: { gt: new Date() },
+        verificationAttempts: { lt: 5 }
+      },
+      data: { status: "verified_pending_approval", verifiedAt: new Date() }
+    });
+    assert.equal(expiredClaim.count, 0);
+
+    const lockedAttempt = await prisma.privacyDeletionRequest.updateMany({
+      where: {
+        id: lifecycleRequest.id,
+        status: "verified_pending_approval",
+        verificationAttempts: { lt: 5 }
+      },
+      data: { verificationAttempts: { increment: 1 } }
+    });
+    assert.equal(lockedAttempt.count, 0);
+
     // Employer approval is a separate transition and requires verifiedAt.
     const prematureApproval = await prisma.privacyDeletionRequest.updateMany({
       where: {
