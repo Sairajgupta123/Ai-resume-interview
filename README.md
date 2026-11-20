@@ -16,7 +16,8 @@ A resume- and job-description-aware interview application powered by xAI Grok.
 - Recording resilience: browser recording segments are periodically saved to IndexedDB on the candidate device; if the tab is refreshed or an upload fails, the candidate can recover and upload saved segments before completing the interview
 - Live WebRTC signaling authenticates through the same HttpOnly candidate cookie, so a refreshed candidate session can reconnect after granting camera/microphone permission
 - Employer dashboard includes private candidate recording playback with loading/error recovery states, browser controls, full-screen support and byte-range streaming for seeking
-- Automated unit tests cover interview time-limit boundaries, evidence quote integrity, employer login rate-limit policy, employer session-expiry boundaries, candidate invitation expiry/one-time exchange policy, recording MIME/signature/size validation, recording replacement cleanup/failure handling, video byte-range parsing and CSV export formatting/formula-injection protection
+- AI report validation now rejects duplicate skill entries and rating/evidence mismatches, calculates evidence coverage, and derives conservative recommendations from validated score and evidence coverage rather than trusting the model's recommendation label
+- Automated unit tests cover interview time-limit boundaries, evidence quote integrity, evidence coverage and recommendation calibration, employer login rate-limit policy, employer session-expiry boundaries, candidate invitation expiry/one-time exchange policy, recording MIME/signature/size validation, recording replacement cleanup/failure handling, video byte-range parsing and CSV export formatting/formula-injection protection
 - Employer review recommendation is advisory; hiring decisions remain human-led
 - Employer can record shortlist, review or reject decisions with notes and an immutable decision history
 
