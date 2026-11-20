@@ -35,19 +35,39 @@ export async function POST(request: Request, context: Context) {
   const verifyUrl = new URL("/privacy/verify-deletion", process.env.NEXT_PUBLIC_APP_URL);
   verifyUrl.searchParams.set("request", deletion.id);
   verifyUrl.searchParams.set("token", token);
-  const response = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: { Authorization: "Bearer " + process.env.RESEND_API_KEY, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      from: process.env.PRIVACY_FROM_EMAIL,
-      to: [interview.candidateEmail],
-      subject: "Verify your interview data deletion request",
-      text: "A request was opened to delete your interview data. If you made this request, verify it using this secure link (expires in 30 minutes): " + verifyUrl.toString() + "\n\nIf you did not request this, do not use the link and contact the hiring organization.",
-    })
-  });
-  if (!response.ok) {
-    console.error("Deletion verification email delivery failed:", response.status);
-    return NextResponse.json({ error: "Verification email could not be sent. You can safely retry; no data has been deleted." }, { status: 502 });
+  let deliverySucceeded = false;
+  try {
+    const response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { Authorization: "Bearer " + process.env.RESEND_API_KEY, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        from: process.env.PRIVACY_FROM_EMAIL,
+        to: [interview.candidateEmail],
+        subject: "Verify your interview data deletion request",
+        text: "A request was opened to delete your interview data. If you made this request, verify it using this secure link (expires in 30 minutes): " + verifyUrl.toString() + "\\n\\nIf you did not request this, do not use the link and contact the hiring organization.",
+      })
+    });
+    deliverySucceeded = response.ok;
+    if (!response.ok) console.error("Deletion verification email delivery failed:", response.status);
+  } catch (error) {
+    console.error("Deletion verification email request failed:", error);
+  }
+
+  if (!deliverySucceeded) {
+    // Clear only this attempt's token; a newer resend must remain untouched.
+    await db.privacyDeletionRequest.updateMany({
+      where: {
+        id: deletion.id,
+        status: "pending_candidate_verification",
+        verificationTokenHash: hashDeletionVerificationToken(token)
+      },
+      data: {
+        verificationTokenHash: null,
+        verificationExpiresAt: null,
+        verificationSentAt: null
+      }
+    });
+    return NextResponse.json({ error: "Verification email could not be sent. You can safely retry; no data has been deleted." }, { status: 502, headers: { "Cache-Control": "no-store" } });
   }
 
   await db.privacyDeletionEvent.create({
