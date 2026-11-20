@@ -364,6 +364,7 @@ export default function Dashboard() {
             </small>}
             {request.status === "deletion_in_progress" && request.executionStartedAt && <small className="audit-notes" style={{ display: "block", marginTop: 6 }}>
               Started: {date(request.executionStartedAt)} · Attempts: {request.deletionAttempts || 0}
+              {request.executionLeaseExpired && <><br />Worker lease expired. Recovery is available.</>}
             </small>}
             {request.status === "deletion_completed" && request.completedAt && <small className="audit-notes" style={{ display: "block", marginTop: 6 }}>
               Completed: {date(request.completedAt)}
@@ -375,7 +376,8 @@ export default function Dashboard() {
             {request.status === "approved_for_deletion" && <button className="view-btn" disabled={!!deletionActionBusy} onClick={() => runDeletionAction(request.id, request.interviewId, "execute")}>{deletionActionBusy === request.id + ":execute" ? "Deleting…" : "Execute deletion"}</button>}
             {request.status === "deletion_failed" && <button className="view-btn" disabled={!!deletionActionBusy} onClick={() => runDeletionAction(request.id, request.interviewId, "execute")}>{deletionActionBusy === request.id + ":execute" ? "Retrying…" : "Retry deletion"}</button>}
             {request.status === "deletion_completed" && <span className="analytics-updated">Completed · anonymized receipt retained</span>}
-            {request.status === "deletion_in_progress" && <span className="analytics-updated">Processing · refresh to check status</span>}
+            {request.status === "deletion_in_progress" && request.executionLeaseExpired && <button className="view-btn" disabled={!!deletionActionBusy} onClick={() => runDeletionAction(request.id, request.interviewId, "execute")}>{deletionActionBusy === request.id + ":execute" ? "Recovering…" : "Recover stalled deletion"}</button>}
+            {request.status === "deletion_in_progress" && !request.executionLeaseExpired && <span className="analytics-updated">Processing · refresh to check status</span>}
           </td>
         </tr>)}
         {!deletionRequests.length && <tr><td colSpan={5} className="empty-cell">No candidate deletion requests have been created.</td></tr>}
