@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { buildCsv } from "@/lib/csv-export.mjs";
 
 type Item = { id: string; candidateName: string; role: string; mode: string; status: string; overallScore: number | null; recommendation: string | null; employerDecision: string | null; durationSeconds: number; createdAt: string };
 type Detail = Item & { resumeText: string; jobDescription: string; recordingPath: string | null; reportJson: string | null; employerNotes: string | null; decisionAt: string | null; decisionHistory: { id: string; decision: string; notes: string | null; createdAt: string }[]; messages: { role: string; content: string }[] };
@@ -158,13 +159,8 @@ export default function Dashboard() {
   const exportCsv = () => {
     const columns = ["Candidate", "Role", "Mode", "Status", "AI score", "AI recommendation", "Employer decision", "Duration seconds", "Created at"];
     const rows = items.map(item => [item.candidateName, item.role, item.mode, item.status, item.overallScore ?? "", item.recommendation ?? "", item.employerDecision ?? "", item.durationSeconds, item.createdAt]);
-    const escapeCsv = (value: string | number) => {
-      const raw = String(value);
-      const safe = typeof value === "string" && /^[\t\r\n ]*[-=+@]/.test(raw) ? "'" + raw : raw;
-      return `"${safe.replace(/"/g, '""')}"`;
-    };
-    const csv = [columns, ...rows].map(row => row.map(escapeCsv).join(",")).join("\r\n");
-    const url = URL.createObjectURL(new Blob(["\uFEFF", csv], { type: "text/csv;charset=utf-8" }));
+    const csv = buildCsv(columns, rows);
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
     const link = document.createElement("a");
     link.href = url; link.download = "mzobs-interview-candidates.csv"; link.click();
     URL.revokeObjectURL(url);
