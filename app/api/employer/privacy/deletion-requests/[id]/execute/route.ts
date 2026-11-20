@@ -26,6 +26,8 @@ export async function POST(_request: Request, context: Context) {
     const claim = await db.privacyDeletionRequest.updateMany({
       where: {
         id,
+        // Keep candidate verification as an atomic database precondition, not only a pre-read check.
+        verifiedAt: { not: null },
         OR: [
           { status: "approved_for_deletion" },
           { status: "deletion_failed" },
