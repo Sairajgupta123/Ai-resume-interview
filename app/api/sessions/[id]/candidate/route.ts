@@ -19,6 +19,7 @@ async function candidateResponse(id: string, token: string | null) {
       resumeText: true,
       jobDescription: true,
       status: true,
+      recordingPath: true,
       inviteExpiresAt: true,
       startedAt: true,
       messages: {
@@ -33,7 +34,10 @@ async function candidateResponse(id: string, token: string | null) {
   if (interview.status === "completed") return NextResponse.json({ error: "This interview has already been completed." }, { status: 409 });
   if (!interview.inviteExpiresAt) return NextResponse.json({ error: "This interview invitation has expired." }, { status: 401 });
 
-  const response = NextResponse.json({ interview }, { headers: { "Cache-Control": "private, no-store" } });
+  const { recordingPath, ...candidateInterview } = interview;
+  const response = NextResponse.json({
+    interview: { ...candidateInterview, recordingSaved: Boolean(recordingPath) }
+  }, { headers: { "Cache-Control": "private, no-store" } });
   response.cookies.set(candidateInvitationCookieName(id), token!, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
