@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { isEmployerAuthenticated } from "@/lib/auth";
 import { canClaimDeletionExecution, anonymizedDeletionTombstone, DELETION_EXECUTION_LEASE_MS } from "@/lib/deletion-execution-policy.mjs";
-import { deleteStoredInterviewRecording } from "@/lib/deletion-storage";
+import { deleteStoredInterviewRecording } from "@/lib/deletion-storage.mjs";
 
 export const runtime = "nodejs";
 type Context = { params: Promise<{ id: string }> };
