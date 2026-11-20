@@ -7,7 +7,7 @@ import { validateInterviewerTurn } from "@/lib/interviewer-turn-policy.mjs";
 import { buildAdaptiveGuidance } from "@/lib/adaptive-interview-policy.mjs";
 import { buildCoverageGuidance, buildSkillCoverage, extractRequiredJobSkills, resolveQuestionSkills } from "@/lib/skill-coverage-policy.mjs";
 import { buildFairnessGuidance, buildInterviewFairnessPlan } from "@/lib/interview-fairness-policy.mjs";
-import { buildInterviewStructureGuidance, buildInterviewStructurePlan } from "@/lib/interview-structure-policy.mjs";
+import { buildInterviewDifficultyGuidance, buildInterviewDifficultyPlan, buildInterviewStructureGuidance, buildInterviewStructurePlan } from "@/lib/interview-structure-policy.mjs";
 
 function attachCandidateCookie(response: NextResponse, request: NextRequest, sessionId: string, expiresAt: Date | null) {
   const token = getCandidateInvitationToken(request, sessionId);
@@ -289,9 +289,10 @@ export async function POST(request: NextRequest) {
           INTERVIEW_LIMIT_SECONDS
         );
         const openingGuidance = buildInterviewStructureGuidance(openingPlan);
+        const openingDifficulty = buildInterviewDifficultyGuidance(buildInterviewDifficultyPlan([]));
         const content = await askGrok([
           { role: "system", content: SYSTEM },
-          { role: "user", content: `Begin the interview. Context:\n${context}\n${openingGuidance}\nOpen warmly and begin with one role-relevant technical foundation question. Return JSON only.` }
+          { role: "user", content: `Begin the interview. Context:\n${context}\n${openingGuidance}\n${openingDifficulty}\nOpen warmly and begin with one role-relevant technical foundation question. Return JSON only.` }
         ]);
         const parsed = parseJson(content);
         const validatedTurn = validateInterviewerTurn(parsed, []);
@@ -379,6 +380,8 @@ export async function POST(request: NextRequest) {
           INTERVIEW_LIMIT_SECONDS
         );
         const structureGuidance = buildInterviewStructureGuidance(structurePlan);
+        const difficultyPlan = buildInterviewDifficultyPlan(history);
+        const difficultyGuidance = buildInterviewDifficultyGuidance(difficultyPlan);
         const previousFocuses = history
           .filter(message => message.role === "assistant")
           .map(message => message.content.slice(0, 240));
@@ -386,7 +389,7 @@ export async function POST(request: NextRequest) {
           { role: "system" as const, content: SYSTEM },
           {
             role: "user" as const,
-            content: `Interview context:\n${context}\nContinue the interview. Return JSON only.\n${structureGuidance}\nAdaptive follow-up guidance (${adaptiveGuidance.depth}): ${adaptiveGuidance.instruction}\nJob skill coverage (${skillCoverage.answered}/${skillCoverage.total} answered, ${skillCoverage.percent}%): ${coverageGuidance}\n${fairnessGuidance}\nPreviously covered interviewer turns (avoid repeating the same skill/question):\n${previousFocuses.join("\n")}`
+            content: `Interview context:\n${context}\nContinue the interview. Return JSON only.\n${structureGuidance}\n${difficultyGuidance}\nAdaptive follow-up guidance (${adaptiveGuidance.depth}): ${adaptiveGuidance.instruction}\nJob skill coverage (${skillCoverage.answered}/${skillCoverage.total} answered, ${skillCoverage.percent}%): ${coverageGuidance}\n${fairnessGuidance}\nPreviously covered interviewer turns (avoid repeating the same skill/question):\n${previousFocuses.join("\n")}`
           },
           ...history.map((m) => ({ role: m.role as "assistant" | "user", content: m.content })),
           { role: "user" as const, content: body.answer! }
