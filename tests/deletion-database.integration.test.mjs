@@ -133,15 +133,39 @@ test("privacy deletion transaction removes interview data and retains an anonymi
     });
     assert.equal(expiredClaim.count, 0);
 
-    const lockedAttempt = await prisma.privacyDeletionRequest.updateMany({
+    const lockedInterview = await prisma.interview.create({
+      data: {
+        candidateName: "Attempt Limit Candidate",
+        role: "Engineer",
+        resumeText: "Dummy resume",
+        jobDescription: "Dummy job"
+      }
+    });
+    const lockedToken = createDeletionVerificationToken();
+    const lockedRequest = await prisma.privacyDeletionRequest.create({
+      data: {
+        interviewId: lockedInterview.id,
+        candidateNameSnapshot: lockedInterview.candidateName,
+        roleSnapshot: lockedInterview.role,
+        reason: "Attempt limit test",
+        requestedBy: "candidate",
+        status: "pending_candidate_verification",
+        verificationTokenHash: hashDeletionVerificationToken(lockedToken),
+        verificationExpiresAt: new Date(Date.now() + 30 * 60 * 1000),
+        verificationAttempts: 5
+      }
+    });
+    const lockedVerification = await prisma.privacyDeletionRequest.updateMany({
       where: {
-        id: lifecycleRequest.id,
-        status: "verified_pending_approval",
+        id: lockedRequest.id,
+        status: "pending_candidate_verification",
+        verificationTokenHash: hashDeletionVerificationToken(lockedToken),
+        verificationExpiresAt: { gt: new Date() },
         verificationAttempts: { lt: 5 }
       },
-      data: { verificationAttempts: { increment: 1 } }
+      data: { status: "verified_pending_approval", verifiedAt: new Date() }
     });
-    assert.equal(lockedAttempt.count, 0);
+    assert.equal(lockedVerification.count, 0);
 
     // Employer approval is a separate transition and requires verifiedAt.
     const prematureApproval = await prisma.privacyDeletionRequest.updateMany({
