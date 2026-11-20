@@ -56,3 +56,21 @@ test("rejects malformed provider responses", () => {
   assert.equal(validateInterviewerTurn(null).reason, "invalid_turn");
   assert.equal(validateInterviewerTurn({ message: 123 }).reason, "invalid_message");
 });
+
+test("accepts a closing statement without a new question", () => {
+  const closing = {
+    message: "Thank you for your time. The interview is now complete.",
+    done: true,
+    focus: "Interview complete"
+  };
+  assert.equal(validateInterviewerTurn(closing).ok, true);
+});
+
+test("rejects a closing statement that asks another question", () => {
+  const closing = {
+    message: "Thank you for your time. Do you have any questions?",
+    done: true,
+    focus: "Interview complete"
+  };
+  assert.equal(validateInterviewerTurn(closing).reason, "closing_must_not_ask_question");
+});
