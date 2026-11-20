@@ -253,6 +253,8 @@ export default function Home() {
         setInviteToken(activeInviteToken);
       }
       const data = await callApi({ action: "start", candidateName, role, resume, jobDescription, mode, sessionId: activeSessionId, consentAccepted: true, inviteToken: activeInviteToken || undefined }) as InterviewReply;
+      // The server has exchanged the bearer token for an HttpOnly cookie.
+      setInviteToken("");
       const initial = [{ role: "assistant" as const, content: data.message }];
       if (history.length === 0) setHistory(initial);
       setPhase("interview"); speak(data.message);
