@@ -13,7 +13,7 @@ This inventory describes the persistence locations currently present in the appl
 | Live WebRTC signaling | `InterviewSignal` rows | Related rows are deleted with the interview | Database integration test checks signals |
 | Interview recording | Local `data/recordings` in development or private S3-compatible object storage in production; path stored on `Interview` | Storage object is deleted before the database transaction completes | Storage adapter tests cover local and mocked S3 deletion, including missing objects and failures |
 | In-progress recording chunks | Candidate browser IndexedDB database `mzobs-interview-recordings` | Cleared after successful upload; deletion verification attempts cleanup on the browser/device opening the link | Cannot remotely erase another device's browser storage; browser cleanup can fail or data may already be unavailable |
-| Deletion request receipt and event history | `PrivacyDeletionRequest`, `PrivacyDeletionEvent` | Candidate-identifying snapshots are anonymized; minimal receipt and generic audit events remain | This is intentionally retained as a minimal deletion accountability record |
+| Deletion request receipt and event history | `PrivacyDeletionRequest`, `PrivacyDeletionEvent` | Candidate-identifying snapshots are anonymized; event action, actor and timestamp remain while free-form event details are replaced with generic text | This is intentionally retained as a minimal deletion accountability record; completion tests verify candidate email text is not retained in event details |
 | Login rate-limit counters | `LoginAttempt` | Not candidate interview content; independently expires/resets through login policy | Do not store candidate data in rate-limit keys |
 | CSV exports | Generated on demand by authenticated export endpoints | No server-side export archive is currently implemented | If export persistence is added, inventory and delete it |
 | AI processing | xAI Grok API receives interview/resume/job context for generation and evaluation | The app cannot delete provider-side logs or retained copies through the current integration | Review provider retention and contractual settings separately |
@@ -39,7 +39,7 @@ Before merging a feature that handles candidate-related information, answer all 
 2. The recording object must be deleted or confirmed absent before the interview database transaction is finalized.
 3. The execution lease must still belong to the worker finalizing deletion.
 4. Interview, transcript, report, decision history and signaling data must no longer be queryable after successful completion.
-5. Only the anonymized deletion receipt and generic deletion audit history remain in the application database.
+5. Only the anonymized deletion receipt and generic deletion audit history remain in the application database; free-form event details are normalized at completion to prevent accidental retention of candidate content.
 6. Any failure must leave the request retryable and must not claim successful deletion.
 7. Browser-local data on other devices and provider-side copies are outside the app's direct deletion capability and must never be represented as remotely erased.
 
