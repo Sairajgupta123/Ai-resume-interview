@@ -4,3 +4,4 @@ export function extractTargetSkills(jobDescription: string, resume?: string, lim
 export function buildSkillCoverage(targetSkills: string[], history: Array<{role: string; content: string}>): SkillCoverage;
 export function buildCoverageGuidance(coverage: SkillCoverage): string;
 export function matchesSkillTerm(text: unknown, skill: unknown): boolean;
+export function resolveQuestionSkills(question: string, suggestedSkills: unknown, requiredSkills: string[]): string[];
