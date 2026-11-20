@@ -79,3 +79,12 @@
 .audit-review{background:#f5f0e5;color:#8a6b2f}
 .audit-reject{background:#f7ecea;color:#9a4c45}
 .audit-notes{min-width:180px;max-width:300px;white-space:normal;line-height:1.5;color:#6e7b72;font-size:10px}
+
+.privacy-retention-card{margin:18px 0;padding:20px;background:#fff;border:1px solid var(--line);border-radius:13px}
+.retention-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:16px 0}
+.retention-kpis>div{padding:14px;border:1px solid #e8eee9;border-radius:10px;background:#fbfdfb}
+.retention-kpis small{display:block;font-size:8px;letter-spacing:1px;font-weight:800;color:#829087}
+.retention-kpis strong{display:block;margin-top:8px;font:800 24px Manrope;color:#2d4936}
+.retention-policy-note{margin-top:10px;padding:11px 13px;border-radius:8px;background:#f5f8f5;color:#68786d;font-size:10px;line-height:1.6}
+.retention-policy-note code{font-size:10px;color:#315b40}
+@media(max-width:700px){.retention-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.privacy-retention-card{padding:14px}}
