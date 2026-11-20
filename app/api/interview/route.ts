@@ -185,7 +185,7 @@ export async function POST(request: NextRequest) {
         }
       });
       if (!session) return NextResponse.json({ error: "Interview session not found." }, { status: 404 });
-      if (!session.invitationTokenHash || !(await hasValidCandidateInvitation(body.sessionId, getCandidateInvitationToken(request, id)))) {
+      if (!session.invitationTokenHash || !(await hasValidCandidateInvitation(body.sessionId, getCandidateInvitationToken(request, body.sessionId)))) {
         return NextResponse.json({ error: "Invalid or expired candidate invitation." }, { status: 401 });
       }
       if (session.status === "completed") return NextResponse.json({ error: "This interview has already been completed." }, { status: 409 });
