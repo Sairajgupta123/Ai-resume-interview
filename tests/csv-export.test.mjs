@@ -7,23 +7,24 @@ test("CSV values are quoted and embedded quotes are doubled", () => {
 });
 
 test("CSV protects formula-like text values", () => {
-  assert.equal(escapeCsvValue("=1+1"), '"\'=1+1"');
-  assert.equal(escapeCsvValue("  @SUM(A1:A2)"), '"\'  @SUM(A1:A2)"');
+  assert.equal(escapeCsvValue("=1+1"), "\"'=1+1\"");
+  assert.equal(escapeCsvValue("  @SUM(A1:A2)"), "\"'  @SUM(A1:A2)\"");
   assert.equal(escapeCsvValue("-42"), '"-42"');
 });
 
 test("CSV preserves commas and line breaks inside quoted fields", () => {
   assert.equal(escapeCsvValue("Lucknow, India"), '"Lucknow, India"');
-  assert.equal(escapeCsvValue("first\\nsecond"), '"first\\nsecond"');
+  assert.equal(escapeCsvValue("first\nsecond"), '"first\nsecond"');
 });
 
 test("CSV includes UTF-8 BOM and CRLF row separators", () => {
   const csv = buildCsv(["Candidate", "Role"], [["Aman", "Engineer"], ["Poonam", "Analyst"]]);
-  assert.equal(csv, "\\uFEFF\\"Candidate\\",\\"Role\\"\\r\\n\\"Aman\\",\\"Engineer\\"\\r\\n\\"Poonam\\",\\"Analyst\\"");
+  const expected = "\uFEFF" + ['"Candidate","Role"', '"Aman","Engineer"', '"Poonam","Analyst"'].join("\r\n");
+  assert.equal(csv, expected);
 });
 
 test("CSV supports empty data while retaining its header", () => {
-  assert.equal(buildCsv(["Candidate", "Role"], []), "\\uFEFF\\"Candidate\\",\\"Role\\"");
+  assert.equal(buildCsv(["Candidate", "Role"], []), "\uFEFF" + '"Candidate","Role"');
 });
 
 test("CSV rejects rows with a different number of columns", () => {
