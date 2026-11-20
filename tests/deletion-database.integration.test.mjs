@@ -6,7 +6,7 @@ import { join, resolve } from "node:path";
 import { test } from "node:test";
 import { createDeletionVerificationToken, hashDeletionVerificationToken } from "../lib/deletion-verification-policy.mjs";
 import { approveVerifiedDeletionRequest } from "../lib/deletion-approval-service.mjs";
-import { verifyDeletionRequest, reserveDeletionVerificationEmail } from "../lib/deletion-verification-service.mjs";
+import { verifyDeletionRequest, reserveDeletionVerificationEmail, recordDeletionVerificationEmailSent } from "../lib/deletion-verification-service.mjs";
 import { DELETION_VERIFICATION_RESEND_COOLDOWN_MS } from "../lib/deletion-verification-policy.mjs";
 import { finalizeDeletionExecution, markDeletionExecutionFailed } from "../lib/deletion-execution-service.mjs";
 
@@ -400,6 +400,32 @@ test("privacy deletion transaction removes interview data and retains an anonymi
     });
     assert.equal(resendWinner.verificationSentAt.getTime(), resendNow.getTime());
     assert.ok(resendWinner.verificationTokenHash);
+
+    const activeEmailTokenHash = resendWinner.verificationTokenHash;
+    assert.equal(
+      await recordDeletionVerificationEmailSent(prisma, resendRequest.id, activeEmailTokenHash),
+      true
+    );
+    const replacementTime = new Date(resendNow.getTime() + DELETION_VERIFICATION_RESEND_COOLDOWN_MS + 1);
+    const replacementTokenHash = hashDeletionVerificationToken(createDeletionVerificationToken());
+    assert.equal(
+      await reserveDeletionVerificationEmail(prisma, {
+        requestId: resendRequest.id,
+        tokenHash: replacementTokenHash,
+        now: replacementTime,
+        expiresAt: new Date(replacementTime.getTime() + 30 * 60 * 1000),
+        cooldownMs: DELETION_VERIFICATION_RESEND_COOLDOWN_MS
+      }),
+      true
+    );
+    assert.equal(
+      await recordDeletionVerificationEmailSent(prisma, resendRequest.id, activeEmailTokenHash),
+      false
+    );
+    assert.equal(
+      await recordDeletionVerificationEmailSent(prisma, resendRequest.id, replacementTokenHash),
+      true
+    );
 
     // A storage failure should leave interview data intact and permit a safe retry.
     const retryInterview = await prisma.interview.create({
