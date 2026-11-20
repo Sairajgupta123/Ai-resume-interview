@@ -103,6 +103,7 @@ model PrivacyDeletionRequest {
   verificationAttempts  Int      @default(0)
   deletionAttempts      Int      @default(0)
   executionStartedAt    DateTime?
+  executionLeaseToken   String?  @unique
   completedAt           DateTime?
   lastErrorCode         String?
   createdAt             DateTime @default(now())
