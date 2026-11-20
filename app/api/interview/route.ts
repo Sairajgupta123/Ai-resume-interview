@@ -4,6 +4,9 @@ import { hasValidCandidateInvitation } from "@/lib/invitation";
 
 export const runtime = "nodejs";
 const INTERVIEW_LIMIT_SECONDS = 15 * 60;
+// Keep the provider deadline comfortably below the stale-lock lease.
+const GROK_TIMEOUT_MS = 45_000;
+const OPERATION_LOCK_STALE_MS = 90_000;
 
 type Message = { role: "assistant" | "user"; content: string };
 type Payload = {
@@ -35,16 +38,25 @@ Rules:
 async function askGrok(messages: { role: "system" | "user" | "assistant"; content: string }[]) {
   const key = process.env.XAI_API_KEY;
   if (!key) throw new Error("XAI_API_KEY is missing. Add it to .env.local.");
-  const response = await fetch("https://api.x.ai/v1/chat/completions", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
-    body: JSON.stringify({
-      model: process.env.XAI_MODEL || "grok-3-mini",
-      messages,
-      temperature: 0.45
-    }),
-    cache: "no-store"
-  });
+  let response: Response;
+  try {
+    response = await fetch("https://api.x.ai/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+      body: JSON.stringify({
+        model: process.env.XAI_MODEL || "grok-3-mini",
+        messages,
+        temperature: 0.45
+      }),
+      cache: "no-store",
+      signal: AbortSignal.timeout(GROK_TIMEOUT_MS)
+    });
+  } catch (error) {
+    const timedOut = error instanceof Error && error.name === "TimeoutError";
+    throw new Error(timedOut
+      ? "Grok API error (timeout): provider request exceeded the 45-second deadline."
+      : "Grok API error (network): provider request could not be completed.");
+  }
   if (!response.ok) {
     const detail = await response.text();
     throw new Error(`Grok API error (${response.status}): ${detail.slice(0, 500)}`);
@@ -200,7 +212,7 @@ export async function POST(request: NextRequest) {
           where: {
             id: body.sessionId,
             startedAt: null,
-            OR: [{ startLockAt: null }, { startLockAt: { lt: new Date(Date.now() - 90_000) } }]
+            OR: [{ startLockAt: null }, { startLockAt: { lt: new Date(Date.now() - OPERATION_LOCK_STALE_MS) } }]
           },
           data: { startLockAt: lockAt, consentAcceptedAt: lockAt, consentVersion: "2026-11-19" }
         });
@@ -287,8 +299,8 @@ export async function POST(request: NextRequest) {
             id: body.sessionId,
             status: "in_progress",
             AND: [
-              { OR: [{ answerLockAt: null }, { answerLockAt: { lt: new Date(Date.now() - 90_000) } }] },
-              { OR: [{ reportLockAt: null }, { reportLockAt: { lt: new Date(Date.now() - 90_000) } }] }
+              { OR: [{ answerLockAt: null }, { answerLockAt: { lt: new Date(Date.now() - OPERATION_LOCK_STALE_MS) } }] },
+              { OR: [{ reportLockAt: null }, { reportLockAt: { lt: new Date(Date.now() - OPERATION_LOCK_STALE_MS) } }] }
             ]
           },
           data: { answerLockAt: lockAt, reportLockAt: null }
@@ -359,8 +371,8 @@ export async function POST(request: NextRequest) {
             id: body.sessionId,
             status: "in_progress",
             AND: [
-              { OR: [{ answerLockAt: null }, { answerLockAt: { lt: new Date(Date.now() - 90_000) } }] },
-              { OR: [{ reportLockAt: null }, { reportLockAt: { lt: new Date(Date.now() - 90_000) } }] }
+              { OR: [{ answerLockAt: null }, { answerLockAt: { lt: new Date(Date.now() - OPERATION_LOCK_STALE_MS) } }] },
+              { OR: [{ reportLockAt: null }, { reportLockAt: { lt: new Date(Date.now() - OPERATION_LOCK_STALE_MS) } }] }
             ]
           },
           data: { reportLockAt: lockAt, answerLockAt: null }
