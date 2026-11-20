@@ -45,7 +45,7 @@ export async function POST(request: NextRequest) {
       return true;
     });
     if (!result) return NextResponse.json({ error: "Verification link has already been used or expired." }, { status: 409, headers: { "Cache-Control": "no-store" } });
-    return NextResponse.json({ ok: true, message: "Your identity has been verified. The hiring organization must separately approve the deletion request. No data has been deleted." }, { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json({ ok: true, localRecordingSessionId: deletion.interviewId, message: "Your identity has been verified. The hiring organization must separately approve the deletion request. No data has been deleted." }, { headers: { "Cache-Control": "no-store" } });
   } catch {
     return NextResponse.json({ error: "Could not verify this deletion request." }, { status: 500, headers: { "Cache-Control": "no-store" } });
   }
