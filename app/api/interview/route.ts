@@ -3,6 +3,20 @@ import { db } from "@/lib/db";
 import { candidateInvitationCookieName, getCandidateInvitationToken, hasValidCandidateInvitation } from "@/lib/invitation";
 import { elapsedInterviewSeconds, INTERVIEW_LIMIT_SECONDS, isVerifiableEvidenceQuote } from "@/lib/interview-policy.mjs";
 
+function attachCandidateCookie(response: NextResponse, request: NextRequest, sessionId: string, expiresAt: Date | null) {
+  const token = getCandidateInvitationToken(request, sessionId);
+  if (token && expiresAt) {
+    response.cookies.set(candidateInvitationCookieName(sessionId), token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+      maxAge: Math.max(0, Math.floor((expiresAt.getTime() - Date.now()) / 1000))
+    });
+  }
+  return response;
+}
+
 export const runtime = "nodejs";
 // Keep the provider deadline comfortably below the stale-lock lease.
 const GROK_TIMEOUT_MS = 45_000;
@@ -192,7 +206,10 @@ export async function POST(request: NextRequest) {
             orderBy: { createdAt: "asc" },
             select: { content: true }
           });
-          if (firstQuestion) return NextResponse.json({ message: firstQuestion.content, done: false, focus: "Interview introduction" });
+          if (firstQuestion) {
+            const response = NextResponse.json({ message: firstQuestion.content, done: false, focus: "Interview introduction" });
+            return attachCandidateCookie(response, request, body.sessionId, invitationExpiresAt);
+          }
           return NextResponse.json({ error: "Interview initialization is incomplete. Please contact the hiring team." }, { status: 409 });
         }
         const lockAt = new Date();
@@ -268,19 +285,9 @@ export async function POST(request: NextRequest) {
           });
         }
         const response = NextResponse.json(parsed);
-        if (body.sessionId) {
-          const invitationToken = getCandidateInvitationToken(request, body.sessionId);
-          if (invitationToken && invitationExpiresAt) {
-            response.cookies.set(candidateInvitationCookieName(body.sessionId), invitationToken, {
-              httpOnly: true,
-              secure: process.env.NODE_ENV === "production",
-              sameSite: "lax",
-              path: "/",
-              maxAge: Math.max(0, Math.floor((invitationExpiresAt.getTime() - Date.now()) / 1000))
-            });
-          }
-        }
-        return response;
+        return body.sessionId
+          ? attachCandidateCookie(response, request, body.sessionId, invitationExpiresAt)
+          : response;
       } finally {
         if (body.sessionId && startLockAt) {
           await db.interview.updateMany({
