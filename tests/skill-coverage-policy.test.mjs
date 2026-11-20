@@ -99,7 +99,7 @@ test("required competency extraction uses only the job description, never resume
 });
 
 test("required competency extraction preserves the full supported job-skill limit", () => {
-  const required = extractRequiredJobSkills("JavaScript TypeScript React Next.js Node.js Express Python Java C++ SQL MongoDB REST API Docker AWS");
+  const required = extractRequiredJobSkills("JavaScript TypeScript React Next.js Node.js Express Python Java C++ SQL MongoDB REST API Docker AWS Git");
   assert.equal(required.length, 15);
 });
 
