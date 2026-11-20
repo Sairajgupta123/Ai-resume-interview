@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { candidateInvitationCookieName, getCandidateInvitationToken, hasValidCandidateInvitation } from "@/lib/invitation";
+import { elapsedInterviewSeconds, isVerifiableEvidenceQuote } from "@/lib/interview-policy.mjs";
 
 export const runtime = "nodejs";
 const INTERVIEW_LIMIT_SECONDS = 15 * 60;
@@ -73,16 +74,6 @@ function parseJson(text: string) {
   return JSON.parse(cleaned.slice(first, last + 1));
 }
 
-function elapsedSeconds(startedAt: Date) {
-  return Math.max(0, Math.floor((Date.now() - startedAt.getTime()) / 1000));
-}
-
-function normalizeEvidence(value: string) {
-  // Ignore case and whitespace differences only. Keep punctuation and word order
-  // so evidence must remain a contiguous quote from one candidate answer.
-  return value.toLocaleLowerCase().trim().replace(/\s+/g, " ");
-}
-
 function boundedText(value: unknown, field: string, maxLength: number) {
   if (typeof value !== "string" || !value.trim() || value.length > maxLength) {
     throw new Error(`AI report validation failed: invalid ${field}.`);
@@ -101,13 +92,9 @@ function validateReport(raw: any, candidateAnswers: string[]) {
   if (!recommendations.includes(raw.recommendation)) {
     throw new Error("AI report validation failed: recommendation is not supported.");
   }
-  const normalizedAnswers = candidateAnswers.map(normalizeEvidence);
   const validateEvidence = (value: unknown, field: string) => {
     const evidence = boundedText(value, field, 1200);
-    if (evidence === "Insufficient evidence") return evidence;
-    const normalized = normalizeEvidence(evidence);
-    const isVerifiableQuote = normalized.length >= 8 && normalizedAnswers.some(answer => answer.includes(normalized));
-    if (!isVerifiableQuote) {
+    if (!isVerifiableEvidenceQuote(evidence, candidateAnswers)) {
       throw new Error(`AI report validation failed: ${field} is not a contiguous quote from one candidate answer.`);
     }
     return evidence;
@@ -228,7 +215,7 @@ export async function POST(request: NextRequest) {
         startLockAt = lockAt;
       } else {
         if (!startedAt) return NextResponse.json({ error: "The interview has not been started." }, { status: 409 });
-        if (body.action === "answer" && elapsedSeconds(startedAt) >= INTERVIEW_LIMIT_SECONDS) {
+        if (body.action === "answer" && elapsedInterviewSeconds(startedAt) >= INTERVIEW_LIMIT_SECONDS) {
           return NextResponse.json({ error: "The 15-minute interview time limit has been reached. Generate your report to finish." }, { status: 409 });
         }
       }
@@ -355,7 +342,7 @@ export async function POST(request: NextRequest) {
         }
         return NextResponse.json({
           ...parsed,
-          timeLimitReached: !!startedAt && elapsedSeconds(startedAt) >= INTERVIEW_LIMIT_SECONDS
+          timeLimitReached: !!startedAt && elapsedInterviewSeconds(startedAt) >= INTERVIEW_LIMIT_SECONDS
         });
       } finally {
         if (body.sessionId && answerLockAt) {
@@ -408,7 +395,7 @@ export async function POST(request: NextRequest) {
         const report = validateReport(rawReport, candidateAnswers);
         if (body.sessionId) {
           if (!reportLockAt) throw new Error("Interview report lock was not acquired.");
-          const durationSeconds = startedAt ? Math.min(INTERVIEW_LIMIT_SECONDS, elapsedSeconds(startedAt)) : 0;
+          const durationSeconds = startedAt ? Math.min(INTERVIEW_LIMIT_SECONDS, elapsedInterviewSeconds(startedAt)) : 0;
           await db.$transaction(async (tx) => {
             const current = await tx.interview.findUnique({
               where: { id: body.sessionId },
