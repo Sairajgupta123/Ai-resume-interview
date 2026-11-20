@@ -61,6 +61,7 @@ export default function Home() {
   const recordingUploadInProgressRef = useRef(false);
   const recordingChunkIndexRef = useRef(0);
   const recordingPersistenceRef = useRef<Promise<void>>(Promise.resolve());
+  const recordingPersistenceFailedRef = useRef(false);
   const finishStartedRef = useRef(false);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const transcriptEndRef = useRef<HTMLDivElement>(null);
@@ -360,15 +361,19 @@ export default function Home() {
       const chunks: BlobPart[] = [];
       recordingChunkIndexRef.current = 0;
       recordingPersistenceRef.current = Promise.resolve();
+      recordingPersistenceFailedRef.current = false;
       recordingCompleteRef.current = new Promise<boolean>(resolve => { resolveCompletion = resolve; });
       recorder.ondataavailable = event => {
         if (!event.data.size) return;
         chunks.push(event.data);
         const index = recordingChunkIndexRef.current++;
-        if (targetSessionId) {
-          recordingPersistenceRef.current = recordingPersistenceRef.current.then(() =>
-            cacheRecordingChunk(targetSessionId, index, event.data, recorder.mimeType || "video/webm")
-          ).catch(() => {
+        if (targetSessionId && !recordingPersistenceFailedRef.current) {
+          recordingPersistenceRef.current = recordingPersistenceRef.current.then(() => {
+            if (recordingPersistenceFailedRef.current) return;
+            return cacheRecordingChunk(targetSessionId, index, event.data, recorder.mimeType || "video/webm");
+          }).catch(async () => {
+            recordingPersistenceFailedRef.current = true;
+            await clearCachedRecording(targetSessionId).catch(() => {});
             setError("Local recording backup failed. Keep this tab open until the recording is uploaded.");
           });
         }
