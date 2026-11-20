@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import type { Prisma } from "@prisma/client";
 import { isEmployerAuthenticated } from "@/lib/auth";
-import { hasValidCandidateInvitation } from "@/lib/invitation";
+import { getCandidateInvitationToken, hasValidCandidateInvitation } from "@/lib/invitation";
 
 type Context = { params: Promise<{ id: string }> };
 
@@ -17,7 +17,7 @@ export async function PUT(request: NextRequest, context: Context) {
     }
 
     const employer = await isEmployerAuthenticated();
-    const candidate = await hasValidCandidateInvitation(id, request.headers.get("x-interview-invite"));
+    const candidate = await hasValidCandidateInvitation(id, getCandidateInvitationToken(request, id));
     if (!employer && !candidate) return NextResponse.json({ error: "Unauthorized interview update." }, { status: 401 });
 
     // Transcript entries and final reports are written only by the server-side AI interview route.
