@@ -5,9 +5,9 @@ import { join } from "node:path";
 import { db } from "@/lib/db";
 import { isEmployerAuthenticated } from "@/lib/auth";
 import { getCandidateInvitationToken, hasValidCandidateInvitation } from "@/lib/invitation";
+import { MAX_RECORDING_BYTES, inspectRecordingUpload, isSafeRecordingFilename } from "@/lib/recording-policy.mjs";
 
 export const runtime = "nodejs";
-const MAX_BYTES = 100 * 1024 * 1024;
 
 type Context = { params: Promise<{ id: string }> };
 
@@ -67,7 +67,7 @@ function isRemoteRecordingPath(value: string) {
 
 function recordingObjectKey(value: string) {
   const key = value.slice("s3://".length);
-  if (!/^recordings\/[a-f0-9-]+\.(webm|mp4|mov)$/i.test(key)) throw new Error("Recording storage reference is invalid.");
+  if (!/^recordings\/[a-f0-9-]{36}\.(webm|mp4|mov)$/i.test(key)) throw new Error("Recording storage reference is invalid.");
   return key;
 }
 
@@ -92,7 +92,7 @@ async function readRecording(storedPath: string) {
   }
   const normalized = storedPath.replace(/\\/g, "/");
   const filename = normalized.split("/").pop() || "";
-  if (normalized !== "data/recordings/" + filename || !/^[a-f0-9-]+\.(webm|mp4|mov)$/i.test(filename)) throw new Error("Recording storage reference is invalid.");
+  if (normalized !== "data/recordings/" + filename || !isSafeRecordingFilename(filename)) throw new Error("Recording storage reference is invalid.");
   return readFile(join(process.cwd(), "data", "recordings", filename));
 }
 
@@ -126,28 +126,23 @@ export async function POST(request: NextRequest, context: Context) {
     if (!employer && !candidate) return NextResponse.json({ error: "Unauthorized recording upload." }, { status: 401 });
 
     const contentLength = Number(request.headers.get("content-length") || 0);
-    if (contentLength > MAX_BYTES + 1024 * 1024) {
+    if (contentLength > MAX_RECORDING_BYTES + 1024 * 1024) {
       return NextResponse.json({ error: "Recording upload exceeds the 100 MB limit." }, { status: 413 });
     }
     const form = await request.formData();
     const file = form.get("recording");
     if (!(file instanceof File)) return NextResponse.json({ error: "Recording file is required." }, { status: 400 });
     const mimeType = file.type.split(";")[0].trim();
-    if (!["video/webm", "video/mp4", "video/quicktime"].includes(mimeType)) {
-      return NextResponse.json({ error: "Only WebM or MP4 recordings are accepted." }, { status: 415 });
-    }
-    if (file.size < 1 || file.size > MAX_BYTES) {
+    if (file.size < 1 || file.size > MAX_RECORDING_BYTES) {
       return NextResponse.json({ error: "Recording must be smaller than 100 MB." }, { status: 413 });
     }
-
     const bytes = Buffer.from(await file.arrayBuffer());
-    const isWebm = bytes.length >= 4 && bytes.subarray(0, 4).equals(Buffer.from([0x1a, 0x45, 0xdf, 0xa3]));
-    const isMp4 = bytes.length >= 12 && bytes.toString("ascii", 4, 8) === "ftyp";
-    if ((mimeType === "video/webm" && !isWebm) || (mimeType !== "video/webm" && !isMp4)) {
-      return NextResponse.json({ error: "Recording file content does not match its declared video format." }, { status: 415 });
+    const validation = inspectRecordingUpload(mimeType, file.size, bytes);
+    if (!validation.ok) {
+      return NextResponse.json({ error: validation.error }, { status: validation.status });
     }
+    const extension = validation.extension;
 
-    const extension = mimeType === "video/mp4" ? ".mp4" : mimeType === "video/quicktime" ? ".mov" : ".webm";
     const filename = randomUUID() + extension;
     const relativePath = await saveRecording(bytes, mimeType, filename);
     const saved = await db.interview.updateMany({
