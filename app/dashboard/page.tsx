@@ -357,14 +357,25 @@ export default function Dashboard() {
               </div>
             </details>
           </td><td>{request.roleSnapshot}</td>
-          <td><span className="audit-decision audit-review">{request.status.replaceAll("_", " ")}</span></td>
+          <td>
+            <span className="audit-decision audit-review">{request.status.replaceAll("_", " ")}</span>
+            {request.status === "deletion_failed" && <small className="audit-notes" style={{ display: "block", marginTop: 6 }}>
+              Last issue: {request.lastErrorCode || "DELETION_EXECUTION_FAILED"} · Attempts: {request.deletionAttempts || 0}
+            </small>}
+            {request.status === "deletion_in_progress" && request.executionStartedAt && <small className="audit-notes" style={{ display: "block", marginTop: 6 }}>
+              Started: {date(request.executionStartedAt)} · Attempts: {request.deletionAttempts || 0}
+            </small>}
+            {request.status === "deletion_completed" && request.completedAt && <small className="audit-notes" style={{ display: "block", marginTop: 6 }}>
+              Completed: {date(request.completedAt)}
+            </small>}
+          </td>
           <td className="privacy-workflow-actions">
             {request.status === "pending_candidate_verification" && <button className="view-btn" disabled={!!deletionActionBusy} onClick={() => runDeletionAction(request.id, request.interviewId, "send")}>{deletionActionBusy === request.id + ":send" ? "Sending…" : "Send verification"}</button>}
             {request.status === "verified_pending_approval" && <button className="view-btn" disabled={!!deletionActionBusy} onClick={() => runDeletionAction(request.id, request.interviewId, "approve")}>{deletionActionBusy === request.id + ":approve" ? "Approving…" : "Approve request"}</button>}
             {request.status === "approved_for_deletion" && <button className="view-btn" disabled={!!deletionActionBusy} onClick={() => runDeletionAction(request.id, request.interviewId, "execute")}>{deletionActionBusy === request.id + ":execute" ? "Deleting…" : "Execute deletion"}</button>}
             {request.status === "deletion_failed" && <button className="view-btn" disabled={!!deletionActionBusy} onClick={() => runDeletionAction(request.id, request.interviewId, "execute")}>{deletionActionBusy === request.id + ":execute" ? "Retrying…" : "Retry deletion"}</button>}
-            {request.status === "deletion_completed" && <span className="analytics-updated">Anonymized receipt retained</span>}
-            {request.status === "deletion_in_progress" && <span className="analytics-updated">Deletion in progress</span>}
+            {request.status === "deletion_completed" && <span className="analytics-updated">Completed · anonymized receipt retained</span>}
+            {request.status === "deletion_in_progress" && <span className="analytics-updated">Processing · refresh to check status</span>}
           </td>
         </tr>)}
         {!deletionRequests.length && <tr><td colSpan={5} className="empty-cell">No candidate deletion requests have been created.</td></tr>}
