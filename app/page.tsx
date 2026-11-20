@@ -67,8 +67,10 @@ export default function Home() {
     const token = params.get("token");
     if (!invitedId) return;
     let cancelled = false;
-    const invitationUrl = `/api/sessions/${invitedId}/candidate${token ? `?token=${encodeURIComponent(token)}` : ""}`;
-    fetch(invitationUrl, { credentials: "same-origin", cache: "no-store" })
+    const invitationUrl = `/api/sessions/${invitedId}/candidate`;
+    fetch(invitationUrl, token
+      ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token }), credentials: "same-origin", cache: "no-store" }
+      : { method: "GET", credentials: "same-origin", cache: "no-store" })
       .then(async response => {
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || "This invitation is invalid or expired.");
