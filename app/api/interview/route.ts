@@ -5,7 +5,7 @@ import { elapsedInterviewSeconds, findCandidateAnswerForQuestion, INTERVIEW_LIMI
 import { calculateEvidenceCoverage, completeRequiredSkillEvaluations, deriveRecommendation, hasDuplicateSkills, isRatingEvidenceConsistent } from "@/lib/evaluation-policy.mjs";
 import { validateInterviewerTurn } from "@/lib/interviewer-turn-policy.mjs";
 import { buildAdaptiveGuidance } from "@/lib/adaptive-interview-policy.mjs";
-import { buildCoverageGuidance, buildSkillCoverage, extractTargetSkills, resolveQuestionSkills } from "@/lib/skill-coverage-policy.mjs";
+import { buildCoverageGuidance, buildSkillCoverage, extractRequiredJobSkills, resolveQuestionSkills } from "@/lib/skill-coverage-policy.mjs";
 import { buildFairnessGuidance, buildInterviewFairnessPlan } from "@/lib/interview-fairness-policy.mjs";
 
 function attachCandidateCookie(response: NextResponse, request: NextRequest, sessionId: string, expiresAt: Date | null) {
@@ -355,7 +355,7 @@ export async function POST(request: NextRequest) {
             })
           : (body.history || []).slice(-18);
         const adaptiveGuidance = buildAdaptiveGuidance(body.answer!);
-        const targetSkills = extractTargetSkills(body.jobDescription || "", body.resume || "");
+        const targetSkills = extractRequiredJobSkills(body.jobDescription || "");
         const coverageHistory = [...history, { role: "user", content: body.answer! }];
         const skillCoverage = buildSkillCoverage(targetSkills, coverageHistory);
         const coverageGuidance = buildCoverageGuidance(skillCoverage);
@@ -464,7 +464,7 @@ export async function POST(request: NextRequest) {
         ]);
         const rawReport = parseJson(content);
         const candidateAnswers = history.filter(message => message.role === "user").map(message => message.content);
-        const requiredSkills = extractTargetSkills(body.jobDescription || "", "", 15);
+        const requiredSkills = extractRequiredJobSkills(body.jobDescription || "");
         const report = validateReport(rawReport, candidateAnswers, requiredSkills, history);
         if (body.sessionId) {
           if (!reportLockAt) throw new Error("Interview report lock was not acquired.");
