@@ -52,3 +52,14 @@ test("handles an empty skill target without inventing coverage", () => {
   assert.deepEqual(extractTargetSkills("", ""), []);
   assert.match(buildCoverageGuidance({ skills: [], answered: 0, total: 0, percent: 0, remaining: [], followUp: [] }), /do not invent required skills/);
 });
+
+test("matches skills followed by punctuation and preserves plus and dot aliases", () => {
+  assert.deepEqual(
+    extractTargetSkills("Required: C++, Node.js, React, SQL."),
+    ["React", "Node.js", "C++", "SQL"]
+  );
+});
+
+test("does not match a skill name embedded inside a longer word", () => {
+  assert.deepEqual(extractTargetSkills("The role needs JavaScript engineering."), ["JavaScript"]);
+});
