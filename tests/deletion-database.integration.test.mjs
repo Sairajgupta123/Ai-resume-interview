@@ -6,7 +6,7 @@ import { join, resolve } from "node:path";
 import { test } from "node:test";
 import { createDeletionVerificationToken, hashDeletionVerificationToken } from "../lib/deletion-verification-policy.mjs";
 import { approveVerifiedDeletionRequest } from "../lib/deletion-approval-service.mjs";
-import { verifyDeletionRequest, reserveDeletionVerificationEmail, recordDeletionVerificationEmailSent } from "../lib/deletion-verification-service.mjs";
+import { verifyDeletionRequest, reserveDeletionVerificationEmail, recordDeletionVerificationEmailSent, recordDeletionVerificationEmailFailure } from "../lib/deletion-verification-service.mjs";
 import { DELETION_VERIFICATION_RESEND_COOLDOWN_MS } from "../lib/deletion-verification-policy.mjs";
 import { finalizeDeletionExecution, markDeletionExecutionFailed } from "../lib/deletion-execution-service.mjs";
 
@@ -470,6 +470,71 @@ test("privacy deletion transaction removes interview data and retains an anonymi
       await recordDeletionVerificationEmailSent(prisma, resendRequest.id, replacementTokenHash),
       true
     );
+
+    // Failed email delivery invalidates and audits only the token that actually failed.
+    const failedEmailInterview = await prisma.interview.create({
+      data: {
+        candidateName: "Failed Verification Email Candidate",
+        role: "Engineer",
+        resumeText: "Dummy resume",
+        jobDescription: "Dummy job",
+        candidateEmail: "failed-email@example.test"
+      }
+    });
+    const failedEmailTokenHash = hashDeletionVerificationToken(createDeletionVerificationToken());
+    const failedEmailRequest = await prisma.privacyDeletionRequest.create({
+      data: {
+        interviewId: failedEmailInterview.id,
+        candidateNameSnapshot: failedEmailInterview.candidateName,
+        candidateEmailSnapshot: failedEmailInterview.candidateEmail,
+        roleSnapshot: failedEmailInterview.role,
+        reason: "Failed email audit test",
+        requestedBy: "employer",
+        status: "pending_candidate_verification",
+        verificationTokenHash: failedEmailTokenHash,
+        verificationExpiresAt: new Date(Date.now() + 30 * 60 * 1000),
+        verificationSentAt: new Date()
+      }
+    });
+    assert.equal(
+      await recordDeletionVerificationEmailFailure(prisma, failedEmailRequest.id, failedEmailTokenHash),
+      true
+    );
+    const failedEmailReceipt = await prisma.privacyDeletionRequest.findUnique({
+      where: { id: failedEmailRequest.id },
+      include: { events: true }
+    });
+    assert.equal(failedEmailReceipt.verificationTokenHash, null);
+    assert.equal(failedEmailReceipt.verificationExpiresAt, null);
+    assert.equal(failedEmailReceipt.verificationSentAt, null);
+    assert.equal(failedEmailReceipt.status, "pending_candidate_verification");
+    assert.equal(failedEmailReceipt.events.length, 1);
+    assert.equal(failedEmailReceipt.events[0].action, "verification_email_failed");
+    assert.equal(
+      await recordDeletionVerificationEmailFailure(prisma, failedEmailRequest.id, failedEmailTokenHash),
+      false
+    );
+
+    // A delayed failure from an older send must not invalidate a newer verification link.
+    const replacedEmailTokenHash = hashDeletionVerificationToken(createDeletionVerificationToken());
+    await prisma.privacyDeletionRequest.update({
+      where: { id: failedEmailRequest.id },
+      data: {
+        verificationTokenHash: replacedEmailTokenHash,
+        verificationExpiresAt: new Date(Date.now() + 30 * 60 * 1000),
+        verificationSentAt: new Date()
+      }
+    });
+    assert.equal(
+      await recordDeletionVerificationEmailFailure(prisma, failedEmailRequest.id, failedEmailTokenHash),
+      false
+    );
+    const replacedEmailReceipt = await prisma.privacyDeletionRequest.findUnique({
+      where: { id: failedEmailRequest.id },
+      include: { events: true }
+    });
+    assert.equal(replacedEmailReceipt.verificationTokenHash, replacedEmailTokenHash);
+    assert.equal(replacedEmailReceipt.events.length, 1);
 
     // A storage failure should leave interview data intact and permit a safe retry.
     const retryInterview = await prisma.interview.create({
