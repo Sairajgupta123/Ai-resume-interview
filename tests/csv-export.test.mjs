@@ -9,7 +9,8 @@ test("CSV values are quoted and embedded quotes are doubled", () => {
 test("CSV protects formula-like text values", () => {
   assert.equal(escapeCsvValue("=1+1"), "\"'=1+1\"");
   assert.equal(escapeCsvValue("  @SUM(A1:A2)"), "\"'  @SUM(A1:A2)\"");
-  assert.equal(escapeCsvValue("-42"), '"-42"');
+  assert.equal(escapeCsvValue("-42"), "\"'-42\"");
+  assert.equal(escapeCsvValue(-42), '"-42"');
 });
 
 test("CSV preserves commas and line breaks inside quoted fields", () => {
