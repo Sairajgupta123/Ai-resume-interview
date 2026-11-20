@@ -71,3 +71,11 @@
 .analytics-empty{font-size:11px;color:#87928a;margin-top:24px}
 @media(max-width:850px){.analytics-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:600px){.analytics-heading{align-items:flex-start;flex-direction:column}.analytics-grid{grid-template-columns:1fr}.analytics-kpis{gap:8px}.analytics-kpi{padding:12px}.analytics-kpi strong{font-size:23px}}
+
+.audit-card{margin:18px 0}
+.audit-card .table-heading{align-items:flex-end}
+.audit-decision{display:inline-flex;padding:5px 9px;border-radius:20px;background:#edf2ee;color:#506457;font-size:9px;font-weight:800;text-transform:capitalize}
+.audit-shortlist{background:#e8f3eb;color:#28613d}
+.audit-review{background:#f5f0e5;color:#8a6b2f}
+.audit-reject{background:#f7ecea;color:#9a4c45}
+.audit-notes{min-width:180px;max-width:300px;white-space:normal;line-height:1.5;color:#6e7b72;font-size:10px}
