@@ -154,12 +154,14 @@ function validateReport(raw: any, candidateAnswers: string[]) {
     };
   });
   const evidenceCoverage = calculateEvidenceCoverage([...skills, ...questionFeedback]);
+  const skillEvidenceCoverage = calculateEvidenceCoverage(skills);
   return {
     overallScore: raw.overallScore,
-    // The provider's recommendation is advisory input only. Derive the displayed
-    // recommendation from the validated score and the report's evidence coverage.
-    recommendation: deriveRecommendation(raw.overallScore, evidenceCoverage),
+    // A strong recommendation requires support in job-related skill evidence,
+    // not just well-supported narrative feedback about individual answers.
+    recommendation: deriveRecommendation(raw.overallScore, evidenceCoverage, skillEvidenceCoverage),
     evidenceCoverage,
+    skillEvidenceCoverage,
     summary: boundedText(raw.summary, "summary", 3000),
     strengths: stringList(raw.strengths, "strengths", 12),
     improvementAreas: stringList(raw.improvementAreas, "improvementAreas", 12),
