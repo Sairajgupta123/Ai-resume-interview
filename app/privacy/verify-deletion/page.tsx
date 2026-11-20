@@ -14,7 +14,7 @@ export default function VerifyDeletionPage() {
     try {
       const response = await fetch("/api/privacy/deletion-verification", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token })
+        body: JSON.stringify({ token, requestId: params.get("request") || "" })
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Verification failed.");
