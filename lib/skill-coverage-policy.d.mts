@@ -3,3 +3,4 @@ export type SkillCoverage = { skills: Array<{ skill: string; status: SkillCovera
 export function extractTargetSkills(jobDescription: string, resume?: string, limit?: number): string[];
 export function buildSkillCoverage(targetSkills: string[], history: Array<{role: string; content: string}>): SkillCoverage;
 export function buildCoverageGuidance(coverage: SkillCoverage): string;
+export function matchesSkillTerm(text: unknown, skill: unknown): boolean;
