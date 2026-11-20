@@ -339,7 +339,24 @@ export default function Dashboard() {
       {deletionQueueMessage && <div className="success-box">{deletionQueueMessage}</div>}
       {!deletionQueueError && <div className="table-scroll"><table><thead><tr><th>REQUESTED</th><th>CANDIDATE</th><th>ROLE</th><th>STATUS</th><th>WORKFLOW</th></tr></thead><tbody>
         {deletionRequests.map((request: any) => <tr key={request.id}>
-          <td>{date(request.createdAt)}</td><td>{request.candidateNameSnapshot}<small className="audit-notes">{request.candidateEmailSnapshot || "No email recorded"}</small></td><td>{request.roleSnapshot}</td>
+          <td>{date(request.createdAt)}</td><td>
+            {request.candidateNameSnapshot}
+            <small className="audit-notes">{request.candidateEmailSnapshot || "No email recorded"}</small>
+            <details style={{ marginTop: 8, fontSize: 11, maxWidth: 340, whiteSpace: "normal" }}>
+              <summary style={{ cursor: "pointer", fontWeight: 700 }}>Reason &amp; audit history</summary>
+              <div style={{ marginTop: 8, padding: 9, border: "1px solid #e3ebe4", borderRadius: 8, background: "#f8fbf8" }}>
+                <b>Request reason</b>
+                <p style={{ margin: "4px 0 10px", lineHeight: 1.5 }}>{request.reason || "No reason recorded."}</p>
+                <b>Recent workflow events</b>
+                {request.events?.length ? request.events.map((event: any) => <div key={event.id} style={{ padding: "8px 0", borderTop: "1px solid #e7eee8" }}>
+                  <b style={{ textTransform: "capitalize" }}>{String(event.action).replaceAll("_", " ")}</b>
+                  <small style={{ display: "block", color: "#879389" }}>{date(event.createdAt)} · {event.actor}</small>
+                  {event.details && <p style={{ margin: "4px 0 0", lineHeight: 1.5, color: "#66766a" }}>{event.details}</p>}
+                </div>) : <p>No audit events recorded.</p>}
+                <small style={{ color: "#879389" }}>Showing the latest 10 events.</small>
+              </div>
+            </details>
+          </td><td>{request.roleSnapshot}</td>
           <td><span className="audit-decision audit-review">{request.status.replaceAll("_", " ")}</span></td>
           <td className="privacy-workflow-actions">
             {request.status === "pending_candidate_verification" && <button className="view-btn" disabled={!!deletionActionBusy} onClick={() => runDeletionAction(request.id, request.interviewId, "send")}>{deletionActionBusy === request.id + ":send" ? "Sending…" : "Send verification"}</button>}
