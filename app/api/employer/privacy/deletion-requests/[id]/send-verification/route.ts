@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { randomBytes } from "node:crypto";
 import { db } from "@/lib/db";
 import { isEmployerAuthenticated } from "@/lib/auth";
 import { createDeletionVerificationToken, hashDeletionVerificationToken, DELETION_VERIFICATION_TTL_MS } from "@/lib/deletion-verification-policy.mjs";
