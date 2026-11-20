@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { isEmployerAuthenticated } from "@/lib/auth";
@@ -21,6 +22,7 @@ export async function POST(_request: Request, context: Context) {
 
     const now = new Date();
     const leaseExpiredBefore = new Date(now.getTime() - DELETION_EXECUTION_LEASE_MS);
+    const leaseToken = randomUUID();
     const claim = await db.privacyDeletionRequest.updateMany({
       where: {
         id,
@@ -33,6 +35,7 @@ export async function POST(_request: Request, context: Context) {
       data: {
         status: "deletion_in_progress",
         executionStartedAt: now,
+        executionLeaseToken: leaseToken,
         deletionAttempts: { increment: 1 },
         lastErrorCode: null
       }
@@ -46,10 +49,15 @@ export async function POST(_request: Request, context: Context) {
         where: { id: requestRecord.interviewId },
         select: { id: true, recordingPath: true }
       });
-
       if (interview?.recordingPath) await deleteStoredInterviewRecording(interview.recordingPath);
 
       await db.$transaction(async tx => {
+        const ownership = await tx.privacyDeletionRequest.updateMany({
+          where: { id, status: "deletion_in_progress", executionLeaseToken: leaseToken },
+          data: { executionStartedAt: new Date() }
+        });
+        if (ownership.count !== 1) throw new Error("DELETION_LEASE_LOST");
+
         await tx.interviewMessage.deleteMany({ where: { interviewId: requestRecord.interviewId } });
         await tx.interviewSignal.deleteMany({ where: { interviewId: requestRecord.interviewId } });
         await tx.employerDecisionHistory.deleteMany({ where: { interviewId: requestRecord.interviewId } });
@@ -69,7 +77,8 @@ export async function POST(_request: Request, context: Context) {
             ...anonymizedDeletionTombstone(id),
             status: "deletion_completed",
             completedAt: new Date(),
-            executionStartedAt: null
+            executionStartedAt: null,
+            executionLeaseToken: null
           }
         });
       });
@@ -80,19 +89,25 @@ export async function POST(_request: Request, context: Context) {
         message: "Candidate interview data and recording have been deleted. A minimal anonymized deletion receipt remains."
       }, { headers: { "Cache-Control": "no-store" } });
     } catch (error) {
+      if (error instanceof Error && error.message === "DELETION_LEASE_LOST") {
+        return NextResponse.json({ error: "This worker no longer owns the deletion request. Another worker may have taken over; refresh the request status." }, { status: 409, headers: { "Cache-Control": "no-store" } });
+      }
+
       const code = error instanceof Error && error.message === "STORAGE_NOT_CONFIGURED"
         ? "STORAGE_NOT_CONFIGURED"
         : error instanceof Error && error.message === "UNSUPPORTED_RECORDING_REFERENCE"
           ? "UNSUPPORTED_RECORDING_REFERENCE"
           : "DELETION_EXECUTION_FAILED";
       await db.$transaction(async tx => {
-        await tx.privacyDeletionRequest.updateMany({
-          where: { id, status: "deletion_in_progress" },
-          data: { status: "deletion_failed", lastErrorCode: code, executionStartedAt: null }
+        const failed = await tx.privacyDeletionRequest.updateMany({
+          where: { id, status: "deletion_in_progress", executionLeaseToken: leaseToken },
+          data: { status: "deletion_failed", lastErrorCode: code, executionStartedAt: null, executionLeaseToken: null }
         });
-        await tx.privacyDeletionEvent.create({
-          data: { requestId: id, action: "deletion_failed", actor: "system", details: "Deletion execution failed safely. Retry is available after the underlying issue is resolved." }
-        });
+        if (failed.count === 1) {
+          await tx.privacyDeletionEvent.create({
+            data: { requestId: id, action: "deletion_failed", actor: "system", details: "Deletion execution failed safely. Retry is available after the underlying issue is resolved." }
+          });
+        }
       });
       return NextResponse.json({
         error: code === "STORAGE_NOT_CONFIGURED"
