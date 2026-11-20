@@ -38,9 +38,30 @@ test("calculates evidence coverage from supported quotes", () => {
   assert.equal(calculateEvidenceCoverage([]), 0);
 });
 
-test("derives conservative recommendations from score and evidence coverage", () => {
+test("derives conservative recommendations from overall and skill evidence coverage", () => {
+  assert.equal(deriveRecommendation(92, 90, 90), "Strong match");
+  assert.equal(deriveRecommendation(78, 60, 60), "Consider");
+  assert.equal(deriveRecommendation(90, 90, 40), "Needs review");
+  assert.equal(deriveRecommendation(90, 40, 100), "Needs review");
+  assert.equal(deriveRecommendation(55, 100, 100), "Needs review");
+});
+
+test("does not infer strong skill evidence from question feedback alone", () => {
+  const skillEvidenceCoverage = calculateEvidenceCoverage([
+    { evidence: "Insufficient evidence" },
+    { evidence: "Insufficient evidence" }
+  ]);
+  const overallEvidenceCoverage = calculateEvidenceCoverage([
+    { evidence: "Insufficient evidence" },
+    { evidence: "Insufficient evidence" },
+    { evidence: "I explained how I deployed the service" },
+    { evidence: "I debugged a production issue successfully" }
+  ]);
+  assert.equal(overallEvidenceCoverage, 50);
+  assert.equal(skillEvidenceCoverage, 0);
+  assert.equal(deriveRecommendation(95, overallEvidenceCoverage, skillEvidenceCoverage), "Needs review");
+});
+
+test("keeps two-argument recommendation calls backward compatible", () => {
   assert.equal(deriveRecommendation(92, 90), "Strong match");
-  assert.equal(deriveRecommendation(78, 60), "Consider");
-  assert.equal(deriveRecommendation(90, 40), "Needs review");
-  assert.equal(deriveRecommendation(55, 100), "Needs review");
 });
