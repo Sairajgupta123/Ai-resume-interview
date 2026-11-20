@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { DELETION_EXECUTION_LEASE_MS, isSupportedDeletionRecordingPath, canClaimDeletionExecution, anonymizedDeletionTombstone } from "../lib/deletion-execution-policy.mjs";
+import { DELETION_EXECUTION_LEASE_MS, isSupportedDeletionRecordingPath, canClaimDeletionExecution, isDeletionExecutionLeaseExpired, anonymizedDeletionTombstone } from "../lib/deletion-execution-policy.mjs";
 
 test("accepts only app-owned local and private S3 recording keys", () => {
   assert.equal(isSupportedDeletionRecordingPath("data/recordings/123e4567-e89b-12d3-a456-426614174000.webm"), true);
@@ -23,8 +23,13 @@ test("in-progress requests can be retried only after the lease expires", () => {
   const now = new Date("2026-11-20T12:00:00Z");
   const recent = { status: "deletion_in_progress", executionStartedAt: new Date(now.getTime() - DELETION_EXECUTION_LEASE_MS + 1000) };
   const stale = { status: "deletion_in_progress", executionStartedAt: new Date(now.getTime() - DELETION_EXECUTION_LEASE_MS) };
+  assert.equal(isDeletionExecutionLeaseExpired(recent, now), false);
+  assert.equal(isDeletionExecutionLeaseExpired(stale, now), true);
   assert.equal(canClaimDeletionExecution(recent, now), false);
   assert.equal(canClaimDeletionExecution(stale, now), true);
+  assert.equal(isDeletionExecutionLeaseExpired({ status: "deletion_in_progress", executionStartedAt: null }, now), false);
+  assert.equal(isDeletionExecutionLeaseExpired({ status: "deletion_in_progress", executionStartedAt: "not-a-date" }, now), false);
+  assert.equal(isDeletionExecutionLeaseExpired({ status: "approved_for_deletion", executionStartedAt: stale.executionStartedAt }, now), false);
   assert.equal(canClaimDeletionExecution({ status: "deletion_in_progress", executionStartedAt: null }, now), false);
 });
 
