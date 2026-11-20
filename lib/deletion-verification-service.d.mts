@@ -39,3 +39,11 @@ export function recordDeletionVerificationEmailSent(
   requestId: string,
   tokenHash: string
 ): Promise<boolean>;
+
+export function recordDeletionVerificationEmailFailure(
+  db: {
+    $transaction<T>(callback: (tx: VerificationTransaction) => Promise<T>): Promise<T>;
+  },
+  requestId: string,
+  tokenHash: string
+): Promise<boolean>;
