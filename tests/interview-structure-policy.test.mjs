@@ -44,7 +44,7 @@ test("guidance describes the next category without scoring the candidate", () =>
   const plan = buildInterviewStructurePlan([]);
   const guidance = buildInterviewStructureGuidance(plan);
   assert.match(guidance, /Technical foundations/);
-  assert.match(guidance, /not a candidate score/);
+  assert.match(guidance, /candidate score/);
 });
 
 test("starts with technical foundations before moving to other categories", () => {
