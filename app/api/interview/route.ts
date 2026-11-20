@@ -4,6 +4,7 @@ import { candidateInvitationCookieName, getCandidateInvitationToken, hasValidCan
 import { elapsedInterviewSeconds, INTERVIEW_LIMIT_SECONDS, isVerifiableEvidenceQuote } from "@/lib/interview-policy.mjs";
 import { calculateEvidenceCoverage, deriveRecommendation, hasDuplicateSkills, isRatingEvidenceConsistent } from "@/lib/evaluation-policy.mjs";
 import { validateInterviewerTurn } from "@/lib/interviewer-turn-policy.mjs";
+import { buildAdaptiveGuidance } from "@/lib/adaptive-interview-policy.mjs";
 
 function attachCandidateCookie(response: NextResponse, request: NextRequest, sessionId: string, expiresAt: Date | null) {
   const token = getCandidateInvitationToken(request, sessionId);
@@ -334,9 +335,16 @@ export async function POST(request: NextRequest) {
               select: { role: true, content: true }
             })
           : (body.history || []).slice(-18);
+        const adaptiveGuidance = buildAdaptiveGuidance(body.answer!);
+        const previousFocuses = history
+          .filter(message => message.role === "assistant")
+          .map(message => message.content.slice(0, 240));
         const messages = [
           { role: "system" as const, content: SYSTEM },
-          { role: "user" as const, content: `Interview context:\n${context}\nContinue the interview. Return JSON only.` },
+          {
+            role: "user" as const,
+            content: `Interview context:\n${context}\nContinue the interview. Return JSON only.\nAdaptive follow-up guidance (${adaptiveGuidance.depth}): ${adaptiveGuidance.instruction}\nPreviously covered interviewer turns (avoid repeating the same skill/question):\n${previousFocuses.join("\n")}`
+          },
           ...history.map((m) => ({ role: m.role as "assistant" | "user", content: m.content })),
           { role: "user" as const, content: body.answer! }
         ];
