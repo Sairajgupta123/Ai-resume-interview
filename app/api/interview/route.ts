@@ -102,7 +102,7 @@ function boundedText(value: unknown, field: string, maxLength: number) {
   return value.trim();
 }
 
-function validateReport(raw: any, candidateAnswers: string[], requiredSkills: string[] = [], history: Message[] = []) {
+function validateReport(raw: any, candidateAnswers: string[], requiredSkills: string[] = [], history: Array<{ role: string; content: string }> = []) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
     throw new Error("AI report validation failed: report must be an object.");
   }
