@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { candidateInvitationCookieName, getCandidateInvitationToken, hasValidCandidateInvitation } from "@/lib/invitation";
-import { elapsedInterviewSeconds, isVerifiableEvidenceQuote } from "@/lib/interview-policy.mjs";
+import { elapsedInterviewSeconds, INTERVIEW_LIMIT_SECONDS, isVerifiableEvidenceQuote } from "@/lib/interview-policy.mjs";
 
 export const runtime = "nodejs";
-const INTERVIEW_LIMIT_SECONDS = 15 * 60;
 // Keep the provider deadline comfortably below the stale-lock lease.
 const GROK_TIMEOUT_MS = 45_000;
 const OPERATION_LOCK_STALE_MS = 90_000;
