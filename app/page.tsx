@@ -371,9 +371,11 @@ export default function Home() {
         setError("The browser encountered a video recording error. The recording may be incomplete; the interview answers can still be submitted.");
       };
       recorder.onstop = async () => {
-        await recordingPersistenceRef.current;
+        // Lock the recorder immediately; do not allow a second recording while
+        // the final IndexedDB writes and server upload are still in progress.
         recordingUploadInProgressRef.current = true;
         setUploadingRecording(true);
+        await recordingPersistenceRef.current;
         try {
           const type = recorder.mimeType || "video/webm";
           const extension = type.includes("mp4") ? "mp4" : "webm";
