@@ -13,7 +13,7 @@ type Report = {
   questionFeedback: { question: string; assessment: string; evidence: string }[];
   disclaimer: string;
 };
-type InterviewReply = { message: string; done?: boolean; focus?: string };
+type InterviewReply = { message: string; done?: boolean; focus?: string; timeLimitReached?: boolean };
 
 declare global {
   interface Window {
@@ -246,7 +246,7 @@ export default function Home() {
       setHistory(next);
       if (sessionId) await fetch(`/api/sessions/${sessionId}`, { method: "PUT", headers: { "Content-Type": "application/json", ...(inviteToken ? { "x-interview-invite": inviteToken } : {}) }, body: JSON.stringify({ durationSeconds: seconds }) });
       speak(data.message);
-      if (data.done) await finishInterview(next);
+      if (data.done || data.timeLimitReached) await finishInterview(next);
     } catch (e) { setError(e instanceof Error ? e.message : "Could not submit answer."); }
     finally { setBusy(false); }
   };
