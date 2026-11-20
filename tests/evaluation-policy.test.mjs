@@ -6,7 +6,8 @@ import {
   isRatingEvidenceConsistent,
   calculateEvidenceCoverage,
   deriveRecommendation,
-  completeRequiredSkillEvaluations
+  completeRequiredSkillEvaluations,
+  isSkillEvidenceLinkedToQuestion
 } from "../lib/evaluation-policy.mjs";
 
 test("normalizes skill names for duplicate detection", () => {
@@ -100,4 +101,39 @@ test("does not invent required skills when no job skills were extracted", () => 
 test("caps required-skill completion at the supported target limit", () => {
   const required = Array.from({ length: 20 }, (_, index) => "Skill " + index);
   assert.equal(completeRequiredSkillEvaluations(required, []).length, 15);
+});
+
+test("links a skill quote only to an answer for a question assessing that skill", () => {
+  const feedback = [{
+    testedSkills: ["React"],
+    pairedAnswer: "I built reusable React components and tested them."
+  }];
+  assert.equal(isSkillEvidenceLinkedToQuestion("React", "I built reusable React components", feedback), true);
+  assert.equal(isSkillEvidenceLinkedToQuestion("React", "I built reusable React components", [
+    { testedSkills: ["Node.js"], pairedAnswer: "I built reusable React components and tested them." }
+  ]), false);
+});
+
+test("does not accept evidence from an unrelated answer even if the quote exists in the transcript", () => {
+  const feedback = [{
+    testedSkills: ["SQL"],
+    pairedAnswer: "I wrote optimized SQL queries for reporting."
+  }];
+  assert.equal(isSkillEvidenceLinkedToQuestion("React", "I wrote optimized SQL queries", feedback), false);
+});
+
+test("uses skill aliases without treating JavaScript evidence as Java evidence", () => {
+  const feedback = [{
+    testedSkills: ["JavaScript"],
+    pairedAnswer: "I used JavaScript to build the frontend."
+  }];
+  assert.equal(isSkillEvidenceLinkedToQuestion("JavaScript", "I used JavaScript", feedback), true);
+  assert.equal(isSkillEvidenceLinkedToQuestion("Java", "I used JavaScript", feedback), false);
+});
+
+test("rejects unsupported and empty skill evidence", () => {
+  assert.equal(isSkillEvidenceLinkedToQuestion("React", "Insufficient evidence", [
+    { testedSkills: ["React"], pairedAnswer: "I used React." }
+  ]), false);
+  assert.equal(isSkillEvidenceLinkedToQuestion("React", "I used React", []), false);
 });
