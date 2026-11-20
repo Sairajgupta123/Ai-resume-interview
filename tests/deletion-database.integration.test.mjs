@@ -7,6 +7,7 @@ import { test } from "node:test";
 import { createDeletionVerificationToken, hashDeletionVerificationToken } from "../lib/deletion-verification-policy.mjs";
 import { approveVerifiedDeletionRequest } from "../lib/deletion-approval-service.mjs";
 import { verifyDeletionRequest } from "../lib/deletion-verification-service.mjs";
+import { finalizeDeletionExecution, markDeletionExecutionFailed } from "../lib/deletion-execution-service.mjs";
 
 test("privacy deletion transaction removes interview data and retains an anonymized receipt", async () => {
   const tempDir = await mkdtemp(join(tmpdir(), "ai-interview-deletion-"));
@@ -204,36 +205,10 @@ test("privacy deletion transaction removes interview data and retains an anonymi
       }
     });
 
-    await prisma.$transaction(async tx => {
-      const ownership = await tx.privacyDeletionRequest.updateMany({
-        where: { id: request.id, status: "deletion_in_progress", executionLeaseToken: "current-worker-token" },
-        data: { executionStartedAt: new Date() }
-      });
-      assert.equal(ownership.count, 1);
-
-      await tx.interviewMessage.deleteMany({ where: { interviewId: interview.id } });
-      await tx.interviewSignal.deleteMany({ where: { interviewId: interview.id } });
-      await tx.employerDecisionHistory.deleteMany({ where: { interviewId: interview.id } });
-      await tx.interview.delete({ where: { id: interview.id } });
-      await tx.privacyDeletionEvent.create({
-        data: { requestId: request.id, action: "deletion_completed", actor: "employer", details: "Integration test receipt" }
-      });
-      await tx.privacyDeletionRequest.update({
-        where: { id: request.id },
-        data: {
-          interviewId: `deleted:${request.id}`,
-          candidateNameSnapshot: "[deleted]",
-          candidateEmailSnapshot: null,
-          roleSnapshot: "[deleted]",
-          reason: "Candidate data deletion completed.",
-          verificationTokenHash: null,
-          verificationExpiresAt: null,
-          status: "deletion_completed",
-          completedAt: new Date(),
-          executionStartedAt: null,
-          executionLeaseToken: null
-        }
-      });
+    await finalizeDeletionExecution(prisma, {
+      requestId: request.id,
+      interviewId: interview.id,
+      leaseToken: "current-worker-token"
     });
 
     assert.equal(await prisma.interview.findUnique({ where: { id: interview.id } }), null);
@@ -411,30 +386,20 @@ test("privacy deletion transaction removes interview data and retains an anonymi
       }
     });
 
-    await prisma.$transaction(async tx => {
-      const failed = await tx.privacyDeletionRequest.updateMany({
-        where: {
-          id: retryRequest.id,
-          status: "deletion_in_progress",
-          executionLeaseToken: "failed-worker-token"
-        },
-        data: {
-          status: "deletion_failed",
-          lastErrorCode: "DELETION_EXECUTION_FAILED",
-          executionStartedAt: null,
-          executionLeaseToken: null
-        }
-      });
-      assert.equal(failed.count, 1);
-      await tx.privacyDeletionEvent.create({
-        data: {
-          requestId: retryRequest.id,
-          action: "deletion_failed",
-          actor: "system",
-          details: "Integration test simulated a storage failure."
-        }
-      });
+    const failureRecorded = await markDeletionExecutionFailed(prisma, {
+      requestId: retryRequest.id,
+      leaseToken: "failed-worker-token",
+      errorCode: "DELETION_EXECUTION_FAILED"
     });
+    assert.equal(failureRecorded, true);
+    assert.equal(
+      await markDeletionExecutionFailed(prisma, {
+        requestId: retryRequest.id,
+        leaseToken: "failed-worker-token",
+        errorCode: "DELETION_EXECUTION_FAILED"
+      }),
+      false
+    );
 
     assert.notEqual(
       await prisma.interview.findUnique({ where: { id: retryInterview.id } }),
