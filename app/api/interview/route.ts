@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { candidateInvitationCookieName, getCandidateInvitationToken, hasValidCandidateInvitation } from "@/lib/invitation";
-import { elapsedInterviewSeconds, INTERVIEW_LIMIT_SECONDS, isVerifiableEvidenceQuote } from "@/lib/interview-policy.mjs";
+import { elapsedInterviewSeconds, findCandidateAnswerForQuestion, INTERVIEW_LIMIT_SECONDS, isVerifiableEvidenceQuote } from "@/lib/interview-policy.mjs";
 import { calculateEvidenceCoverage, completeRequiredSkillEvaluations, deriveRecommendation, hasDuplicateSkills, isRatingEvidenceConsistent } from "@/lib/evaluation-policy.mjs";
 import { validateInterviewerTurn } from "@/lib/interviewer-turn-policy.mjs";
 import { buildAdaptiveGuidance } from "@/lib/adaptive-interview-policy.mjs";
-import { buildCoverageGuidance, buildSkillCoverage, extractTargetSkills } from "@/lib/skill-coverage-policy.mjs";
+import { buildCoverageGuidance, buildSkillCoverage, extractTargetSkills, resolveQuestionSkills } from "@/lib/skill-coverage-policy.mjs";
 import { buildFairnessGuidance, buildInterviewFairnessPlan } from "@/lib/interview-fairness-policy.mjs";
 
 function attachCandidateCookie(response: NextResponse, request: NextRequest, sessionId: string, expiresAt: Date | null) {
@@ -53,8 +53,8 @@ Rules:
 - Never infer competence, honesty, emotion, age, gender, disability, race, attractiveness, or personality from face, voice tone, accent, or appearance.
 - Evaluate only job-related content and evidence in answers. Be respectful and do not reveal hidden scoring rubrics.
 - For start/answer actions return ONLY valid JSON: {"message":"the next interviewer utterance","done":false,"focus":"short topic label"}.
-- End when there is enough evidence or the session is complete. For report action return ONLY JSON with keys: overallScore (integer 0-100), recommendation ("Strong match"|"Consider"|"Needs review"), summary, strengths (string array), improvementAreas (string array), skills (array of {"skill":string,"rating":"Strong"|"Good"|"Developing"|"Insufficient evidence","evidence":string}), questionFeedback (array of {"question":string,"assessment":string,"evidence":string}), and disclaimer.
-- For every skill and questionFeedback evidence field, provide a short VERBATIM quote copied exactly from a candidate answer in the transcript. If no supporting answer exists, use exactly "Insufficient evidence". Never use an interviewer question, resume text, job description, or assumptions as candidate-answer evidence.
+- End when there is enough evidence or the session is complete. For report action return ONLY JSON with keys: overallScore (integer 0-100), recommendation ("Strong match"|"Consider"|"Needs review"), summary, strengths (string array), improvementAreas (string array), skills (array of {"skill":string,"rating":"Strong"|"Good"|"Developing"|"Insufficient evidence","evidence":string}), questionFeedback (array of {"question":string copied exactly from an interviewer transcript turn,"assessment":string,"evidence":string,"testedSkills":string array of required job skills}), and disclaimer.
+- For every skill and questionFeedback evidence field, provide a short VERBATIM quote copied exactly from a candidate answer in the transcript. For questionFeedback, evidence MUST come from the candidate answer immediately following that exact interviewer question; if the question cannot be matched to its answer, use "Insufficient evidence". Copy question text exactly from the transcript. For each questionFeedback item, list testedSkills using only the required job skills that the question assessed; do not invent competency names. If no supporting answer exists, use exactly "Insufficient evidence". Never use an interviewer question, resume text, job description, or assumptions as candidate-answer evidence.
 - Do not fabricate evidence. Recommendation is advisory; employer makes the final decision.`;
 
 async function askGrok(messages: { role: "system" | "user" | "assistant"; content: string }[]) {
@@ -102,7 +102,7 @@ function boundedText(value: unknown, field: string, maxLength: number) {
   return value.trim();
 }
 
-function validateReport(raw: any, candidateAnswers: string[], requiredSkills: string[] = []) {
+function validateReport(raw: any, candidateAnswers: string[], requiredSkills: string[] = [], history: Message[] = []) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
     throw new Error("AI report validation failed: report must be an object.");
   }
@@ -150,10 +150,19 @@ function validateReport(raw: any, candidateAnswers: string[], requiredSkills: st
     if (!item || typeof item !== "object") {
       throw new Error(`AI report validation failed: invalid question feedback at item ${index + 1}.`);
     }
+    const question = boundedText(item.question, `questionFeedback[${index}].question`, 1000);
+    const reportedEvidence = validateEvidence(item.evidence, `questionFeedback[${index}].evidence`);
+    const pairedAnswer = findCandidateAnswerForQuestion(question, history);
+    // Keep question-level evidence tied to the answer that actually followed
+    // that interviewer turn. Never borrow a quote from another answer.
+    const evidence = pairedAnswer && isVerifiableEvidenceQuote(reportedEvidence, [pairedAnswer])
+      ? reportedEvidence
+      : "Insufficient evidence";
     return {
-      question: boundedText(item.question, `questionFeedback[${index}].question`, 1000),
+      question,
       assessment: boundedText(item.assessment, `questionFeedback[${index}].assessment`, 1500),
-      evidence: validateEvidence(item.evidence, `questionFeedback[${index}].evidence`)
+      evidence,
+      testedSkills: resolveQuestionSkills(question, item.testedSkills, requiredSkills)
     };
   });
   const evidenceCoverage = calculateEvidenceCoverage([...skills, ...questionFeedback]);
@@ -456,7 +465,7 @@ export async function POST(request: NextRequest) {
         const rawReport = parseJson(content);
         const candidateAnswers = history.filter(message => message.role === "user").map(message => message.content);
         const requiredSkills = extractTargetSkills(body.jobDescription || "", "", 15);
-        const report = validateReport(rawReport, candidateAnswers, requiredSkills);
+        const report = validateReport(rawReport, candidateAnswers, requiredSkills, history);
         if (body.sessionId) {
           if (!reportLockAt) throw new Error("Interview report lock was not acquired.");
           const durationSeconds = startedAt ? Math.min(INTERVIEW_LIMIT_SECONDS, elapsedInterviewSeconds(startedAt)) : 0;
