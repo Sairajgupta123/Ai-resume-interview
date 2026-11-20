@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { candidateInvitationCookieName, getCandidateInvitationToken, hasValidCandidateInvitation } from "@/lib/invitation";
 import { elapsedInterviewSeconds, INTERVIEW_LIMIT_SECONDS, isVerifiableEvidenceQuote } from "@/lib/interview-policy.mjs";
+import { calculateEvidenceCoverage, deriveRecommendation, hasDuplicateSkills, isRatingEvidenceConsistent } from "@/lib/evaluation-policy.mjs";
 
 function attachCandidateCookie(response: NextResponse, request: NextRequest, sessionId: string, expiresAt: Date | null) {
   const token = getCandidateInvitationToken(request, sessionId);
@@ -126,12 +127,16 @@ function validateReport(raw: any, candidateAnswers: string[]) {
     if (!item || typeof item !== "object" || !ratings.includes(item.rating)) {
       throw new Error(`AI report validation failed: invalid skill rating at item ${index + 1}.`);
     }
-    return {
-      skill: boundedText(item.skill, `skills[${index}].skill`, 120),
-      rating: item.rating,
-      evidence: validateEvidence(item.evidence, `skills[${index}].evidence`)
-    };
+    const skill = boundedText(item.skill, `skills[${index}].skill`, 120);
+    const evidence = validateEvidence(item.evidence, `skills[${index}].evidence`);
+    if (!isRatingEvidenceConsistent(item.rating, evidence)) {
+      throw new Error(`AI report validation failed: rating/evidence mismatch for skill ${index + 1}.`);
+    }
+    return { skill, rating: item.rating, evidence };
   });
+  if (hasDuplicateSkills(skills)) {
+    throw new Error("AI report validation failed: duplicate or empty skill names.");
+  }
   if (!Array.isArray(raw.questionFeedback) || raw.questionFeedback.length > 40) {
     throw new Error("AI report validation failed: invalid question feedback list.");
   }
@@ -145,9 +150,13 @@ function validateReport(raw: any, candidateAnswers: string[]) {
       evidence: validateEvidence(item.evidence, `questionFeedback[${index}].evidence`)
     };
   });
+  const evidenceCoverage = calculateEvidenceCoverage([...skills, ...questionFeedback]);
   return {
     overallScore: raw.overallScore,
-    recommendation: raw.recommendation,
+    // The provider's recommendation is advisory input only. Derive the displayed
+    // recommendation from the validated score and the report's evidence coverage.
+    recommendation: deriveRecommendation(raw.overallScore, evidenceCoverage),
+    evidenceCoverage,
     summary: boundedText(raw.summary, "summary", 3000),
     strengths: stringList(raw.strengths, "strengths", 12),
     improvementAreas: stringList(raw.improvementAreas, "improvementAreas", 12),
