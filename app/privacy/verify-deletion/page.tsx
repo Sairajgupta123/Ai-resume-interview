@@ -6,6 +6,7 @@ import { clearCachedRecording } from "@/lib/recording-cache";
 export default function VerifyDeletionPage() {
   const [token, setToken] = useState("");
   const [requestId, setRequestId] = useState("");
+  const [linkReady, setLinkReady] = useState(false);
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     setToken(params.get("token") || "");
@@ -14,6 +15,7 @@ export default function VerifyDeletionPage() {
     // Keep the one-time credential in component memory, not in the visible URL
     // or subsequent same-tab navigation history.
     window.history.replaceState(null, "", window.location.pathname);
+    setLinkReady(true);
   }, []);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
@@ -25,8 +27,8 @@ export default function VerifyDeletionPage() {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token, requestId })
       });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Verification failed.");
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Verification could not be completed. Please try again.");
       let localNote = " If this is the same browser used for the interview, its locally cached recording segments were also cleared.";
       if (data.localRecordingSessionId) {
         try { await clearCachedRecording(data.localRecordingSessionId); }
@@ -42,11 +44,13 @@ export default function VerifyDeletionPage() {
       <div className="eyebrow">MZOBS · PRIVACY CENTER</div>
       <h1>Verify your deletion request</h1>
       <p>Confirm that you control the email address that received this link. This step verifies your request only; it does not immediately delete interview data.</p>
-      {!token && <div className="error-box">This verification link is missing its token. Please use the complete link from your email.</div>}
-      {error && <div className="error-box">{error}</div>}
-      {message && <div className="success-box">{message}</div>}
-      {!message && <button disabled={!token || busy} onClick={verify}>{busy ? "Verifying…" : "Confirm my request"}</button>}
-      <small>Links expire after 30 minutes and can be used only once.</small>
+      {!linkReady && <p role="status" aria-live="polite">Checking verification link…</p>}
+      {linkReady && !token && <div className="error-box" role="alert">This verification link is incomplete or missing its token. Please open the complete link from your email.</div>}
+      {error && <div className="error-box" role="alert">{error}</div>}
+      {message && <div className="success-box" role="status" aria-live="polite">{message}</div>}
+      {!message && <button type="button" disabled={!linkReady || !token || busy} onClick={verify}>{busy ? "Verifying…" : "Confirm my request"}</button>}
+      {linkReady && !message && <small>If the link has expired or was already used, contact the hiring organization. They can check the request status or send a fresh link if verification is still pending.</small>}
+      {message && <small>This link can be used only once. The hiring organization must separately approve the request before deletion can proceed.</small>}
     </section>
     <style jsx>{`
       .privacy-verify-page{min-height:100vh;display:grid;place-items:center;padding:24px;background:#f5f8f5;color:#263b2d;font-family:Arial,sans-serif}
