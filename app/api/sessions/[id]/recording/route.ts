@@ -9,7 +9,7 @@ import { isEmployerAuthenticated } from "@/lib/auth";
 import { getCandidateInvitationToken, hasValidCandidateInvitation } from "@/lib/invitation";
 import { MAX_RECORDING_BYTES, inspectRecordingUpload, isSafeRecordingFilename } from "@/lib/recording-policy.mjs";
 import { commitRecordingReplacement } from "@/lib/recording-replacement.mjs";
-import { parseByteRange } from "@/lib/recording-range.mjs";
+import { parseByteRange, validateRecordingStorageResponse } from "@/lib/recording-range.mjs";
 
 export const runtime = "nodejs";
 
@@ -240,7 +240,20 @@ export async function GET(request: NextRequest, context: Context) {
 
     if (remote) {
       const response = await s3Request("GET", recordingObjectKey(storedPath), undefined, undefined, range?.ok ? rangeHeader || undefined : undefined);
-      if (range?.ok && response.status !== 206) throw new Error("Recording storage did not honor the requested byte range.");
+      const storageResponseIsValid = validateRecordingStorageResponse({
+        status: response.status,
+        contentRange: response.headers.get("content-range"),
+        contentLength: response.headers.get("content-length")
+      }, {
+        size,
+        partial: Boolean(range?.ok),
+        start,
+        end
+      });
+      if (!storageResponseIsValid) {
+        await response.body?.cancel();
+        throw new Error("Recording storage returned inconsistent playback metadata.");
+      }
       return new NextResponse(response.body, { status, headers: baseHeaders });
     }
 
