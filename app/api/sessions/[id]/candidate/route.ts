@@ -13,5 +13,5 @@ export async function GET(request: NextRequest, context: Context) {
   } });
   if (!interview) return NextResponse.json({ error: "Interview not found." }, { status: 404 });
   if (interview.status === "completed") return NextResponse.json({ error: "This interview has already been completed." }, { status: 409 });
-  return NextResponse.json({ interview });
+  return NextResponse.json({ interview }, { headers: { "Cache-Control": "private, no-store" } });
 }
