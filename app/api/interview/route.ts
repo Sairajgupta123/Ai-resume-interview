@@ -280,7 +280,7 @@ export async function POST(request: NextRequest) {
             });
             await tx.interview.update({
               where: { id: body.sessionId },
-              data: { status: "in_progress", inviteUsedAt: startedAt, startedAt, startLockAt: null }
+              data: { status: "in_progress", startedAt, startLockAt: null }
             });
           });
         }
