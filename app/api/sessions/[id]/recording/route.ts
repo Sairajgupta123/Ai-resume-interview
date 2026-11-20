@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { isEmployerAuthenticated } from "@/lib/auth";
 import { getCandidateInvitationToken, hasValidCandidateInvitation } from "@/lib/invitation";
 import { MAX_RECORDING_BYTES, inspectRecordingUpload, isSafeRecordingFilename } from "@/lib/recording-policy.mjs";
+import { commitRecordingReplacement } from "@/lib/recording-replacement.mjs";
 
 export const runtime = "nodejs";
 
@@ -148,37 +149,21 @@ export async function POST(request: NextRequest, context: Context) {
 
     const filename = randomUUID() + extension;
     const relativePath = await saveRecording(bytes, mimeType, filename);
-    let saved;
-    try {
-      saved = await db.interview.updateMany({
+    const replacement = await commitRecordingReplacement({
+      commit: () => db.interview.updateMany({
         where: { id, status: "in_progress", recordingPath: interview.recordingPath },
         data: { recordingPath: relativePath }
-      });
-    } catch (databaseError) {
-      try {
-        await deleteRecording(relativePath);
-      } catch (cleanupError) {
-        console.error("Recording cleanup failed after database update error.", cleanupError);
+      }),
+      cleanupNew: () => deleteRecording(relativePath),
+      cleanupPrevious: path => deleteRecording(path),
+      previousPath: interview.recordingPath,
+      onCleanupError: (cleanupError, stage) => {
+        console.error("Recording cleanup failed: " + stage, cleanupError);
       }
-      throw databaseError;
-    }
+    });
 
-    if (saved.count !== 1) {
-      try {
-        await deleteRecording(relativePath);
-      } catch (cleanupError) {
-        console.error("Recording cleanup failed after concurrent interview update.", cleanupError);
-      }
+    if (!replacement.ok) {
       return NextResponse.json({ error: "The interview changed while this recording was uploading. Please retry." }, { status: 409 });
-    }
-
-    if (interview.recordingPath) {
-      try {
-        await deleteRecording(interview.recordingPath);
-      } catch (cleanupError) {
-        // The new recording is already committed. Log old-object cleanup failure for operational follow-up.
-        console.error("Previous recording cleanup failed after replacement.", cleanupError);
-      }
     }
     return NextResponse.json({ ok: true, message: "Recording saved to private storage." });
   } catch (error) {
