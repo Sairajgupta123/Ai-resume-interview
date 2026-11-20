@@ -5,7 +5,8 @@ import {
   hasDuplicateSkills,
   isRatingEvidenceConsistent,
   calculateEvidenceCoverage,
-  deriveRecommendation
+  deriveRecommendation,
+  completeRequiredSkillEvaluations
 } from "../lib/evaluation-policy.mjs";
 
 test("normalizes skill names for duplicate detection", () => {
@@ -64,4 +65,39 @@ test("does not infer strong skill evidence from question feedback alone", () => 
 
 test("keeps two-argument recommendation calls backward compatible", () => {
   assert.equal(deriveRecommendation(92, 90), "Strong match");
+});
+
+test("adds an explicit insufficient-evidence row for every missing job skill", () => {
+  const completed = completeRequiredSkillEvaluations(
+    ["JavaScript", "Node.js", "SQL"],
+    [{ skill: "JavaScript", rating: "Good", evidence: "I built browser features" }]
+  );
+  assert.deepEqual(completed, [
+    { skill: "JavaScript", rating: "Good", evidence: "I built browser features" },
+    { skill: "Node.js", rating: "Insufficient evidence", evidence: "Insufficient evidence" },
+    { skill: "SQL", rating: "Insufficient evidence", evidence: "Insufficient evidence" }
+  ]);
+});
+
+test("uses canonical skill aliases without confusing Java and JavaScript", () => {
+  const completed = completeRequiredSkillEvaluations(
+    ["Java", "JavaScript", "Node.js"],
+    [
+      { skill: "JavaScript", rating: "Good", evidence: "I wrote JavaScript modules" },
+      { skill: "Node.js", rating: "Strong", evidence: "I built Node.js services" }
+    ]
+  );
+  assert.deepEqual(completed.map(item => item.skill), ["JavaScript", "Node.js", "Java"]);
+  assert.equal(completed[2].rating, "Insufficient evidence");
+});
+
+test("does not invent required skills when no job skills were extracted", () => {
+  assert.deepEqual(completeRequiredSkillEvaluations([], [
+    { skill: "Communication", rating: "Good", evidence: "I worked with the team" }
+  ]), [{ skill: "Communication", rating: "Good", evidence: "I worked with the team" }]);
+});
+
+test("caps required-skill completion at the supported target limit", () => {
+  const required = Array.from({ length: 20 }, (_, index) => "Skill " + index);
+  assert.equal(completeRequiredSkillEvaluations(required, []).length, 15);
 });
