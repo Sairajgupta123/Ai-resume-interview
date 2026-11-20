@@ -218,13 +218,15 @@ export default function Dashboard() {
       setComparisonBusy(false);
     }
   };
-  const runDeletionAction = async (requestId: string, interviewId: string, action: "send" | "approve") => {
+  const runDeletionAction = async (requestId: string, interviewId: string, action: "send" | "approve" | "execute") => {
     const key = requestId + ":" + action;
     setDeletionActionBusy(key); setDeletionQueueMessage(""); setDeletionQueueError("");
     try {
       const endpoint = action === "send"
         ? "/api/employer/privacy/deletion-requests/" + encodeURIComponent(interviewId) + "/send-verification"
-        : "/api/employer/privacy/deletion-requests/" + encodeURIComponent(requestId) + "/approve";
+        : action === "approve"
+          ? "/api/employer/privacy/deletion-requests/" + encodeURIComponent(requestId) + "/approve"
+          : "/api/employer/privacy/deletion-requests/" + encodeURIComponent(requestId) + "/execute";
       const response = await fetch(endpoint, { method: "POST" });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Privacy action failed.");
@@ -331,7 +333,7 @@ export default function Dashboard() {
       </>}
     </section>
     <section className="dashboard-table-card privacy-deletion-queue">
-      <div className="table-heading"><div><div className="eyebrow">PRIVACY WORKFLOW</div><h2>Candidate deletion requests</h2><p>Candidate verification and employer approval are separate steps. Approval does not delete data.</p></div><span className="analytics-updated">Latest 100</span></div>
+      <div className="table-heading"><div><div className="eyebrow">PRIVACY WORKFLOW</div><h2>Candidate deletion requests</h2><p>Candidate verification and employer approval are mandatory. Execute deletion only after reviewing the verified request.</p></div><span className="analytics-updated">Latest 100</span></div>
       {deletionQueueError && <div className="error-box">{deletionQueueError}</div>}
       {deletionQueueMessage && <div className="success-box">{deletionQueueMessage}</div>}
       {!deletionQueueError && <div className="table-scroll"><table><thead><tr><th>REQUESTED</th><th>CANDIDATE</th><th>ROLE</th><th>STATUS</th><th>WORKFLOW</th></tr></thead><tbody>
@@ -341,12 +343,15 @@ export default function Dashboard() {
           <td className="privacy-workflow-actions">
             {request.status === "pending_candidate_verification" && <button className="view-btn" disabled={!!deletionActionBusy} onClick={() => runDeletionAction(request.id, request.interviewId, "send")}>{deletionActionBusy === request.id + ":send" ? "Sending…" : "Send verification"}</button>}
             {request.status === "verified_pending_approval" && <button className="view-btn" disabled={!!deletionActionBusy} onClick={() => runDeletionAction(request.id, request.interviewId, "approve")}>{deletionActionBusy === request.id + ":approve" ? "Approving…" : "Approve request"}</button>}
-            {request.status === "approved_for_deletion" && <span className="analytics-updated">Ready for execution phase</span>}
+            {request.status === "approved_for_deletion" && <button className="view-btn" disabled={!!deletionActionBusy} onClick={() => runDeletionAction(request.id, request.interviewId, "execute")}>{deletionActionBusy === request.id + ":execute" ? "Deleting…" : "Execute deletion"}</button>}
+            {request.status === "deletion_failed" && <button className="view-btn" disabled={!!deletionActionBusy} onClick={() => runDeletionAction(request.id, request.interviewId, "execute")}>{deletionActionBusy === request.id + ":execute" ? "Retrying…" : "Retry deletion"}</button>}
+            {request.status === "deletion_completed" && <span className="analytics-updated">Anonymized receipt retained</span>}
+            {request.status === "deletion_in_progress" && <span className="analytics-updated">Deletion in progress</span>}
           </td>
         </tr>)}
         {!deletionRequests.length && <tr><td colSpan={5} className="empty-cell">No candidate deletion requests have been created.</td></tr>}
       </tbody></table></div>}
-      <p className="analytics-disclaimer">Verification links expire after 30 minutes. No candidate data is deleted by this workflow yet.</p>
+      <p className="analytics-disclaimer">Verification links expire after 30 minutes. Completed requests remove the interview, transcript, report and private recording. A minimal anonymized receipt remains.</p>
     </section>
     <section className="dashboard-table-card audit-card">
       <div className="table-heading"><div><div className="eyebrow">ACCOUNTABILITY</div><h2>Decision audit history</h2><p>Latest 100 employer hiring decisions, with timestamps and recorded notes.</p></div><span className="analytics-updated">Newest first</span></div>
