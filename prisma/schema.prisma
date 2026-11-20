@@ -99,7 +99,7 @@ model PrivacyDeletionRequest {
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
   events                PrivacyDeletionEvent[]
-  @@index([interviewId, status])
+  @@unique([interviewId])
   @@index([createdAt])
 }
 
