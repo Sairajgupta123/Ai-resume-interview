@@ -196,6 +196,44 @@ test("privacy deletion transaction removes interview data and retains an anonymi
     assert.equal(raceWinner.status, "deletion_in_progress");
     assert.ok(["racing-worker-one", "racing-worker-two"].includes(raceWinner.executionLeaseToken));
 
+    // Even an accidentally approved status must not bypass candidate verification.
+    const unverifiedInterview = await prisma.interview.create({
+      data: {
+        candidateName: "Unverified Claim Test Candidate",
+        role: "Developer",
+        resumeText: "Dummy resume",
+        jobDescription: "Dummy job description"
+      }
+    });
+    const unverifiedRequest = await prisma.privacyDeletionRequest.create({
+      data: {
+        interviewId: unverifiedInterview.id,
+        candidateNameSnapshot: unverifiedInterview.candidateName,
+        roleSnapshot: unverifiedInterview.role,
+        reason: "Unverified claim integration test",
+        requestedBy: "employer",
+        status: "approved_for_deletion",
+        verifiedAt: null
+      }
+    });
+    const unverifiedClaim = await prisma.privacyDeletionRequest.updateMany({
+      where: {
+        id: unverifiedRequest.id,
+        verifiedAt: { not: null },
+        status: "approved_for_deletion"
+      },
+      data: {
+        status: "deletion_in_progress",
+        executionStartedAt: new Date(),
+        executionLeaseToken: "must-not-claim"
+      }
+    });
+    assert.equal(unverifiedClaim.count, 0);
+    assert.equal(
+      (await prisma.privacyDeletionRequest.findUnique({ where: { id: unverifiedRequest.id } })).status,
+      "approved_for_deletion"
+    );
+
     // A storage failure should leave interview data intact and permit a safe retry.
     const retryInterview = await prisma.interview.create({
       data: {
