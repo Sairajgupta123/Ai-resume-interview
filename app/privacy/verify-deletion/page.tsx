@@ -34,7 +34,7 @@ export default function VerifyDeletionPage() {
       {!message && <button disabled={!token || busy} onClick={verify}>{busy ? "Verifying…" : "Confirm my request"}</button>}
       <small>Links expire after 30 minutes and can be used only once.</small>
     </section>
-    <style jsx>{\`
+    <style jsx>{`
       .privacy-verify-page{min-height:100vh;display:grid;place-items:center;padding:24px;background:#f5f8f5;color:#263b2d;font-family:Arial,sans-serif}
       .privacy-verify-card{width:min(100%,480px);padding:32px;background:#fff;border:1px solid #e1e9e2;border-radius:16px;box-shadow:0 16px 50px #193c2510}
       .eyebrow{font-size:10px;letter-spacing:1.6px;font-weight:800;color:#6b8972}
@@ -46,6 +46,6 @@ export default function VerifyDeletionPage() {
       :global(.error-box),:global(.success-box){margin-top:14px;padding:12px;border-radius:8px;font-size:12px;line-height:1.5}
       :global(.error-box){background:#fbefed;color:#984b43}
       :global(.success-box){background:#edf6ef;color:#28613d}
-    \`}</style>
+    `}</style>
   </main>;
 }
