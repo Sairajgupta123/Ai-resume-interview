@@ -34,6 +34,7 @@ export async function POST(request: Request, context: Context) {
   if (updated.count !== 1) return NextResponse.json({ error: "Deletion request changed. Refresh and try again." }, { status: 409 });
 
   const verifyUrl = new URL("/privacy/verify-deletion", process.env.NEXT_PUBLIC_APP_URL);
+  verifyUrl.searchParams.set("request", deletion.id);
   verifyUrl.searchParams.set("token", token);
   const response = await fetch("https://api.resend.com/emails", {
     method: "POST",
