@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { hasValidCandidateInvitation } from "@/lib/invitation";
+import { getCandidateInvitationToken, hasValidCandidateInvitation } from "@/lib/invitation";
 
 export const runtime = "nodejs";
 const INTERVIEW_LIMIT_SECONDS = 15 * 60;
@@ -185,7 +185,7 @@ export async function POST(request: NextRequest) {
         }
       });
       if (!session) return NextResponse.json({ error: "Interview session not found." }, { status: 404 });
-      if (!session.invitationTokenHash || !(await hasValidCandidateInvitation(body.sessionId, request.headers.get("x-interview-invite")))) {
+      if (!session.invitationTokenHash || !(await hasValidCandidateInvitation(body.sessionId, getCandidateInvitationToken(request, id)))) {
         return NextResponse.json({ error: "Invalid or expired candidate invitation." }, { status: 401 });
       }
       if (session.status === "completed") return NextResponse.json({ error: "This interview has already been completed." }, { status: 409 });
