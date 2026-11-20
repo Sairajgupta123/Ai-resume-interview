@@ -19,6 +19,8 @@ export default function Dashboard() {
   const [compareIds, setCompareIds] = useState<string[]>([]);
   const [comparison, setComparison] = useState<any | null>(null);
   const [comparisonBusy, setComparisonBusy] = useState(false);
+  const [analytics, setAnalytics] = useState<any | null>(null);
+  const [analyticsError, setAnalyticsError] = useState("");
   const [decisionNotes, setDecisionNotes] = useState("");
   const [decisionBusy, setDecisionBusy] = useState(false);
   const employerVideoRef = useRef<HTMLVideoElement>(null);
@@ -119,6 +121,15 @@ export default function Dashboard() {
     const data = await r.json();
     setItems(data.interviews || []);
     setAuthenticated(true);
+    try {
+      const analyticsResponse = await fetch("/api/employer/analytics", { cache: "no-store" });
+      const analyticsData = await analyticsResponse.json();
+      if (!analyticsResponse.ok) throw new Error(analyticsData.error || "Analytics unavailable.");
+      setAnalytics(analyticsData.analytics);
+      setAnalyticsError("");
+    } catch (analyticsFailure) {
+      setAnalyticsError(analyticsFailure instanceof Error ? analyticsFailure.message : "Analytics unavailable.");
+    }
   };
 
   useEffect(() => {
@@ -197,6 +208,38 @@ export default function Dashboard() {
     <header className="dashboard-header"><a className="brand" href="/"><span className="brand-mark">M</span><span>mzobs<span className="brand-dot">.</span><small>EMPLOYER WORKSPACE</small></span></a><div className="header-actions"><span className="secure"><i/> Signed in</span><button className="outline-btn" onClick={logout}>Sign out</button></div></header>
     <section className="dashboard-title"><div><div className="eyebrow">HIRING INTELLIGENCE</div><h1>Interview <em>overview.</em></h1><p>Review candidate conversations, role alignment and evidence-backed AI reports.</p></div><a className="primary-link" href="/dashboard/new">＋ Invite candidate</a></section>
     <div className="metric-row"><div className="metric"><small>TOTAL INTERVIEWS</small><strong>{items.length}</strong></div><div className="metric"><small>COMPLETED</small><strong>{items.filter(x=>x.status==="completed").length}</strong></div><div className="metric"><small>AVERAGE SCORE</small><strong>{items.filter(x=>x.overallScore!==null).length ? Math.round(items.reduce((a,x)=>a+(x.overallScore||0),0)/items.filter(x=>x.overallScore!==null).length) : "—"}</strong></div></div>
+    <section className="analytics-section">
+      <div className="analytics-heading"><div><div className="eyebrow">WORKFORCE INSIGHTS</div><h2>Hiring analytics.</h2><p>Operational trends from interview activity and employer decisions.</p></div><span className="analytics-updated">Live from interview records</span></div>
+      {analyticsError && <div className="error-box">{analyticsError}</div>}
+      {analytics && <>
+        <div className="analytics-kpis">
+          <div className="analytics-kpi"><small>COMPLETION RATE</small><strong>{analytics.completionRate}%</strong><span>{analytics.completed} of {analytics.total} interviews completed</span></div>
+          <div className="analytics-kpi"><small>INVITED</small><strong>{analytics.invited}</strong><span>Awaiting candidate activity</span></div>
+          <div className="analytics-kpi"><small>IN PROGRESS</small><strong>{analytics.inProgress}</strong><span>Active interview sessions</span></div>
+          <div className="analytics-kpi"><small>SCORED INTERVIEWS</small><strong>{analytics.scoredCount}</strong><span>Average score: {analytics.averageScore === null ? "—" : analytics.averageScore + "/100"}</span></div>
+        </div>
+        <div className="analytics-grid">
+          <article className="analytics-card analytics-trend"><div className="analytics-card-heading"><div><h3>Interview activity</h3><p>Six-week activity · total and completed</p></div></div>
+            <div className="trend-legend"><span><i className="legend-total"/> Total</span><span><i className="legend-completed"/> Completed</span></div>
+            <div className="trend-list">{analytics.weeklyTrend.map((week: any) => {
+              const max = Math.max(1, ...analytics.weeklyTrend.map((entry: any) => entry.total));
+              return <div className="trend-row" key={week.weekStart}><span>{week.label}</span><div className="trend-track"><div className="trend-total" style={{width: (week.total / max * 100) + "%"}}/><div className="trend-completed" style={{width: (week.completed / max * 100) + "%"}}/></div><b>{week.total}</b></div>;
+            })}</div>
+          </article>
+          <article className="analytics-card"><div className="analytics-card-heading"><div><h3>Employer decisions</h3><p>Human decisions recorded in the workspace</p></div></div>
+            <div className="decision-bars">{[{key:"shortlist",label:"Shortlisted",color:"shortlist"},{key:"review",label:"Needs review",color:"review"},{key:"reject",label:"Rejected",color:"reject"},{key:"pending",label:"Pending",color:"pending"}].map((item: any) => <div className="decision-bar-row" key={item.key}><div><span>{item.label}</span><b>{analytics.decisions[item.key]}</b></div><div className="decision-track"><i className={item.color} style={{width: (analytics.total ? analytics.decisions[item.key] / analytics.total * 100 : 0) + "%"}}/></div></div>)}</div>
+          </article>
+          <article className="analytics-card"><div className="analytics-card-heading"><div><h3>Score distribution</h3><p>Validated numeric scores · completed interviews</p></div></div>
+            <div className="decision-bars">{analytics.scoreBands.map((band: any, index: number) => <div className="decision-bar-row" key={band.label}><div><span>{band.label}</span><b>{band.count}</b></div><div className="decision-track"><i className={"score-band score-band-" + index} style={{width: (analytics.scoredCount ? band.count / analytics.scoredCount * 100 : 0) + "%"}}/></div></div>)}</div>
+            <p className="analytics-footnote">Score bands are descriptive only and should not be used as automatic hiring cut-offs.</p>
+          </article>
+          <article className="analytics-card"><div className="analytics-card-heading"><div><h3>Top roles</h3><p>Roles with the most interview activity</p></div></div>
+            {analytics.roles.length ? <div className="role-list">{analytics.roles.map((role: any) => <div className="role-row" key={role.role}><div><span>{role.role}</span><b>{role.count}</b></div><div className="decision-track"><i style={{width: role.share + "%"}}/></div></div>)}</div> : <p className="analytics-empty">Role activity will appear when interviews are created.</p>}
+          </article>
+        </div>
+        <p className="analytics-disclaimer">Analytics describe recorded activity, not candidate quality. AI scores and recommendations are advisory; review interview evidence and apply consistent job-related criteria.</p>
+      </>}
+    </section>
     {compared.length > 0 && <section className="dashboard-table-card"><div className="table-heading"><div><h2>Candidate comparison</h2><p>Compare up to three candidates side by side. AI scores are advisory, not hiring decisions.</p></div><button className="outline-btn" onClick={runEvidenceComparison} disabled={compareIds.length < 2 || comparisonBusy}>{comparisonBusy ? "Comparing…" : "Compare skill evidence"}</button><button className="outline-btn" onClick={() => { setCompareIds([]); setComparison(null); }}>Clear comparison</button></div><div className="table-scroll"><table><thead><tr><th>Measure</th>{compared.map(item=><th key={item.id}>{item.candidateName}<small> · {item.role}</small></th>)}</tr></thead><tbody>{([{label:"AI score",value:(item:Item)=>item.overallScore === null ? "—" : `${item.overallScore}/100`},{label:"AI recommendation",value:(item:Item)=>item.recommendation || "—"},{label:"Employer decision",value:(item:Item)=>item.employerDecision || "Pending"},{label:"Interview status",value:(item:Item)=>item.status},{label:"Interview mode",value:(item:Item)=>item.mode},{label:"Duration",value:(item:Item)=>`${Math.floor(item.durationSeconds/60)}m ${item.durationSeconds%60}s`}]).map(metric=><tr key={metric.label}><th>{metric.label}</th>{compared.map(item=><td key={item.id}>{metric.value(item)}</td>)}</tr>)}</tbody></table></div>
       {comparison && <div className="evidence-comparison">
         <h3>Skill evidence comparison</h3>
