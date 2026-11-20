@@ -103,7 +103,7 @@ async function deleteRecording(storedPath: string) {
   }
   const normalized = storedPath.replace(/\\/g, "/");
   const filename = normalized.split("/").pop() || "";
-  if (normalized === "data/recordings/" + filename && /^[a-f0-9-]+\.(webm|mp4|mov)$/i.test(filename)) await unlink(join(process.cwd(), "data", "recordings", filename)).catch(() => undefined);
+  if (normalized === "data/recordings/" + filename && isSafeRecordingFilename(filename)) await unlink(join(process.cwd(), "data", "recordings", filename)).catch(() => undefined);
 }
 
 export async function POST(request: NextRequest, context: Context) {
@@ -126,7 +126,7 @@ export async function POST(request: NextRequest, context: Context) {
     if (!employer && !candidate) return NextResponse.json({ error: "Unauthorized recording upload." }, { status: 401 });
 
     const contentLength = Number(request.headers.get("content-length") || 0);
-    if (contentLength < 0 || contentLength > MAX_RECORDING_BYTES + 1024 * 1024) {
+    if (!Number.isSafeInteger(contentLength) || contentLength < 0 || contentLength > MAX_RECORDING_BYTES + 1024 * 1024) {
       return NextResponse.json({ error: "Recording upload exceeds the 100 MB limit." }, { status: 413 });
     }
     const form = await request.formData();
