@@ -81,6 +81,8 @@ test("does not advance difficulty for unanswered questions", () => {
   history[11] = { role: "assistant", content: "One more question?" };
   assert.equal(buildInterviewDifficultyPlan(history).answeredTurns, 5);
   assert.equal(buildInterviewDifficultyPlan(history).level, "advanced");
+  const withOneMoreUnanswered = [...history, { role: "assistant", content: "Another question?" }];
+  assert.equal(buildInterviewDifficultyPlan(withOneMoreUnanswered).answeredTurns, 5);
   assert.equal(buildInterviewDifficultyPlan(history.slice(0, 10)).answeredTurns, 5);
 });
 
