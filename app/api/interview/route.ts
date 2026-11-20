@@ -5,6 +5,7 @@ import { elapsedInterviewSeconds, INTERVIEW_LIMIT_SECONDS, isVerifiableEvidenceQ
 import { calculateEvidenceCoverage, deriveRecommendation, hasDuplicateSkills, isRatingEvidenceConsistent } from "@/lib/evaluation-policy.mjs";
 import { validateInterviewerTurn } from "@/lib/interviewer-turn-policy.mjs";
 import { buildAdaptiveGuidance } from "@/lib/adaptive-interview-policy.mjs";
+import { buildCoverageGuidance, buildSkillCoverage, extractTargetSkills } from "@/lib/skill-coverage-policy.mjs";
 
 function attachCandidateCookie(response: NextResponse, request: NextRequest, sessionId: string, expiresAt: Date | null) {
   const token = getCandidateInvitationToken(request, sessionId);
@@ -336,6 +337,10 @@ export async function POST(request: NextRequest) {
             })
           : (body.history || []).slice(-18);
         const adaptiveGuidance = buildAdaptiveGuidance(body.answer!);
+        const targetSkills = extractTargetSkills(body.jobDescription || "", body.resume || "");
+        const coverageHistory = [...history, { role: "user", content: body.answer! }];
+        const skillCoverage = buildSkillCoverage(targetSkills, coverageHistory);
+        const coverageGuidance = buildCoverageGuidance(skillCoverage);
         const previousFocuses = history
           .filter(message => message.role === "assistant")
           .map(message => message.content.slice(0, 240));
@@ -343,7 +348,7 @@ export async function POST(request: NextRequest) {
           { role: "system" as const, content: SYSTEM },
           {
             role: "user" as const,
-            content: `Interview context:\n${context}\nContinue the interview. Return JSON only.\nAdaptive follow-up guidance (${adaptiveGuidance.depth}): ${adaptiveGuidance.instruction}\nPreviously covered interviewer turns (avoid repeating the same skill/question):\n${previousFocuses.join("\n")}`
+            content: `Interview context:\n${context}\nContinue the interview. Return JSON only.\nAdaptive follow-up guidance (${adaptiveGuidance.depth}): ${adaptiveGuidance.instruction}\nJob skill coverage (${skillCoverage.answered}/${skillCoverage.total} answered, ${skillCoverage.percent}%): ${coverageGuidance}\nPreviously covered interviewer turns (avoid repeating the same skill/question):\n${previousFocuses.join("\n")}`
           },
           ...history.map((m) => ({ role: m.role as "assistant" | "user", content: m.content })),
           { role: "user" as const, content: body.answer! }
