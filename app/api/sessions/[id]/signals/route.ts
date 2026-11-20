@@ -40,7 +40,10 @@ export async function GET(request: NextRequest, context: Context) {
     take: 50,
     select: { id: true, kind: true, payload: true, createdAt: true }
   });
-  return NextResponse.json({ signals });
+  return NextResponse.json(
+    { signals },
+    { headers: { "Cache-Control": "private, no-store, max-age=0" } }
+  );
 }
 
 export async function POST(request: NextRequest, context: Context) {
