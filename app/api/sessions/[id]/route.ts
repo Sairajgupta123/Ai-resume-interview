@@ -40,5 +40,8 @@ export async function GET(_request: NextRequest, context: Context) {
     where: { id }, include: { messages: { orderBy: { createdAt: "asc" } }, decisionHistory: { orderBy: { createdAt: "desc" } } }
   });
   if (!interview) return NextResponse.json({ error: "Interview not found." }, { status: 404 });
-  return NextResponse.json({ interview });
+  return NextResponse.json(
+    { interview },
+    { headers: { "Cache-Control": "private, no-store, max-age=0" } }
+  );
 }
