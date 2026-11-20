@@ -13,11 +13,11 @@ test("does not treat a long generic answer as demonstrated technical depth", () 
 });
 
 test("uses a focused probe when an answer has some concrete detail", () => {
-  assert.equal(assessAnswerDepth("I implemented a React API integration and tested the result."), "probe");
+  assert.equal(assessAnswerDepth("I implemented a React API integration and tested the result across several user flows, documented the changes, and verified that the existing pages continued to work correctly."), "probe");
 });
 
 test("increases follow-up depth only when multiple specificity signals exist", () => {
-  const detailed = "I implemented a Node.js API and optimized PostgreSQL queries, reducing latency by 40%. We compared a Redis cache alternative because the database was the bottleneck, then tested the change.";
+  const detailed = "I implemented a Node.js API and optimized PostgreSQL queries, reducing latency by 40%. We compared a Redis cache alternative because the database was the bottleneck, then tested the change with representative traffic and documented the before and after results for the engineering team.";
   assert.equal(assessAnswerDepth(detailed), "deepen");
 });
 
