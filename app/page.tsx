@@ -188,7 +188,7 @@ export default function Home() {
       if (peerConnectionRef.current === peer) peerConnectionRef.current = null;
       if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
     };
-  }, [phase, mode, cameraOn, sessionId, inviteToken]);
+  }, [phase, mode, cameraOn, sessionId]);
 
   useEffect(() => {
     if (phase !== "interview") return;
