@@ -5,7 +5,9 @@ import {
   elapsedInterviewSeconds,
   isInterviewTimeLimitReached,
   normalizeEvidence,
-  isVerifiableEvidenceQuote
+  isVerifiableEvidenceQuote,
+  normalizeInterviewQuestion,
+  findCandidateAnswerForQuestion
 } from "../lib/interview-policy.mjs";
 
 const now = Date.UTC(2026, 10, 20, 12, 0, 0);
@@ -54,4 +56,27 @@ test("short or fabricated evidence is rejected", () => {
 test("missing evidence has one explicit accepted sentinel", () => {
   assert.equal(isVerifiableEvidenceQuote("Insufficient evidence", []), true);
   assert.equal(isVerifiableEvidenceQuote("No evidence", []), false);
+});
+
+test("normalizes interviewer questions for transcript matching", () => {
+  assert.equal(normalizeInterviewQuestion("  Explain REST APIs?  "), "explain rest apis");
+});
+
+test("finds only the candidate answer immediately following the matching question", () => {
+  const history = [
+    { role: "assistant", content: "Tell me about React." },
+    { role: "user", content: "I built a React dashboard." },
+    { role: "assistant", content: "How did you optimize SQL queries?" },
+    { role: "user", content: "I added indexes to improve query speed." }
+  ];
+  assert.equal(findCandidateAnswerForQuestion("How did you optimize SQL queries?", history), "I added indexes to improve query speed.");
+  assert.equal(findCandidateAnswerForQuestion("Tell me about React.", history), "I built a React dashboard.");
+});
+
+test("does not associate evidence with a different or unmatched question", () => {
+  const history = [
+    { role: "assistant", content: "Tell me about React." },
+    { role: "user", content: "I built a React dashboard." }
+  ];
+  assert.equal(findCandidateAnswerForQuestion("Explain database normalization?", history), null);
 });
