@@ -10,12 +10,12 @@ type Context = { params: Promise<{ id: string }> };
 export async function POST(request: Request, context: Context) {
   if (!(await isEmployerAuthenticated())) return NextResponse.json({ error: "Unauthorized." }, { status: 401, headers: { "Cache-Control": "no-store" } });
   const { id } = await context.params;
-  const interview = await db.interview.findUnique({ where: { id }, select: { id: true, candidateEmail: true } });
+  const interview = await db.interview.findUnique({ where: { id }, select: { id: true } });
   if (!interview) return NextResponse.json({ error: "Interview not found." }, { status: 404 });
-  if (!interview.candidateEmail) return NextResponse.json({ error: "A verified candidate email is not available for this interview. Do not verify identity using name alone." }, { status: 409 });
 
   const deletion = await db.privacyDeletionRequest.findUnique({ where: { interviewId: id } });
   if (!deletion || deletion.status !== "pending_candidate_verification") return NextResponse.json({ error: "No pending candidate verification request exists." }, { status: 409 });
+  if (!deletion.candidateEmailSnapshot) return NextResponse.json({ error: "The deletion request has no candidate email snapshot. Do not verify identity using name alone." }, { status: 409 });
   if (!process.env.RESEND_API_KEY || !process.env.PRIVACY_FROM_EMAIL || !process.env.NEXT_PUBLIC_APP_URL) {
     return NextResponse.json({ error: "Candidate verification email is not configured. Set RESEND_API_KEY, PRIVACY_FROM_EMAIL and NEXT_PUBLIC_APP_URL." }, { status: 503 });
   }
@@ -53,7 +53,9 @@ export async function POST(request: Request, context: Context) {
       headers: { Authorization: "Bearer " + process.env.RESEND_API_KEY, "Content-Type": "application/json" },
       body: JSON.stringify({
         from: process.env.PRIVACY_FROM_EMAIL,
-        to: [interview.candidateEmail],
+        // Use the address captured when the deletion request was opened. An
+        // interview contact edit must not silently redirect identity verification.
+        to: [deletion.candidateEmailSnapshot],
         subject: "Verify your interview data deletion request",
         text: "A request was opened to delete your interview data. If you made this request, verify it using this secure link (expires in 30 minutes): " + verifyUrl.toString() + "\n\nIf you did not request this, do not use the link and contact the hiring organization.",
       })
