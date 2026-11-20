@@ -23,6 +23,8 @@ export default function Dashboard() {
   const [analyticsError, setAnalyticsError] = useState("");
   const [auditEvents, setAuditEvents] = useState<any[]>([]);
   const [auditError, setAuditError] = useState("");
+  const [retentionPreview, setRetentionPreview] = useState<any | null>(null);
+  const [retentionError, setRetentionError] = useState("");
   const [decisionNotes, setDecisionNotes] = useState("");
   const [decisionBusy, setDecisionBusy] = useState(false);
   const employerVideoRef = useRef<HTMLVideoElement>(null);
@@ -134,6 +136,11 @@ export default function Dashboard() {
       if (!auditResponse.ok) throw new Error(auditData.error || "Audit history unavailable.");
       setAuditEvents(auditData.events || []);
       setAuditError("");
+      const retentionResponse = await fetch("/api/employer/privacy/retention", { cache: "no-store" });
+      const retentionData = await retentionResponse.json();
+      if (!retentionResponse.ok) throw new Error(retentionData.error || "Retention preview unavailable.");
+      setRetentionPreview(retentionData.preview);
+      setRetentionError("");
     } catch (analyticsFailure) {
       setAnalyticsError(analyticsFailure instanceof Error ? analyticsFailure.message : "Analytics unavailable.");
     }
@@ -245,6 +252,25 @@ export default function Dashboard() {
           </article>
         </div>
         <p className="analytics-disclaimer">Analytics describe recorded activity, not candidate quality. AI scores and recommendations are advisory; review interview evidence and apply consistent job-related criteria.</p>
+      </>}
+    </section>
+    <section className="privacy-retention-card">
+      <div className="analytics-heading"><div><div className="eyebrow">PRIVACY CONTROLS</div><h2>Data retention overview</h2><p>Read-only preview of completed interview records that meet the configured retention age.</p></div><span className="analytics-updated">Preview only · no data deleted</span></div>
+      {retentionError && <div className="error-box">{retentionError}</div>}
+      {retentionPreview && <>
+        <div className="retention-kpis">
+          <div><small>TOTAL RECORDS</small><strong>{retentionPreview.totalInterviews}</strong></div>
+          <div><small>COMPLETED</small><strong>{retentionPreview.completedInterviews}</strong></div>
+          <div><small>IN PROGRESS</small><strong>{retentionPreview.inProgressInterviews}</strong></div>
+          <div><small>ELIGIBLE FOR REVIEW</small><strong>{retentionPreview.eligibleCompletedInterviews}</strong></div>
+        </div>
+        <div className="retention-policy-note">
+          {retentionPreview.configured
+            ? <>Configured retention: <b>{retentionPreview.retentionDays} days</b> · cutoff: <b>{date(retentionPreview.cutoff)}</b></>
+            : <>No valid retention policy is configured. Set <code>INTERVIEW_RETENTION_DAYS</code> on the server to enable eligibility previews.</>}
+        </div>
+        <div className="retention-policy-note">Consent metadata present: <b>{retentionPreview.consentedInterviews}</b> · Missing consent timestamp or version: <b>{retentionPreview.missingConsentMetadata}</b></div>
+        <p className="analytics-disclaimer">This preview never includes in-progress interviews and does not delete resumes, transcripts, reports or recordings. Review applicable legal requirements and candidate notices before setting a retention period. Deletion workflow is not enabled.</p>
       </>}
     </section>
     <section className="dashboard-table-card audit-card">
