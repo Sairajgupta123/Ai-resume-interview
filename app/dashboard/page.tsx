@@ -40,6 +40,7 @@ export default function Dashboard() {
   const employerVideoRef = useRef<HTMLVideoElement>(null);
   const employerLocalRef = useRef<HTMLVideoElement>(null);
   const [liveCallState, setLiveCallState] = useState("Waiting for candidate…");
+  const [liveCallAttempt, setLiveCallAttempt] = useState(0);
   const employerPeerRef = useRef<RTCPeerConnection | null>(null);
   const employerStopCallRef = useRef<(() => void) | null>(null);
 
@@ -144,7 +145,7 @@ export default function Dashboard() {
       stopLocalCall();
       if (employerStopCallRef.current === stopLocalCall) employerStopCallRef.current = null;
     };
-  }, [authenticated, selected?.id, selected?.mode, selected?.status]);
+  }, [authenticated, selected?.id, selected?.mode, selected?.status, liveCallAttempt]);
 
   const endLiveCall = async () => {
     if (!selected || selected.mode !== "live" || selected.status === "completed") return;
@@ -539,7 +540,7 @@ export default function Dashboard() {
         {deletionMessage && <div className="success-box">{deletionMessage}</div>}
         <button className="outline-btn" disabled={deletionBusy || deletionConfirmation !== "REQUEST DELETION" || deletionReason.trim().length < 10} onClick={createDeletionRequest}>{deletionBusy ? "Submitting…" : "Create deletion request"}</button>
       </div>}
-      {selected.mode === "live" && selected.status !== "completed" && <div className="drawer-live-call"><h3>Live interview room</h3><p>{liveCallState}</p><video ref={employerVideoRef} autoPlay playsInline /><div className="employer-self-preview"><video ref={employerLocalRef} autoPlay muted playsInline /><span>Your camera</span></div><small>Keep this review panel open while the candidate joins. Browser camera and microphone permission is required.</small><button className="outline-btn" onClick={() => void endLiveCall()}>End live connection</button></div>}{selected.hasRecording && <RecordingPlayer src={`/api/sessions/${selected.id}/recording`} candidateName={selected.candidateName} />}<h3>Interview transcript</h3><div className="drawer-transcript">{selected.messages.map((m,i)=><div key={i} className="drawer-message"><small>{m.role==="assistant"?"AI INTERVIEWER":"CANDIDATE"}</small><p>{m.content}</p></div>)}</div>
+      {selected.mode === "live" && selected.status !== "completed" && <div className="drawer-live-call"><h3>Live interview room</h3><p>{liveCallState}</p><video ref={employerVideoRef} autoPlay playsInline /><div className="employer-self-preview"><video ref={employerLocalRef} autoPlay muted playsInline /><span>Your camera</span></div><small>Keep this review panel open while the candidate joins. Browser camera and microphone permission is required.</small><div className="decision-actions"><button className="outline-btn" onClick={() => setLiveCallAttempt(value => value + 1)}>Reconnect live video</button><button className="outline-btn" onClick={() => void endLiveCall()}>End live connection</button></div></div>}{selected.hasRecording && <RecordingPlayer src={`/api/sessions/${selected.id}/recording`} candidateName={selected.candidateName} />}<h3>Interview transcript</h3><div className="drawer-transcript">{selected.messages.map((m,i)=><div key={i} className="drawer-message"><small>{m.role==="assistant"?"AI INTERVIEWER":"CANDIDATE"}</small><p>{m.content}</p></div>)}</div>
     </section></div>}
   </main>;
 }
