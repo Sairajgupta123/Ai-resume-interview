@@ -251,18 +251,22 @@ export class GrokRealtimeClient {
   private queueAudio(base64: string) {
     const audioContext = this.audioContext;
     if (!audioContext) return;
-    const samples = base64Pcm16ToFloat32(base64);
-    if (samples.length === 0) return;
-    const buffer = audioContext.createBuffer(1, samples.length, SAMPLE_RATE);
-    buffer.copyToChannel(samples, 0);
-    const source = audioContext.createBufferSource();
-    source.buffer = buffer;
-    source.connect(audioContext.destination);
-    const startAt = Math.max(audioContext.currentTime + 0.02, this.playbackCursor);
-    this.playbackCursor = startAt + buffer.duration;
-    this.playbackSources.add(source);
-    source.onended = () => this.playbackSources.delete(source);
-    source.start(startAt);
+    try {
+      const samples = base64Pcm16ToFloat32(base64);
+      if (samples.length === 0) return;
+      const buffer = audioContext.createBuffer(1, samples.length, SAMPLE_RATE);
+      buffer.copyToChannel(samples, 0);
+      const source = audioContext.createBufferSource();
+      source.buffer = buffer;
+      source.connect(audioContext.destination);
+      const startAt = Math.max(audioContext.currentTime + 0.02, this.playbackCursor);
+      this.playbackCursor = startAt + buffer.duration;
+      this.playbackSources.add(source);
+      source.onended = () => this.playbackSources.delete(source);
+      source.start(startAt);
+    } catch {
+      this.callbacks.onError?.("The AI voice service returned an invalid audio chunk.");
+    }
   }
 
   private stopPlayback() {
