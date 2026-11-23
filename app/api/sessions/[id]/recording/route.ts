@@ -204,7 +204,12 @@ export async function GET(request: NextRequest, context: Context) {
   }
   const { id } = await context.params;
   const interview = await db.interview.findUnique({ where: { id }, select: { recordingPath: true } });
-  if (!interview?.recordingPath) return NextResponse.json({ error: "No recording is available." }, { status: 404 });
+  if (!interview?.recordingPath) {
+    return NextResponse.json({ error: "No recording is available." }, {
+      status: 404,
+      headers: { "Cache-Control": "private, no-store, max-age=0" }
+    });
+  }
 
   try {
     const storedPath = interview.recordingPath;
