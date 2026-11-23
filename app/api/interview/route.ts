@@ -29,7 +29,6 @@ export const runtime = "nodejs";
 const GROK_TIMEOUT_MS = 45_000;
 const OPERATION_LOCK_STALE_MS = 90_000;
 
-const PRIVATE_HEADERS = { "Cache-Control": "private, no-store, max-age=0" };
 
 function privateJson(body: unknown, init?: ResponseInit) {
   const headers = new Headers(init?.headers);
