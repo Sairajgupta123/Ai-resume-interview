@@ -298,7 +298,7 @@ export class GrokRealtimeClient {
       const samples = base64Pcm16ToFloat32(base64);
       if (samples.length === 0) return;
       const buffer = audioContext.createBuffer(1, samples.length, SAMPLE_RATE);
-      buffer.copyToChannel(samples, 0);
+      buffer.copyToChannel(new Float32Array(samples), 0);
       const source = audioContext.createBufferSource();
       source.buffer = buffer;
       source.connect(audioContext.destination);
