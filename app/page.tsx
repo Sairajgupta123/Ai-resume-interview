@@ -210,9 +210,8 @@ export default function Home() {
     return () => {
       stopped = true;
       if (timer !== undefined) window.clearInterval(timer);
-      if (peer && peer.connectionState !== "closed") void fetch(`/api/sessions/${sessionId}/signals`, {
-        method: "POST", headers, credentials: "same-origin", body: JSON.stringify({ kind: "hangup", payload: "candidate-ended" })
-      }).catch(() => {});
+      // Effect cleanup also runs for camera toggles and React development remounts.
+      // Do not interpret those lifecycle cleanups as the candidate ending the call.
       peer?.close();
       if (peerConnectionRef.current === peer) peerConnectionRef.current = null;
       if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
@@ -351,6 +350,16 @@ export default function Home() {
     finishStartedRef.current = true;
     setBusy(true); setError("");
     try {
+      // Send an intentional call-end signal before the report completes the interview.
+      if (mode === "live" && sessionId) {
+        await fetch(`/api/sessions/${sessionId}/signals`, {
+          method: "POST",
+          credentials: "same-origin",
+          cache: "no-store",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ kind: "hangup", payload: "candidate-ended" })
+        }).catch(() => {});
+      }
       // Stop the realtime connection and flush finalized transcript entries before reporting.
       grokVoiceRef.current?.close();
       grokVoiceRef.current = null;
