@@ -370,6 +370,7 @@ export default function Home() {
       const uploadController = new AbortController();
       const uploadTimeout = window.setTimeout(() => uploadController.abort(), 45_000);
       let response: Response;
+      let data: { error?: string };
       try {
         response = await fetch(`/api/sessions/${sessionId}/recording`, {
           method: "POST",
@@ -377,6 +378,7 @@ export default function Home() {
           body: form,
           signal: uploadController.signal
         });
+        data = await response.json();
       } catch (uploadError) {
         if (uploadController.signal.aborted) {
           throw new Error("Recording recovery timed out after 45 seconds. Your local recording segments have been kept; you can retry.");
@@ -385,7 +387,6 @@ export default function Home() {
       } finally {
         window.clearTimeout(uploadTimeout);
       }
-      const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Could not recover the saved recording.");
       recordingSavedRef.current = true;
       setRecordingSaved(true);
@@ -460,6 +461,7 @@ export default function Home() {
           const uploadController = new AbortController();
           const uploadTimeout = window.setTimeout(() => uploadController.abort(), 45_000);
           let response: Response;
+          let data: { error?: string };
           try {
             response = await fetch(`/api/sessions/${targetSessionId}/recording`, {
               method: "POST",
@@ -467,6 +469,7 @@ export default function Home() {
               body: form,
               signal: uploadController.signal
             });
+            data = await response.json();
           } catch (uploadError) {
             if (uploadController.signal.aborted) {
               throw new Error("Recording upload timed out after 45 seconds. Your locally saved segments will be kept for recovery.");
@@ -475,7 +478,6 @@ export default function Home() {
           } finally {
             window.clearTimeout(uploadTimeout);
           }
-          const data = await response.json();
           if (!response.ok) throw new Error(data.error || "Recording upload failed.");
           recordingSavedRef.current = true;
           setRecordingSaved(true);
