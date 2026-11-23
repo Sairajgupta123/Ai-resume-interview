@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { candidateInvitationCookieName, exchangeCandidateInvitation, getCandidateInvitationToken, hasValidCandidateInvitation } from "@/lib/invitation";
+import { isRestorableInterviewReport } from "@/lib/report-recovery-policy.mjs";
 
 type Context = { params: Promise<{ id: string }> };
 
@@ -49,7 +50,7 @@ async function candidateResponse(id: string, token: string | null, exchange = fa
     }
     try {
       completedReport = JSON.parse(interview.reportJson);
-      if (!completedReport || typeof completedReport !== "object" || Array.isArray(completedReport)) throw new Error("Invalid saved report");
+      if (!isRestorableInterviewReport(completedReport)) throw new Error("Invalid saved report");
     } catch {
       return NextResponse.json({ error: "The completed interview report could not be restored. Contact the hiring team." }, { status: 500, headers: { "Cache-Control": "private, no-store" } });
     }
