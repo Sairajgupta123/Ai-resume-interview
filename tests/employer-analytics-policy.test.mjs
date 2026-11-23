@@ -3,12 +3,20 @@ import assert from "node:assert/strict";
 import { buildEmployerAnalytics } from "../lib/employer-analytics-policy.mjs";
 
 const now = new Date("2026-11-20T12:00:00.000Z");
+const makeReport = (score, recommendation) => JSON.stringify({
+  overallScore: score, recommendation,
+  summary: "Demonstrated job-related knowledge and problem solving.",
+  disclaimer: "AI assessment is advisory and requires human review.",
+  strengths: [], improvementAreas: [],
+  skills: [{ skill: "Problem solving", rating: "Good", evidence: "Explained a practical solution clearly." }],
+  questionFeedback: []
+});
 const rows = [
-  { status: "completed", overallScore: 90, role: "Backend Engineer", employerDecision: "shortlist", createdAt: "2026-11-20T10:00:00.000Z" },
-  { status: "completed", overallScore: 70, role: "Backend Engineer", employerDecision: "review", createdAt: "2026-11-19T10:00:00.000Z" },
-  { status: "completed", overallScore: null, role: "Data Analyst", employerDecision: null, createdAt: "2026-11-18T10:00:00.000Z" },
-  { status: "invited", overallScore: null, role: "Data Analyst", employerDecision: "reject", createdAt: "2026-11-17T10:00:00.000Z" },
-  { status: "in_progress", overallScore: null, role: "QA Engineer", employerDecision: null, createdAt: "2026-11-16T10:00:00.000Z" }
+  { status: "completed", overallScore: 12, reportJson: makeReport(90, "Strong match"), role: "Backend Engineer", employerDecision: "shortlist", createdAt: "2026-11-20T10:00:00.000Z" },
+  { status: "completed", overallScore: 99, reportJson: makeReport(70, "Consider"), role: "Backend Engineer", employerDecision: "review", createdAt: "2026-11-19T10:00:00.000Z" },
+  { status: "completed", overallScore: null, reportJson: "{broken", role: "Data Analyst", employerDecision: null, createdAt: "2026-11-18T10:00:00.000Z" },
+  { status: "invited", overallScore: null, reportJson: null, role: "Data Analyst", employerDecision: "reject", createdAt: "2026-11-17T10:00:00.000Z" },
+  { status: "in_progress", overallScore: null, reportJson: null, role: "QA Engineer", employerDecision: null, createdAt: "2026-11-16T10:00:00.000Z" }
 ];
 
 test("calculates totals, completion rate and average only from scored completed interviews", () => {
@@ -18,6 +26,24 @@ test("calculates totals, completion rate and average only from scored completed 
   assert.equal(result.completionRate, 60);
   assert.equal(result.averageScore, 80);
   assert.equal(result.scoredCount, 2);
+});
+
+test("uses validated report scores instead of stale columns and ignores malformed reports", () => {
+  const result = buildEmployerAnalytics([
+    { ...rows[0], overallScore: 0 },
+    { ...rows[1], overallScore: 100 },
+    rows[2]
+  ], now);
+  assert.equal(result.averageScore, 80);
+  assert.equal(result.scoredCount, 2);
+});
+
+test("does not count an incomplete or malformed report as a scored assessment", () => {
+  const result = buildEmployerAnalytics([
+    { status: "completed", overallScore: 95, reportJson: JSON.stringify({ overallScore: 95 }), createdAt: now }
+  ], now);
+  assert.equal(result.averageScore, null);
+  assert.equal(result.scoredCount, 0);
 });
 
 test("separates employer decisions from AI recommendations", () => {
