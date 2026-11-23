@@ -18,11 +18,12 @@ export async function POST(_request: NextRequest, context: Context) {
   if (interview.status === "completed") return NextResponse.json({ error: "Completed interviews cannot be invited again." }, { status: 409 });
   const token = createInvitationToken();
   const expiresAt = new Date(Date.now() + 72 * 60 * 60 * 1000);
-  await db.interview.updateMany({ where: { id, ...(access ? { organizationId: access.organizationId } : {}) }, data: {
+  const updated = await db.interview.updateMany({ where: { id, ...(access ? { organizationId: access.organizationId } : {}) }, data: {
     invitationTokenHash: hashInvitationToken(token),
     inviteExpiresAt: expiresAt,
     inviteUsedAt: null
   } });
+  if (updated.count !== 1) return NextResponse.json({ error: "Interview changed while renewing the invitation." }, { status: 409 });
   const base = process.env.NEXT_PUBLIC_APP_URL || new URL(_request.url).origin;
   return NextResponse.json(
     { inviteUrl: `${base}/candidate/${id}?token=${token}`, expiresAt },
