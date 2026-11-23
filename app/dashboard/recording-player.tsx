@@ -8,6 +8,7 @@ export default function RecordingPlayer({ src, candidateName }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [attempt, setAttempt] = useState(0);
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
+  const [fullscreenMessage, setFullscreenMessage] = useState("");
 
   const retry = () => {
     setState("loading");
@@ -17,11 +18,21 @@ export default function RecordingPlayer({ src, candidateName }: Props) {
   const toggleFullscreen = async () => {
     const video = videoRef.current;
     if (!video) return;
+    setFullscreenMessage("");
     try {
-      if (document.fullscreenElement) await document.exitFullscreen();
-      else await video.parentElement?.requestFullscreen();
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+        return;
+      }
+      const container = video.parentElement;
+      if (!container?.requestFullscreen) {
+        setFullscreenMessage("Full screen is not supported by this browser.");
+        return;
+      }
+      await container.requestFullscreen();
     } catch {
-      setState("error");
+      // A fullscreen permission failure does not mean the recording failed.
+      setFullscreenMessage("The browser could not enter full screen. You can continue using the video controls.");
     }
   };
 
@@ -59,6 +70,7 @@ export default function RecordingPlayer({ src, candidateName }: Props) {
         <span>Private employer playback</span>
         <button type="button" onClick={toggleFullscreen}>⛶ Full screen</button>
       </div>
+      {fullscreenMessage && <p className="drawer-sub" role="status" aria-live="polite">{fullscreenMessage}</p>}
     </section>
   );
 }
