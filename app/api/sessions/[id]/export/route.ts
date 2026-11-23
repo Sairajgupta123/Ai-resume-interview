@@ -27,7 +27,8 @@ export async function GET(_request: Request, context: Context) {
           orderBy: { createdAt: "asc" },
           take: 100,
           select: { decision: true, notes: true, createdAt: true }
-        }
+        },
+        _count: { select: { messages: true, decisionHistory: true } }
       }
     });
     if (!interview) return NextResponse.json({ error: "Interview not found." }, { status: 404, headers });
@@ -57,6 +58,13 @@ export async function GET(_request: Request, context: Context) {
       ["AI recommendation", parsedReport.recommendation],
       ["Employer decision", interview.employerDecision],
       ["Employer notes", interview.employerNotes],
+      ["Transcript messages exported", interview.messages.length],
+      ["Transcript messages available", interview._count.messages],
+      ["Transcript messages omitted", Math.max(0, interview._count.messages - interview.messages.length)],
+      ["Decision history entries exported", interview.decisionHistory.length],
+      ["Decision history entries available", interview._count.decisionHistory],
+      ["Decision history entries omitted", Math.max(0, interview._count.decisionHistory - interview.decisionHistory.length)],
+      ["Export note", "Transcript and decision history are capped for export. Omitted counts are shown above."],
       ["Summary", report.summary || ""],
       [],
       ["SKILL ASSESSMENT"],
