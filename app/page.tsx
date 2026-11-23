@@ -316,9 +316,22 @@ export default function Home() {
     setDraft(""); setBusy(true); setError("");
     try {
       const data = await callApi({ action: "answer", sessionId, answer, requestId }) as InterviewReply;
+      if (sessionId) {
+        const durationResponse = await fetch(`/api/sessions/${sessionId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json", ...(inviteToken ? { "x-interview-invite": inviteToken } : {}) },
+          body: JSON.stringify({ durationSeconds: seconds })
+        });
+        if (!durationResponse.ok) {
+          const durationError = await durationResponse.json().catch(() => ({}));
+          throw new Error(durationError.error || "Your answer was saved, but the interview status could not be refreshed. Retry safely.");
+        }
+      }
+      // Keep the request ID until every post-answer operation succeeds. If the
+      // network drops after the answer transaction commits, a retry recovers
+      // the exact saved interviewer response instead of creating another turn.
       pendingAnswerRef.current = null;
       setHistory(prev => [...prev, { role: "assistant", content: data.message }]);
-      if (sessionId) await fetch(`/api/sessions/${sessionId}`, { method: "PUT", headers: { "Content-Type": "application/json", ...(inviteToken ? { "x-interview-invite": inviteToken } : {}) }, body: JSON.stringify({ durationSeconds: seconds }) });
       speak(data.message);
       if (data.done || data.timeLimitReached) await finishInterview();
     } catch (e) {
