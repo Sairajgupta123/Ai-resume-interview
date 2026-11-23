@@ -7,8 +7,9 @@ export const runtime = "nodejs";
 
 type Context = { params: Promise<{ id: string }> };
 
-// Covers the 15-minute interview plus a small connection/retry margin.
-const TOKEN_LIFETIME_SECONDS = 1_200;
+// The ephemeral credential is needed only to establish the WebSocket; the active
+// Realtime session continues after the credential itself expires.
+const TOKEN_LIFETIME_SECONDS = 60;
 const PROVIDER_TIMEOUT_MS = 10_000;
 
 /**
