@@ -15,6 +15,7 @@ export async function GET() {
       select: {
         status: true,
         overallScore: true,
+        reportJson: true,
         role: true,
         employerDecision: true,
         createdAt: true
