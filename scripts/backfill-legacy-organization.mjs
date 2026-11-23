@@ -1,4 +1,7 @@
+import { loadEnvConfig } from "@next/env";
 import { PrismaClient } from "@prisma/client";
+
+loadEnvConfig(process.cwd());
 import { resolveLegacyOrganizationPlan } from "../lib/legacy-organization-backfill-policy.mjs";
 
 const args = process.argv.slice(2);
