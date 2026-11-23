@@ -1,14 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { isEmployerAuthenticated } from "@/lib/auth";
+import { getEmployerOrganizationAccess, getEmployerSession } from "@/lib/auth";
 import { createInvitationToken, hashInvitationToken } from "@/lib/invitation";
 
 export async function POST(request: NextRequest) {
-  // Legacy candidate-session creation endpoint: only an authenticated employer may
-  // create an interview and receive its one-time invitation token.
-  if (!(await isEmployerAuthenticated())) {
-    return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+  const session = await getEmployerSession();
+  if (!session) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+  const access = session.kind === "user"
+    ? await getEmployerOrganizationAccess("interview:create")
+    : null;
+  if (session.kind === "user" && !access) {
+    return NextResponse.json({ error: "An active single-organization membership with interview creation permission is required." }, { status: 403 });
   }
+
   try {
     const body = await request.json();
     const candidateName = typeof body.candidateName === "string" ? body.candidateName.trim() : "";
@@ -30,6 +34,7 @@ export async function POST(request: NextRequest) {
         status: "invited",
         resumeText: resume,
         jobDescription,
+        ...(access ? { organizationId: access.organizationId } : {}),
         invitationTokenHash: hashInvitationToken(candidateToken),
         inviteExpiresAt: new Date(Date.now() + 72 * 60 * 60 * 1000)
       },
@@ -42,10 +47,22 @@ export async function POST(request: NextRequest) {
 }
 
 export async function GET() {
-  if (!(await isEmployerAuthenticated())) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
-  const interviews = await db.interview.findMany({
-    orderBy: { createdAt: "desc" },
-    select: { id: true, candidateName: true, role: true, mode: true, status: true, overallScore: true, recommendation: true, employerDecision: true, durationSeconds: true, createdAt: true }
-  });
-  return NextResponse.json({ interviews });
+  const session = await getEmployerSession();
+  if (!session) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+  const access = session.kind === "user"
+    ? await getEmployerOrganizationAccess("interview:read")
+    : null;
+  if (session.kind === "user" && !access) {
+    return NextResponse.json({ error: "An active single-organization membership with interview read permission is required." }, { status: 403 });
+  }
+  try {
+    const interviews = await db.interview.findMany({
+      ...(access ? { where: { organizationId: access.organizationId } } : {}),
+      orderBy: { createdAt: "desc" },
+      select: { id: true, candidateName: true, role: true, mode: true, status: true, overallScore: true, recommendation: true, employerDecision: true, durationSeconds: true, createdAt: true }
+    });
+    return NextResponse.json({ interviews }, { headers: { "Cache-Control": "private, no-store" } });
+  } catch {
+    return NextResponse.json({ error: "Could not load interviews." }, { status: 500 });
+  }
 }
