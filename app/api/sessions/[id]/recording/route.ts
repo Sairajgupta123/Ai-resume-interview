@@ -182,7 +182,7 @@ export async function POST(request: NextRequest, context: Context) {
     const relativePath = await saveRecording(bytes, mimeType, filename);
     const replacement = await commitRecordingReplacement({
       commit: () => db.interview.updateMany({
-        where: { id, status: "in_progress", recordingPath: interview.recordingPath },
+        where: { id, organizationId: interview.organizationId, status: "in_progress", recordingPath: interview.recordingPath },
         data: { recordingPath: relativePath }
       }),
       cleanupNew: () => deleteRecording(relativePath),
