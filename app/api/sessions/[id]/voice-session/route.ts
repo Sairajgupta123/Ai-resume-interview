@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getCandidateInvitationToken, hasValidCandidateInvitation } from "@/lib/invitation";
+import { elapsedInterviewSeconds, INTERVIEW_LIMIT_SECONDS } from "@/lib/interview-policy.mjs";
 
 export const runtime = "nodejs";
 
 type Context = { params: Promise<{ id: string }> };
 
-const TOKEN_LIFETIME_SECONDS = 60;
+// Covers the 15-minute interview plus a small connection/retry margin.
+const TOKEN_LIFETIME_SECONDS = 1_200;
 const PROVIDER_TIMEOUT_MS = 10_000;
 
 /**
@@ -44,7 +46,8 @@ export async function POST(request: NextRequest, context: Context) {
       !interview.startedAt ||
       !interview.consentAcceptedAt ||
       !interview.inviteExpiresAt ||
-      interview.inviteExpiresAt.getTime() <= Date.now()
+      interview.inviteExpiresAt.getTime() <= Date.now() ||
+      elapsedInterviewSeconds(interview.startedAt) >= INTERVIEW_LIMIT_SECONDS
     ) {
       return NextResponse.json({ error: "A consented, active live interview is required." }, { status: 409 });
     }
