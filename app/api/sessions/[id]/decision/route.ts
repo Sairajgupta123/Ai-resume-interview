@@ -8,9 +8,41 @@ const decisions = ["shortlist", "review", "reject"] as const;
 export async function POST(request: NextRequest, context: Context) {
   if (!(await isEmployerAuthenticated())) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   const { id } = await context.params;
+  const contentType = request.headers.get("content-type") || "";
+  if (!contentType.toLowerCase().includes("application/json")) {
+    return NextResponse.json({ error: "A JSON decision payload is required." }, { status: 415 });
+  }
+  const declaredLength = Number(request.headers.get("content-length") || 0);
+  if (declaredLength > 8_192) {
+    return NextResponse.json({ error: "Decision request is too large." }, { status: 413 });
+  }
+  const reader = request.body?.getReader();
+  if (!reader) return NextResponse.json({ error: "Decision request body is missing." }, { status: 400 });
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+  try {
+    while (true) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      totalBytes += chunk.value.byteLength;
+      if (totalBytes > 8_192) {
+        await reader.cancel();
+        return NextResponse.json({ error: "Decision request is too large." }, { status: 413 });
+      }
+      chunks.push(chunk.value);
+    }
+  } catch {
+    return NextResponse.json({ error: "Could not read decision request body." }, { status: 400 });
+  }
+  const bytes = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
   let body: unknown;
   try {
-    body = await request.json();
+    body = JSON.parse(new TextDecoder().decode(bytes));
   } catch {
     return NextResponse.json({ error: "Request body must contain valid JSON." }, { status: 400 });
   }
