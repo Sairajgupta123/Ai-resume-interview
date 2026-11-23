@@ -40,6 +40,7 @@ export default function Dashboard() {
   const employerVideoRef = useRef<HTMLVideoElement>(null);
   const employerLocalRef = useRef<HTMLVideoElement>(null);
   const [liveCallState, setLiveCallState] = useState("Waiting for candidate…");
+  const employerPeerRef = useRef<RTCPeerConnection | null>(null);
 
   useEffect(() => {
     if (!authenticated || !selected || selected.mode !== "live" || selected.status === "completed") {
@@ -64,6 +65,7 @@ export default function Dashboard() {
         const { iceServers } = await iceResponse.json();
         if (stopped) return;
         peer = new RTCPeerConnection({ iceServers });
+        employerPeerRef.current = peer;
         peer.ontrack = event => {
           if (employerVideoRef.current) employerVideoRef.current.srcObject = event.streams[0];
           setLiveCallState("Connected · live video and audio");
@@ -123,11 +125,33 @@ export default function Dashboard() {
       stopped = true;
       if (timer !== undefined) window.clearInterval(timer);
       peer?.close();
+      if (employerPeerRef.current === peer) employerPeerRef.current = null;
       localStream?.getTracks().forEach(track => track.stop());
       if (employerVideoRef.current) employerVideoRef.current.srcObject = null;
       if (employerLocalRef.current) employerLocalRef.current.srcObject = null;
     };
   }, [authenticated, selected?.id, selected?.mode, selected?.status]);
+
+  const endLiveCall = async () => {
+    if (!selected || selected.mode !== "live" || selected.status === "completed") return;
+    try {
+      await fetch(`/api/sessions/${selected.id}/signals`, {
+        method: "POST",
+        credentials: "same-origin",
+        cache: "no-store",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind: "hangup", payload: "employer-ended" })
+      });
+    } finally {
+      employerPeerRef.current?.close();
+      employerPeerRef.current = null;
+      const stream = employerLocalRef.current?.srcObject;
+      if (stream instanceof MediaStream) stream.getTracks().forEach(track => track.stop());
+      if (employerLocalRef.current) employerLocalRef.current.srcObject = null;
+      if (employerVideoRef.current) employerVideoRef.current.srcObject = null;
+      setLiveCallState("You ended the live video connection.");
+    }
+  };
 
   const load = async () => {
     const r = await fetch("/api/sessions", { cache: "no-store" });
@@ -493,7 +517,7 @@ export default function Dashboard() {
         {deletionMessage && <div className="success-box">{deletionMessage}</div>}
         <button className="outline-btn" disabled={deletionBusy || deletionConfirmation !== "REQUEST DELETION" || deletionReason.trim().length < 10} onClick={createDeletionRequest}>{deletionBusy ? "Submitting…" : "Create deletion request"}</button>
       </div>}
-      {selected.mode === "live" && selected.status !== "completed" && <div className="drawer-live-call"><h3>Live interview room</h3><p>{liveCallState}</p><video ref={employerVideoRef} autoPlay playsInline /><div className="employer-self-preview"><video ref={employerLocalRef} autoPlay muted playsInline /><span>Your camera</span></div><small>Keep this review panel open while the candidate joins. Browser camera and microphone permission is required.</small></div>}{selected.hasRecording && <RecordingPlayer src={`/api/sessions/${selected.id}/recording`} candidateName={selected.candidateName} />}<h3>Interview transcript</h3><div className="drawer-transcript">{selected.messages.map((m,i)=><div key={i} className="drawer-message"><small>{m.role==="assistant"?"AI INTERVIEWER":"CANDIDATE"}</small><p>{m.content}</p></div>)}</div>
+      {selected.mode === "live" && selected.status !== "completed" && <div className="drawer-live-call"><h3>Live interview room</h3><p>{liveCallState}</p><video ref={employerVideoRef} autoPlay playsInline /><div className="employer-self-preview"><video ref={employerLocalRef} autoPlay muted playsInline /><span>Your camera</span></div><small>Keep this review panel open while the candidate joins. Browser camera and microphone permission is required.</small><button className="outline-btn" onClick={() => void endLiveCall()}>End live connection</button></div>}{selected.hasRecording && <RecordingPlayer src={`/api/sessions/${selected.id}/recording`} candidateName={selected.candidateName} />}<h3>Interview transcript</h3><div className="drawer-transcript">{selected.messages.map((m,i)=><div key={i} className="drawer-message"><small>{m.role==="assistant"?"AI INTERVIEWER":"CANDIDATE"}</small><p>{m.content}</p></div>)}</div>
     </section></div>}
   </main>;
 }
