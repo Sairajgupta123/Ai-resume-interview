@@ -50,3 +50,18 @@ test("bounds report text and collection sizes", () => {
   assert.equal(report.strengths.length, 100);
   assert.equal(report.skills[0].skill, "0");
 });
+
+import { safeCsvCell } from "../lib/report-export-policy.mjs";
+
+test("CSV cells escape quotes and protect formula-like text", () => {
+  assert.equal(safeCsvCell('A "quote"'), '"A ""quote"""');
+  assert.equal(safeCsvCell('=HYPERLINK("https://example.com")'), '"\'=HYPERLINK(""https://example.com"")"');
+  assert.equal(safeCsvCell("  +SUM(1,2)"), '"\'  +SUM(1,2)"');
+  assert.equal(safeCsvCell("\t@command"), '"\'\\t@command"');
+});
+
+test("CSV cells preserve safe text and numeric values", () => {
+  assert.equal(safeCsvCell("Candidate"), '"Candidate"');
+  assert.equal(safeCsvCell(-42), '"-42"');
+  assert.equal(safeCsvCell(null), '""');
+});
