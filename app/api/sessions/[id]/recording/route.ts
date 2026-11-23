@@ -156,7 +156,7 @@ export async function POST(request: NextRequest, context: Context) {
     if (!(file instanceof File)) return NextResponse.json({ error: "Recording file is required." }, { status: 400, headers: privateHeaders });
     const mimeType = file.type.split(";")[0].trim();
     if (file.size < 1 || file.size > MAX_RECORDING_BYTES) {
-      return NextResponse.json({ error: "Recording must be smaller than 100 MB." }, { status: 413, headers: privateHeaders });
+      return NextResponse.json({ error: "Recording must be no larger than 100 MB." }, { status: 413, headers: privateHeaders });
     }
     const bytes = Buffer.from(await file.arrayBuffer());
     const validation = inspectRecordingUpload(mimeType, file.size, bytes);
