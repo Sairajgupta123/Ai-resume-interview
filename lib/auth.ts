@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import { db } from "@/lib/db";
 import { EMPLOYER_SESSION_MAX_AGE_SECONDS, isSessionTimestampValid } from "./session-policy.mjs";
 import { isEmployerUserSessionPayload } from "./employer-session-policy.mjs";
-import { normalizeEmployerRole } from "./employer-access-policy.mjs";
+import { hasEmployerPermission, normalizeEmployerRole } from "./employer-access-policy.mjs";
 
 const COOKIE = "mzobs_employer_session";
 const MAX_AGE = EMPLOYER_SESSION_MAX_AGE_SECONDS;
@@ -140,6 +140,18 @@ export async function getEmployerSession(): Promise<EmployerSession | null> {
     kind: "legacy",
     username: process.env.EMPLOYER_USERNAME || "admin",
     memberships: []
+  };
+}
+
+export async function getEmployerOrganizationAccess(permission: string) {
+  const session = await getEmployerSession();
+  if (!session || session.kind !== "user" || session.memberships.length !== 1) return null;
+  const membership = session.memberships[0];
+  if (!hasEmployerPermission(membership.role, permission)) return null;
+  return {
+    userId: session.userId,
+    organizationId: membership.organizationId,
+    role: membership.role
   };
 }
 
