@@ -81,7 +81,7 @@ async function candidateResponse(id: string, token: string | null, exchange = fa
 export async function POST(request: NextRequest, context: Context) {
   const { id } = await context.params;
   const headers = { "Cache-Control": "private, no-store, max-age=0" };
-  if (!(request.headers.get("content-type") || "").toLowerCase().includes("application/json")) {
+  if ((request.headers.get("content-type") || "").split(";", 1)[0].trim().toLowerCase() !== "application/json") {
     return NextResponse.json({ error: "A JSON invitation token is required." }, { status: 415, headers });
   }
   const declaredLength = Number(request.headers.get("content-length") || 0);
