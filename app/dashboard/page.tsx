@@ -471,6 +471,6 @@ function ReportView({json}:{json:string}) {
     {skills.length ? skills.map((item,i)=><div className="drawer-skill" key={i}><b>{text(item.skill, "Unnamed skill")}</b><span>{text(item.rating, "Insufficient evidence")}</span><p>{text(item.evidence, "Insufficient evidence")}</p></div>) : <p>No skill assessments were recorded.</p>}
     <h3>Question-by-question evidence</h3>
     {questionFeedback.length ? questionFeedback.map((item,i)=><div className="drawer-skill" key={i}><b>Q{i+1}. {text(item.question, "Question unavailable")}</b><p>{text(item.assessment, "No assessment was recorded.")}</p><small>Evidence: {text(item.evidence, "Insufficient evidence")}</small></div>) : <p>No question-level feedback was recorded.</p>}
-    {report.disclaimer && <p className="drawer-sub">{text(report.disclaimer)}</p>}
+    {typeof report.disclaimer === "string" && report.disclaimer.trim() && <p className="drawer-sub">{report.disclaimer}</p>}
   </div>;
 }
