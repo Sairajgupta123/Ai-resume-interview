@@ -88,7 +88,13 @@ export default function Dashboard() {
           if (peer?.connectionState === "disconnected") setLiveCallState("Candidate connection interrupted.");
         };
         peer.onicecandidate = event => {
-          if (event.candidate && !stopped) void postSignal("ice", JSON.stringify(event.candidate.toJSON()));
+          if (event.candidate && !stopped) {
+            void postSignal("ice", JSON.stringify(event.candidate.toJSON())).then(response => {
+              if (!response.ok && !stopped) setLiveCallState("Could not exchange live network information. Check the connection and retry.");
+            }).catch(() => {
+              if (!stopped) setLiveCallState("Live network signalling failed. Check the connection.");
+            });
+          }
         };
         setLiveCallState("Requesting employer camera and microphone…");
         localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
@@ -112,7 +118,8 @@ export default function Dashboard() {
                 for (const candidate of pendingIce.splice(0)) await peer!.addIceCandidate(candidate).catch(() => {});
                 const answer = await peer!.createAnswer();
                 await peer!.setLocalDescription(answer);
-                await postSignal("answer", JSON.stringify(peer!.localDescription));
+                const answerResponse = await postSignal("answer", JSON.stringify(peer!.localDescription));
+                if (!answerResponse.ok) throw new Error("The live call answer could not be sent. Please refresh the interview and retry.");
                 setLiveCallState("Answer sent · connecting…");
               } else if (signal.kind === "ice") {
                 const candidate = JSON.parse(signal.payload) as RTCIceCandidateInit;
