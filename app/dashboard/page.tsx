@@ -6,7 +6,7 @@ import RecordingPlayer from "./recording-player";
 import { isRestorableInterviewReport } from "@/lib/report-recovery-policy.mjs";
 
 type Item = { id: string; candidateName: string; role: string; mode: string; status: string; overallScore: number | null; recommendation: string | null; employerDecision: string | null; durationSeconds: number; createdAt: string };
-type Detail = Item & { candidateEmail?: string | null; resumeText: string; jobDescription: string; recordingPath: string | null; reportJson: string | null; employerNotes: string | null; decisionAt: string | null; decisionHistory: { id: string; decision: string; notes: string | null; createdAt: string }[]; messages: { role: string; content: string }[] };
+type Detail = Item & { candidateEmail?: string | null; resumeText: string; jobDescription: string; hasRecording: boolean; reportJson: string | null; employerNotes: string | null; decisionAt: string | null; decisionHistory: { id: string; decision: string; notes: string | null; createdAt: string }[]; messages: { role: string; content: string }[] };
 
 export default function Dashboard() {
   const [authenticated, setAuthenticated] = useState(false);
@@ -493,7 +493,7 @@ export default function Dashboard() {
         {deletionMessage && <div className="success-box">{deletionMessage}</div>}
         <button className="outline-btn" disabled={deletionBusy || deletionConfirmation !== "REQUEST DELETION" || deletionReason.trim().length < 10} onClick={createDeletionRequest}>{deletionBusy ? "Submitting…" : "Create deletion request"}</button>
       </div>}
-      {selected.mode === "live" && selected.status !== "completed" && <div className="drawer-live-call"><h3>Live interview room</h3><p>{liveCallState}</p><video ref={employerVideoRef} autoPlay playsInline /><div className="employer-self-preview"><video ref={employerLocalRef} autoPlay muted playsInline /><span>Your camera</span></div><small>Keep this review panel open while the candidate joins. Browser camera and microphone permission is required.</small></div>}{selected.recordingPath && <RecordingPlayer src={`/api/sessions/${selected.id}/recording`} candidateName={selected.candidateName} />}<h3>Interview transcript</h3><div className="drawer-transcript">{selected.messages.map((m,i)=><div key={i} className="drawer-message"><small>{m.role==="assistant"?"AI INTERVIEWER":"CANDIDATE"}</small><p>{m.content}</p></div>)}</div>
+      {selected.mode === "live" && selected.status !== "completed" && <div className="drawer-live-call"><h3>Live interview room</h3><p>{liveCallState}</p><video ref={employerVideoRef} autoPlay playsInline /><div className="employer-self-preview"><video ref={employerLocalRef} autoPlay muted playsInline /><span>Your camera</span></div><small>Keep this review panel open while the candidate joins. Browser camera and microphone permission is required.</small></div>}{selected.hasRecording && <RecordingPlayer src={`/api/sessions/${selected.id}/recording`} candidateName={selected.candidateName} />}<h3>Interview transcript</h3><div className="drawer-transcript">{selected.messages.map((m,i)=><div key={i} className="drawer-message"><small>{m.role==="assistant"?"AI INTERVIEWER":"CANDIDATE"}</small><p>{m.content}</p></div>)}</div>
     </section></div>}
   </main>;
 }
