@@ -10,7 +10,8 @@
     "db:push": "prisma db push",
     "postinstall": "prisma generate",
     "test": "node --test tests/*.test.mjs",
-    "db:backfill-legacy-organization": "node scripts/backfill-legacy-organization.mjs"
+    "db:backfill-legacy-organization": "node scripts/backfill-legacy-organization.mjs",
+    "db:bootstrap-employer-owner": "node scripts/bootstrap-employer-owner.mjs"
   },
   "dependencies": {
     "next": "15.5.29",
