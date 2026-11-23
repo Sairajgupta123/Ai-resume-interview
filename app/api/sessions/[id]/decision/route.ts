@@ -1,12 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { isEmployerAuthenticated } from "@/lib/auth";
+import { getEmployerOrganizationAccess, getEmployerSession } from "@/lib/auth";
 import { validateEmployerDecisionInput } from "@/lib/employer-decision-policy.mjs";
 
 type Context = { params: Promise<{ id: string }> };
 
 export async function POST(request: NextRequest, context: Context) {
-  if (!(await isEmployerAuthenticated())) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+  const session = await getEmployerSession();
+  if (!session) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+  const access = session.kind === "user"
+    ? await getEmployerOrganizationAccess("interview:decision")
+    : null;
+  if (session.kind === "user" && !access) return NextResponse.json({ error: "An active single-organization membership with interview decision permission is required." }, { status: 403 });
   const { id } = await context.params;
   let body: unknown;
   try {
@@ -20,7 +25,7 @@ export async function POST(request: NextRequest, context: Context) {
   try {
     const result = await db.$transaction(async tx => {
       const updatedCount = await tx.interview.updateMany({
-        where: { id, decisionAt: validation.expectedDecisionAt },
+        where: { id, ...(access ? { organizationId: access.organizationId } : {}), decisionAt: validation.expectedDecisionAt },
         data: {
           employerDecision: validation.decision,
           employerNotes: validation.notes || null,
@@ -28,12 +33,12 @@ export async function POST(request: NextRequest, context: Context) {
         }
       });
       if (updatedCount.count !== 1) {
-        const exists = await tx.interview.findUnique({ where: { id }, select: { id: true } });
+        const exists = await tx.interview.findUnique({ where: { id, ...(access ? { organizationId: access.organizationId } : {}) }, select: { id: true } });
         if (!exists) throw new Error("INTERVIEW_NOT_FOUND");
         throw new Error("DECISION_VERSION_CONFLICT");
       }
       const updated = await tx.interview.findUnique({
-        where: { id },
+        where: { id, ...(access ? { organizationId: access.organizationId } : {}) },
         select: { employerDecision: true, employerNotes: true, decisionAt: true }
       });
       if (!updated) throw new Error("INTERVIEW_NOT_FOUND");
