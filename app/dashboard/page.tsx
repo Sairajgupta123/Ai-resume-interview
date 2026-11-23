@@ -191,23 +191,63 @@ export default function Dashboard() {
   };
 
   const openDetail = async (id: string) => {
-    const r = await fetch(`/api/sessions/${id}`);
-    const d = await r.json();
-    if (r.ok) { setSelected(d.interview); setDecisionNotes(d.interview.employerNotes || ""); }
-    else setError(d.error || "Could not load interview.");
+    setError("");
+    try {
+      const response = await fetch(`/api/sessions/${encodeURIComponent(id)}`, { cache: "no-store" });
+      const data: unknown = await response.json();
+      if (!response.ok) {
+        const message = data && typeof data === "object" && "error" in data && typeof data.error === "string"
+          ? data.error
+          : "Could not load interview.";
+        throw new Error(message);
+      }
+      if (!data || typeof data !== "object" || !("interview" in data) ||
+          !data.interview || typeof data.interview !== "object" || !("id" in data.interview) ||
+          data.interview.id !== id || !("messages" in data.interview) || !Array.isArray(data.interview.messages) ||
+          !("decisionHistory" in data.interview) || !Array.isArray(data.interview.decisionHistory)) {
+        throw new Error("The interview response was incomplete. Refresh the dashboard and try again.");
+      }
+      const interview = data.interview as Item & { employerNotes?: string | null; messages: unknown[]; decisionHistory: unknown[] };
+      setSelected(interview);
+      setDecisionNotes(typeof interview.employerNotes === "string" ? interview.employerNotes : "");
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : "Could not load interview.");
+    }
   };
 
   const saveDecision = async (decision: "shortlist" | "review" | "reject") => {
     if (!selected || decisionBusy) return;
     setDecisionBusy(true); setError("");
     try {
-      const r = await fetch(`/api/sessions/${selected.id}/decision`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ decision, notes: decisionNotes }) });
-      const data = await r.json();
-      if (!r.ok) throw new Error(data.error || "Could not save decision.");
-      setSelected({ ...selected, employerDecision: data.decision, employerNotes: data.notes, decisionAt: data.decisionAt });
+      const response = await fetch(`/api/sessions/${encodeURIComponent(selected.id)}/decision`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ decision, notes: decisionNotes })
+      });
+      const data: unknown = await response.json();
+      if (!response.ok) {
+        const message = data && typeof data === "object" && "error" in data && typeof data.error === "string"
+          ? data.error
+          : "Could not save decision.";
+        throw new Error(message);
+      }
+      if (!data || typeof data !== "object" || !("decision" in data) || data.decision !== decision ||
+          !("decisionHistory" in data) || !Array.isArray(data.decisionHistory)) {
+        throw new Error("The decision was saved, but its updated history could not be confirmed. Refresh the interview.");
+      }
+      setSelected({
+        ...selected,
+        employerDecision: decision,
+        employerNotes: "notes" in data && typeof data.notes === "string" ? data.notes : null,
+        decisionAt: "decisionAt" in data && typeof data.decisionAt === "string" ? data.decisionAt : selected.decisionAt,
+        decisionHistory: data.decisionHistory
+      });
       await load();
-    } catch (e) { setError(e instanceof Error ? e.message : "Could not save decision."); }
-    finally { setDecisionBusy(false); }
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : "Could not save decision.");
+    } finally {
+      setDecisionBusy(false);
+    }
   };
 
   const logout = async () => { await fetch("/api/auth/logout", { method: "POST" }); setAuthenticated(false); setSelected(null); };
