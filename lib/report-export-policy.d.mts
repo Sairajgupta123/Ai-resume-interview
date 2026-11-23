@@ -19,3 +19,5 @@ export type NormalizedReportForExport = {
 };
 
 export function normalizeReportForExport(value: unknown): NormalizedReportForExport;
+
+export function safeCsvCell(value: unknown): string;
