@@ -34,7 +34,7 @@ The current shared employer session is an authentication gate, not an organizati
 
 ## Target model before multi-company use
 
-1. **Identity:** replace the shared environment-variable login with individual employer identities. Store password hashes using a suitable password-hashing algorithm; never store plaintext passwords.
+1. **Identity:** the `EmployerUser` schema now includes a revocable `sessionVersion`. A scrypt password-hashing/verification helper and a one-time initial-owner bootstrap command are present. The bootstrap requires an existing organization slug and refuses duplicate usernames; it has not been run against a user database. The shared environment-variable login remains active until individual-identity sessions and all route authorization are implemented and tested. Never store plaintext passwords.
 2. **Organizations and membership:** schema foundation is present: `EmployerUser`, `EmployerOrganization`, and `EmployerMembership`. Membership links a user to an organization and carries a role. The pure permission matrix is present, but no authentication or API route consumes it yet.
 3. **Tenant ownership:** `Interview.organizationId` is currently nullable as a safe additive schema step. A dry-run-first backfill command now requires explicit `LEGACY_ORGANIZATION_NAME` and `LEGACY_ORGANIZATION_SLUG`, refuses ambiguous databases with multiple organizations, applies organization creation and interview assignment in one transaction, and verifies no interviews remain unassigned. It has not been run against a user database. Back up the SQLite file, inspect the dry-run output, then explicitly apply it. Related employer-owned records reference interviews and inherit their organization scope through that relation.
 4. **Session claims:** sign a session containing a stable employer user ID and session version/expiry. Resolve active organization membership server-side on each request; do not trust an organization ID supplied only by the browser.
@@ -50,6 +50,10 @@ The current shared employer session is an authentication gate, not an organizati
 - [x] Add a tested, deny-by-default role-permission matrix.
 - [x] Add fail-closed Prisma query-scope builders and tests proving that missing organization identity cannot produce an unscoped query.
 - [x] Add a dry-run-first, transactional legacy-organization backfill command with explicit configuration and fail-closed ambiguity checks.
+- [x] Add scrypt password hashing/verification, password-length checks, and tests.
+- [x] Add an explicit one-time initial-owner bootstrap command that requires an existing organization and refuses duplicate usernames.
+- [x] Add a session-version field to support future server-side session revocation.
+- [ ] Execute the organization backfill and initial-owner bootstrap against a backed-up local database.
 - [ ] Back up the real database, review dry-run counts, apply the backfill, and verify zero unassigned interviews before making ownership required.
 - [ ] Replace shared login with individual employer identity and organization-aware sessions.
 - [ ] Enforce organization scoping and role permissions across every employer API.
@@ -57,6 +61,17 @@ The current shared employer session is an authentication gate, not an organizati
 ## Legacy organization backfill procedure
 
 Run this only against a backed-up database after `npm install` and `npm run db:push` have synchronized the additive schema.
+
+After a verified backfill, an initial owner can be provisioned once for the existing organization. This command refuses to overwrite an existing username and prints no password:
+
+```powershell
+$env:BOOTSTRAP_EMPLOYER_USERNAME = "owner"
+$env:BOOTSTRAP_EMPLOYER_PASSWORD = "use-a-unique-password-of-at-least-12-characters"
+$env:BOOTSTRAP_ORGANIZATION_SLUG = "mzobs-legacy"
+npm run db:bootstrap-employer-owner
+```
+
+Remove the bootstrap password from the environment after use. This creates the identity and owner membership only; the current login route does not authenticate these identities yet.
 
 PowerShell example:
 
