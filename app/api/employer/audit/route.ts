@@ -4,9 +4,11 @@ import { isEmployerAuthenticated } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
+const PRIVATE_HEADERS = { "Cache-Control": "private, no-store, max-age=0" };
+
 export async function GET() {
   if (!(await isEmployerAuthenticated())) {
-    return NextResponse.json({ error: "Unauthorized." }, { status: 401 },);
+    return NextResponse.json({ error: "Unauthorized." }, { status: 401, headers: PRIVATE_HEADERS });
   }
   try {
     const events = await db.employerDecisionHistory.findMany({
@@ -22,9 +24,9 @@ export async function GET() {
     });
     return NextResponse.json(
       { events },
-      { headers: { "Cache-Control": "private, no-store" } }
+      { headers: PRIVATE_HEADERS }
     );
   } catch {
-    return NextResponse.json({ error: "Could not load employer audit history." }, { status: 500 });
+    return NextResponse.json({ error: "Could not load employer audit history." }, { status: 500, headers: PRIVATE_HEADERS });
   }
 }
