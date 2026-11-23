@@ -457,7 +457,8 @@ export default function Home() {
 
 
   const startGrokVoice = async (targetSessionId: string, openingMessage: string) => {
-    if (!streamRef.current || !targetSessionId) return;
+    const mediaStream = streamRef.current;
+    if (!mediaStream || !targetSessionId) return;
     const instructions = [
       "You are MZOBS, a professional, fair and concise AI interviewer conducting a structured 15-minute job interview.",
       "Ask one question at a time. Listen carefully and adapt follow-up questions to the candidate's actual answers. Do not repeat questions.",
@@ -472,7 +473,7 @@ export default function Home() {
     ].join("\n\n");
     const client = new GrokRealtimeClient({
       sessionId: targetSessionId,
-      stream: streamRef.current,
+      stream: mediaStream,
       instructions,
       initialMessage: openingMessage,
       callbacks: {
