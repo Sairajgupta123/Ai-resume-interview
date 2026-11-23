@@ -333,7 +333,23 @@ export default function Home() {
         recorderRef.current.stop();
         setRecording(false);
       }
-      const recordingSavedOk = recordingCompleteRef.current ? await recordingCompleteRef.current : recordingSaved;
+      let recordingSavedOk = recordingSaved;
+      if (recordingCompleteRef.current) {
+        let recordingWaitTimer: number | undefined;
+        try {
+          recordingSavedOk = await Promise.race([
+            recordingCompleteRef.current,
+            new Promise<boolean>((_, reject) => {
+              recordingWaitTimer = window.setTimeout(
+                () => reject(new Error("Recording upload is taking too long. Your interview report has not been generated yet. Wait for the recording status or recover the saved segments, then try again.")),
+                60_000
+              );
+            })
+          ]);
+        } finally {
+          if (recordingWaitTimer !== undefined) window.clearTimeout(recordingWaitTimer);
+        }
+      }
       if (!recordingSavedOk && sessionId) {
         const cached = await getCachedRecording(sessionId).catch(() => null);
         if (cached?.chunks.length) {
