@@ -22,6 +22,9 @@ type RealtimeEvent = {
 const REALTIME_URL = "wss://api.x.ai/v1/realtime?model=grok-voice-latest";
 const SAMPLE_RATE = 24_000;
 
+const normalizeTranscript = (value: string) =>
+  value.toLowerCase().replace(/[^\\p{L}\\p{N}\\s]/gu, "").replace(/\\s+/g, " ").trim();
+
 export class GrokRealtimeClient {
   private socket: WebSocket | null = null;
   private audioContext: AudioContext | null = null;
@@ -34,6 +37,10 @@ export class GrokRealtimeClient {
   private callbacks: GrokRealtimeCallbacks;
   private sessionId: string;
   private stream: MediaStream;
+  private audioTrack: MediaStreamTrack | null = null;
+  private readonly onMicrophoneEnded = () => {
+    if (!this.closed) this.callbacks.onError?.("The microphone stopped. Reconnect your microphone or continue by typing.");
+  };
   private instructions: string;
   private initialMessage: string;
   private openingTranscriptPending = true;
@@ -203,6 +210,8 @@ export class GrokRealtimeClient {
       throw new Error("A live microphone track is required for AI voice.");
     }
     const source = audioContext.createMediaStreamSource(new MediaStream([audioTrack]));
+    this.audioTrack = audioTrack;
+    audioTrack.addEventListener("ended", this.onMicrophoneEnded, { once: true });
     const processor = audioContext.createScriptProcessor(4096, 1, 1);
     const silentGain = audioContext.createGain();
     silentGain.gain.value = 0;
@@ -243,7 +252,7 @@ export class GrokRealtimeClient {
     }
     if (data.type === "response.output_audio_transcript.done" && data.transcript?.trim()) {
       const transcript = data.transcript.trim();
-      if (this.openingTranscriptPending && transcript === this.initialMessage.trim()) {
+      if (this.openingTranscriptPending && normalizeTranscript(transcript) === normalizeTranscript(this.initialMessage)) {
         this.openingTranscriptPending = false;
         return;
       }
@@ -291,6 +300,8 @@ export class GrokRealtimeClient {
   }
 
   private stopAudioGraph() {
+    this.audioTrack?.removeEventListener("ended", this.onMicrophoneEnded);
+    this.audioTrack = null;
     this.processor?.disconnect();
     this.inputSource?.disconnect();
     this.silentGain?.disconnect();
