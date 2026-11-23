@@ -5,7 +5,7 @@ import { Readable } from "node:stream";
 import { randomUUID, createHash, createHmac } from "node:crypto";
 import { join } from "node:path";
 import { db } from "@/lib/db";
-import { isEmployerAuthenticated } from "@/lib/auth";
+import { getEmployerOrganizationAccess, getEmployerSession, isEmployerAuthenticated } from "@/lib/auth";
 import { getCandidateInvitationToken, hasValidCandidateInvitation } from "@/lib/invitation";
 import { MAX_RECORDING_BYTES, inspectRecordingUpload, isSafeRecordingFilename } from "@/lib/recording-policy.mjs";
 import { commitRecordingReplacement } from "@/lib/recording-replacement.mjs";
@@ -140,7 +140,7 @@ export async function POST(request: NextRequest, context: Context) {
   try {
     const interview = await db.interview.findUnique({
       where: { id },
-      select: { id: true, recordingPath: true, status: true, consentAcceptedAt: true, startedAt: true }
+      select: { id: true, organizationId: true, recordingPath: true, status: true, consentAcceptedAt: true, startedAt: true }
     });
     if (!interview) return NextResponse.json({ error: "Interview not found." }, { status: 404 });
     if (interview.status === "completed") {
@@ -150,9 +150,15 @@ export async function POST(request: NextRequest, context: Context) {
       return NextResponse.json({ error: "Recording is only accepted after the candidate has consented and started the interview." }, { status: 403 });
     }
 
-    const employer = await isEmployerAuthenticated();
+    const employerSession = await getEmployerSession();
+    const employer = employerSession !== null;
     const candidate = await hasValidCandidateInvitation(id, getCandidateInvitationToken(request, id));
     if (!employer && !candidate) return NextResponse.json({ error: "Unauthorized recording upload." }, { status: 401 });
+    if (employerSession?.kind === "user") {
+      const access = await getEmployerOrganizationAccess("interview:read");
+      if (!access) return NextResponse.json({ error: "An active single-organization membership with interview read permission is required." }, { status: 403 });
+      if (interview.organizationId !== access.organizationId) return NextResponse.json({ error: "Interview not found." }, { status: 404 });
+    }
 
     const contentLength = Number(request.headers.get("content-length") || 0);
     if (!Number.isSafeInteger(contentLength) || contentLength < 0 || contentLength > MAX_RECORDING_BYTES + 1024 * 1024) {
@@ -206,11 +212,17 @@ export async function POST(request: NextRequest, context: Context) {
 }
 
 export async function GET(request: NextRequest, context: Context) {
-  if (!(await isEmployerAuthenticated())) {
-    return NextResponse.json({ error: "Unauthorized." }, { status: 401, headers: { "Cache-Control": "no-store" } });
-  }
+  const session = await getEmployerSession();
+  if (!session) return NextResponse.json({ error: "Unauthorized." }, { status: 401, headers: { "Cache-Control": "no-store" } });
+  const access = session.kind === "user"
+    ? await getEmployerOrganizationAccess("interview:read")
+    : null;
+  if (session.kind === "user" && !access) return NextResponse.json({ error: "An active single-organization membership with interview read permission is required." }, { status: 403 });
   const { id } = await context.params;
-  const interview = await db.interview.findUnique({ where: { id }, select: { recordingPath: true } });
+  const interview = await db.interview.findFirst({
+    where: { id, ...(access ? { organizationId: access.organizationId } : {}) },
+    select: { recordingPath: true }
+  });
   if (!interview?.recordingPath) return NextResponse.json({ error: "No recording is available." }, { status: 404 });
 
   try {
@@ -283,9 +295,17 @@ export async function GET(request: NextRequest, context: Context) {
 }
 
 export async function HEAD(_request: NextRequest, context: Context) {
-  if (!(await isEmployerAuthenticated())) return new NextResponse(null, { status: 401, headers: { "Cache-Control": "no-store" } });
+  const session = await getEmployerSession();
+  if (!session) return new NextResponse(null, { status: 401, headers: { "Cache-Control": "no-store" } });
+  const access = session.kind === "user"
+    ? await getEmployerOrganizationAccess("interview:read")
+    : null;
+  if (session.kind === "user" && !access) return new NextResponse(null, { status: 403, headers: { "Cache-Control": "no-store" } });
   const { id } = await context.params;
-  const interview = await db.interview.findUnique({ where: { id }, select: { recordingPath: true } });
+  const interview = await db.interview.findFirst({
+    where: { id, ...(access ? { organizationId: access.organizationId } : {}) },
+    select: { recordingPath: true }
+  });
   if (!interview?.recordingPath) return new NextResponse(null, { status: 404, headers: { "Cache-Control": "no-store" } });
   try {
     const storedPath = interview.recordingPath;
