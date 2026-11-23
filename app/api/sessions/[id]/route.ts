@@ -48,14 +48,34 @@ export async function PUT(request: NextRequest, context: Context) {
 }
 
 export async function GET(_request: NextRequest, context: Context) {
-  if (!(await isEmployerAuthenticated())) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+  const headers = { "Cache-Control": "private, no-store, max-age=0" };
+  if (!(await isEmployerAuthenticated())) {
+    return NextResponse.json({ error: "Unauthorized." }, { status: 401, headers });
+  }
   const { id } = await context.params;
-  const interview = await db.interview.findUnique({
-    where: { id }, include: { messages: { orderBy: { createdAt: "asc" } }, decisionHistory: { orderBy: { createdAt: "desc" } } }
-  });
-  if (!interview) return NextResponse.json({ error: "Interview not found." }, { status: 404 });
-  return NextResponse.json(
-    { interview },
-    { headers: { "Cache-Control": "private, no-store, max-age=0" } }
-  );
+  try {
+    const interview = await db.interview.findUnique({
+      where: { id },
+      select: {
+        id: true, candidateName: true, candidateEmail: true, role: true,
+        mode: true, status: true, resumeText: true, jobDescription: true,
+        reportJson: true, overallScore: true, recommendation: true,
+        recordingPath: true, employerDecision: true, employerNotes: true,
+        decisionAt: true, durationSeconds: true, createdAt: true,
+        messages: {
+          orderBy: { createdAt: "asc" },
+          select: { role: true, content: true }
+        },
+        decisionHistory: {
+          orderBy: { createdAt: "desc" },
+          take: 50,
+          select: { id: true, decision: true, notes: true, createdAt: true }
+        }
+      }
+    });
+    if (!interview) return NextResponse.json({ error: "Interview not found." }, { status: 404, headers });
+    return NextResponse.json({ interview }, { headers });
+  } catch {
+    return NextResponse.json({ error: "Could not load interview details." }, { status: 500, headers });
+  }
 }
