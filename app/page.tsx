@@ -77,6 +77,11 @@ export default function Home() {
     const invitedId = params.get("candidateInterviewId");
     const token = params.get("token");
     if (!invitedId) return;
+    // Remove the bearer token from the visible URL and browser history before
+    // making the exchange request, including when the token later proves invalid.
+    if (token) {
+      window.history.replaceState({}, "", `/?candidateInterviewId=${encodeURIComponent(invitedId)}`);
+    }
     let cancelled = false;
     const invitationUrl = `/api/sessions/${invitedId}/candidate`;
     fetch(invitationUrl, token
@@ -89,8 +94,7 @@ export default function Home() {
       })
       .then(interview => {
         if (cancelled) return;
-        // The response has now set the HttpOnly cookie; remove the bearer token safely.
-        window.history.replaceState({}, "", `/?candidateInterviewId=${encodeURIComponent(invitedId)}`);
+        // The response has now set the HttpOnly cookie for subsequent requests.
         setSessionId(interview.id);
         if (interview.recordingSaved) {
           recordingSavedRef.current = true;
