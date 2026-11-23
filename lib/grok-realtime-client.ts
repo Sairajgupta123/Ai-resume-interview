@@ -71,6 +71,30 @@ export class GrokRealtimeClient {
     const socket = new WebSocket(REALTIME_URL, [`xai-client-secret.${tokenData.token}`]);
     this.socket = socket;
 
+    const sessionCreated = new Promise<void>((resolve, reject) => {
+      const timeout = window.setTimeout(() => reject(new Error("AI voice session initialization timed out.")), 15_000);
+      const onMessage = (event: MessageEvent) => {
+        try {
+          const payload = JSON.parse(String(event.data)) as RealtimeEvent;
+          if (payload.type === "session.created") {
+            window.clearTimeout(timeout);
+            socket.removeEventListener("message", onMessage);
+            resolve();
+          } else if (payload.type === "error") {
+            window.clearTimeout(timeout);
+            socket.removeEventListener("message", onMessage);
+            reject(new Error(payload.error?.message || "AI voice session initialization failed."));
+          }
+        } catch { /* ignore non-JSON events */ }
+      };
+      socket.addEventListener("message", onMessage);
+      socket.addEventListener("close", () => {
+        window.clearTimeout(timeout);
+        socket.removeEventListener("message", onMessage);
+        reject(new Error("AI voice connection closed during initialization."));
+      }, { once: true });
+    });
+
     try {
       await new Promise<void>((resolve, reject) => {
         const timeout = window.setTimeout(() => {
@@ -86,7 +110,9 @@ export class GrokRealtimeClient {
           reject(new Error("Could not connect to the AI voice service."));
         }, { once: true });
       });
+      await sessionCreated;
     } catch (error) {
+      socket.close();
       this.socket = null;
       throw error;
     }
