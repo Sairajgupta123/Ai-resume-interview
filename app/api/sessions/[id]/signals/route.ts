@@ -9,7 +9,8 @@ const allowed = new Set(["offer", "answer", "ice", "hangup"]);
 const MAX_SIGNAL_BODY_BYTES = 32_768;
 
 async function readSignalBody(request: NextRequest): Promise<Record<string, unknown> | null> {
-  if (!(request.headers.get("content-type") || "").toLowerCase().includes("application/json")) return null;
+  const mediaType = (request.headers.get("content-type") || "").split(";", 1)[0].trim().toLowerCase();
+  if (mediaType !== "application/json") return null;
   const declaredLength = Number(request.headers.get("content-length") || 0);
   if (!Number.isSafeInteger(declaredLength) || declaredLength < 0 || declaredLength > MAX_SIGNAL_BODY_BYTES) return null;
   const reader = request.body?.getReader();
