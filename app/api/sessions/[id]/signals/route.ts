@@ -111,6 +111,11 @@ export async function POST(request: NextRequest, context: Context) {
     if (sender === "employer" && interview.status !== "in_progress" && body.kind !== "ice") {
       return NextResponse.json({ error: "The candidate has not joined the live interview yet." }, { status: 409, headers });
     }
+    // Live interviews are limited to 15 minutes. Keep a one-hour safety window
+    // for polling/retries while pruning abandoned signalling records opportunistically.
+    await db.interviewSignal.deleteMany({
+      where: { interviewId: id, createdAt: { lt: new Date(Date.now() - 60 * 60 * 1000) } }
+    });
     const signal = await db.interviewSignal.create({ data: { interviewId: id, sender, kind: body.kind, payload: body.payload } });
     return NextResponse.json({ ok: true, id: signal.id }, { status: 201, headers });
   } catch {
