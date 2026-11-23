@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { isEmployerAuthenticated } from "@/lib/auth";
+import { getEmployerOrganizationAccess, getEmployerSession } from "@/lib/auth";
 import { getCandidateInvitationToken, hasValidCandidateInvitation } from "@/lib/invitation";
 
 export const runtime = "nodejs";
@@ -8,8 +8,17 @@ type Context = { params: Promise<{ id: string }> };
 const allowed = new Set(["offer", "answer", "ice", "hangup"]);
 
 async function access(request: NextRequest, id: string) {
-  const employer = await isEmployerAuthenticated();
-  if (employer) return "employer" as const;
+  const session = await getEmployerSession();
+  if (session?.kind === "legacy") return "employer" as const;
+  if (session?.kind === "user") {
+    const organizationAccess = await getEmployerOrganizationAccess("interview:read");
+    if (!organizationAccess) return null;
+    const interview = await db.interview.findFirst({
+      where: { id, organizationId: organizationAccess.organizationId },
+      select: { id: true }
+    });
+    return interview ? "employer" as const : null;
+  }
   const token = getCandidateInvitationToken(request, id);
   if (await hasValidCandidateInvitation(id, token)) return "candidate" as const;
   return null;

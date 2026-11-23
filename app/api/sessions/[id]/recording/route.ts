@@ -5,11 +5,11 @@ import { Readable } from "node:stream";
 import { randomUUID, createHash, createHmac } from "node:crypto";
 import { join } from "node:path";
 import { db } from "@/lib/db";
-import { isEmployerAuthenticated } from "@/lib/auth";
+import { getEmployerOrganizationAccess, getEmployerSession } from "@/lib/auth";
 import { getCandidateInvitationToken, hasValidCandidateInvitation } from "@/lib/invitation";
 import { MAX_RECORDING_BYTES, inspectRecordingUpload, isSafeRecordingFilename } from "@/lib/recording-policy.mjs";
 import { commitRecordingReplacement } from "@/lib/recording-replacement.mjs";
-import { parseByteRange } from "@/lib/recording-range.mjs";
+import { parseByteRange, validateRecordingStorageResponse } from "@/lib/recording-range.mjs";
 
 export const runtime = "nodejs";
 
@@ -64,6 +64,17 @@ async function s3Request(method: "PUT" | "GET" | "HEAD" | "DELETE", key: string,
   const response = await fetch(url, { method, headers, body: method === "PUT" ? new Uint8Array(body || Buffer.alloc(0)) : undefined, cache: "no-store" });
   if (!response.ok) throw new Error("Private recording storage returned " + response.status + ": " + (await response.text()).slice(0, 500));
   return response;
+}
+
+async function recordRecordingAccess(interviewId: string, method: "GET" | "HEAD") {
+  try {
+    await db.recordingAccessEvent.create({
+      data: { interviewId, method, outcome: "response_prepared" }
+    });
+  } catch (error) {
+    // Audit persistence must never interrupt an authorized recording response.
+    console.error("Recording access audit write failed.", error);
+  }
 }
 
 function isRemoteRecordingPath(value: string) {
@@ -129,7 +140,7 @@ export async function POST(request: NextRequest, context: Context) {
   try {
     const interview = await db.interview.findUnique({
       where: { id },
-      select: { id: true, recordingPath: true, status: true, consentAcceptedAt: true, startedAt: true }
+      select: { id: true, organizationId: true, recordingPath: true, status: true, consentAcceptedAt: true, startedAt: true }
     });
     if (!interview) return NextResponse.json({ error: "Interview not found." }, { status: 404 });
     if (interview.status === "completed") {
@@ -139,9 +150,15 @@ export async function POST(request: NextRequest, context: Context) {
       return NextResponse.json({ error: "Recording is only accepted after the candidate has consented and started the interview." }, { status: 403 });
     }
 
-    const employer = await isEmployerAuthenticated();
+    const employerSession = await getEmployerSession();
+    const employer = employerSession !== null;
     const candidate = await hasValidCandidateInvitation(id, getCandidateInvitationToken(request, id));
     if (!employer && !candidate) return NextResponse.json({ error: "Unauthorized recording upload." }, { status: 401 });
+    if (employerSession?.kind === "user") {
+      const access = await getEmployerOrganizationAccess("interview:read");
+      if (!access) return NextResponse.json({ error: "An active single-organization membership with interview read permission is required." }, { status: 403 });
+      if (interview.organizationId !== access.organizationId) return NextResponse.json({ error: "Interview not found." }, { status: 404 });
+    }
 
     const contentLength = Number(request.headers.get("content-length") || 0);
     if (!Number.isSafeInteger(contentLength) || contentLength < 0 || contentLength > MAX_RECORDING_BYTES + 1024 * 1024) {
@@ -165,7 +182,7 @@ export async function POST(request: NextRequest, context: Context) {
     const relativePath = await saveRecording(bytes, mimeType, filename);
     const replacement = await commitRecordingReplacement({
       commit: () => db.interview.updateMany({
-        where: { id, status: "in_progress", recordingPath: interview.recordingPath },
+        where: { id, organizationId: interview.organizationId, status: "in_progress", recordingPath: interview.recordingPath },
         data: { recordingPath: relativePath }
       }),
       cleanupNew: () => deleteRecording(relativePath),
@@ -195,11 +212,17 @@ export async function POST(request: NextRequest, context: Context) {
 }
 
 export async function GET(request: NextRequest, context: Context) {
-  if (!(await isEmployerAuthenticated())) {
-    return NextResponse.json({ error: "Unauthorized." }, { status: 401, headers: { "Cache-Control": "no-store" } });
-  }
+  const session = await getEmployerSession();
+  if (!session) return NextResponse.json({ error: "Unauthorized." }, { status: 401, headers: { "Cache-Control": "no-store" } });
+  const access = session.kind === "user"
+    ? await getEmployerOrganizationAccess("interview:read")
+    : null;
+  if (session.kind === "user" && !access) return NextResponse.json({ error: "An active single-organization membership with interview read permission is required." }, { status: 403 });
   const { id } = await context.params;
-  const interview = await db.interview.findUnique({ where: { id }, select: { recordingPath: true } });
+  const interview = await db.interview.findFirst({
+    where: { id, ...(access ? { organizationId: access.organizationId } : {}) },
+    select: { recordingPath: true }
+  });
   if (!interview?.recordingPath) return NextResponse.json({ error: "No recording is available." }, { status: 404 });
 
   try {
@@ -240,11 +263,26 @@ export async function GET(request: NextRequest, context: Context) {
 
     if (remote) {
       const response = await s3Request("GET", recordingObjectKey(storedPath), undefined, undefined, range?.ok ? rangeHeader || undefined : undefined);
-      if (range?.ok && response.status !== 206) throw new Error("Recording storage did not honor the requested byte range.");
+      const storageResponseIsValid = validateRecordingStorageResponse({
+        status: response.status,
+        contentRange: response.headers.get("content-range"),
+        contentLength: response.headers.get("content-length")
+      }, {
+        size,
+        partial: Boolean(range?.ok),
+        start,
+        end
+      });
+      if (!storageResponseIsValid) {
+        await response.body?.cancel();
+        throw new Error("Recording storage returned inconsistent playback metadata.");
+      }
+      await recordRecordingAccess(id, "GET");
       return new NextResponse(response.body, { status, headers: baseHeaders });
     }
 
     const stream = createReadStream(localRecordingPath(storedPath), { start, end });
+    await recordRecordingAccess(id, "GET");
     return new NextResponse(Readable.toWeb(stream) as ReadableStream, { status, headers: baseHeaders });
   } catch (error) {
     const remote = isRemoteRecordingPath(interview.recordingPath);
@@ -257,9 +295,17 @@ export async function GET(request: NextRequest, context: Context) {
 }
 
 export async function HEAD(_request: NextRequest, context: Context) {
-  if (!(await isEmployerAuthenticated())) return new NextResponse(null, { status: 401, headers: { "Cache-Control": "no-store" } });
+  const session = await getEmployerSession();
+  if (!session) return new NextResponse(null, { status: 401, headers: { "Cache-Control": "no-store" } });
+  const access = session.kind === "user"
+    ? await getEmployerOrganizationAccess("interview:read")
+    : null;
+  if (session.kind === "user" && !access) return new NextResponse(null, { status: 403, headers: { "Cache-Control": "no-store" } });
   const { id } = await context.params;
-  const interview = await db.interview.findUnique({ where: { id }, select: { recordingPath: true } });
+  const interview = await db.interview.findFirst({
+    where: { id, ...(access ? { organizationId: access.organizationId } : {}) },
+    select: { recordingPath: true }
+  });
   if (!interview?.recordingPath) return new NextResponse(null, { status: 404, headers: { "Cache-Control": "no-store" } });
   try {
     const storedPath = interview.recordingPath;
@@ -268,6 +314,7 @@ export async function HEAD(_request: NextRequest, context: Context) {
       : storedPath.split("/").pop() || "";
     const size = await recordingSize(storedPath);
     const contentType = filename.endsWith(".mp4") ? "video/mp4" : filename.endsWith(".mov") ? "video/quicktime" : "video/webm";
+    await recordRecordingAccess(id, "HEAD");
     return new NextResponse(null, {
       status: 200,
       headers: {

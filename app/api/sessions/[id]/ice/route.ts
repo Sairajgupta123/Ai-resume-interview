@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createHmac } from "node:crypto";
 import { db } from "@/lib/db";
-import { isEmployerAuthenticated } from "@/lib/auth";
+import { getEmployerOrganizationAccess } from "@/lib/auth";
 import { getCandidateInvitationToken, hasValidCandidateInvitation } from "@/lib/invitation";
 
 export const runtime = "nodejs";
@@ -9,12 +9,15 @@ type Context = { params: Promise<{ id: string }> };
 
 export async function GET(request: NextRequest, context: Context) {
   const { id } = await context.params;
-  const employer = await isEmployerAuthenticated();
+  const employerAccess = await getEmployerOrganizationAccess("interview:read");
   const candidateToken = getCandidateInvitationToken(request, id);
-  const candidate = !employer && await hasValidCandidateInvitation(id, candidateToken);
-  if (!employer && !candidate) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+  const candidate = !employerAccess && await hasValidCandidateInvitation(id, candidateToken);
+  if (!employerAccess && !candidate) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
 
-  const interview = await db.interview.findUnique({ where: { id }, select: { mode: true, status: true, startedAt: true, consentAcceptedAt: true } });
+  const interview = await db.interview.findFirst({
+    where: { id, ...(employerAccess ? { organizationId: employerAccess.organizationId } : {}) },
+    select: { mode: true, status: true, startedAt: true, consentAcceptedAt: true }
+  });
   if (!interview) return NextResponse.json({ error: "Interview not found." }, { status: 404 });
   if (interview.mode !== "live" || interview.status === "completed") {
     return NextResponse.json({ error: "Live interview is not active." }, { status: 409 });

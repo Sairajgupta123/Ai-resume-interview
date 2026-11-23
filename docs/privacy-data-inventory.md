@@ -46,3 +46,20 @@ Before merging a feature that handles candidate-related information, answer all 
 ## Scope review trigger
 
 Revisit this document whenever `prisma/schema.prisma` gains a model or candidate-related field, any API adds file/browser persistence, any provider integration changes, or exports become stored artifacts. The deletion integration tests should be expanded in the same change.
+
+
+## Recording access audit events
+
+The employer recording-access history is a separate operational audit record. It is not part of the hiring-decision history and must not be interpreted as evidence that a candidate's recording was watched.
+
+| Data | Current location | Deletion behavior | Boundary / verification |
+|---|---|---|---|
+| Authorized recording request metadata | `RecordingAccessEvent`: interview ID, HTTP method (`GET` or `HEAD`), outcome and timestamp | Deleted automatically when the related `Interview` row is deleted (`onDelete: Cascade`) | Integration test seeds an event and verifies it is removed with interview deletion |
+
+An event with outcome `response_prepared` means the server prepared an authorized response after validating the recording metadata. It does **not** prove that playback started, that the video was watched, or that it was watched in full. Browser players can make multiple range requests during one viewing, so event counts are not unique viewer counts or viewing sessions.
+
+The employer audit endpoint requires employer authentication and returns only the minimal event fields needed by the dashboard. Do not add IP addresses, browser fingerprints, authorization tokens, byte-range offsets, recording filenames, or recording contents to this model or UI without a separate privacy and security review.
+
+## Dependency security checks
+
+The CI workflow reports `npm audit` findings with package names, severity, affected ranges, advisory references and fix availability. This is a report-only check: it does not automatically upgrade dependencies or fail the build. Resolve each advisory deliberately, then rerun unit tests, type checks and the production build. Keep dependency versions and the generated lockfile under review so builds remain reproducible.

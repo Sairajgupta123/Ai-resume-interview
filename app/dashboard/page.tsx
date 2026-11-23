@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { buildCsv } from "@/lib/csv-export.mjs";
 import RecordingPlayer from "./recording-player";
+import { parseQuestionAssessment, summarizeQuestionAssessments } from "@/lib/report-view-policy.mjs";
 
 type Item = { id: string; candidateName: string; role: string; mode: string; status: string; overallScore: number | null; recommendation: string | null; employerDecision: string | null; durationSeconds: number; createdAt: string };
 type Detail = Item & { candidateEmail?: string | null; resumeText: string; jobDescription: string; recordingPath: string | null; reportJson: string | null; employerNotes: string | null; decisionAt: string | null; decisionHistory: { id: string; decision: string; notes: string | null; createdAt: string }[]; messages: { role: string; content: string }[] };
@@ -23,6 +24,7 @@ export default function Dashboard() {
   const [analyticsError, setAnalyticsError] = useState("");
   const [auditEvents, setAuditEvents] = useState<any[]>([]);
   const [auditError, setAuditError] = useState("");
+  const [recordingAccessEvents, setRecordingAccessEvents] = useState<any[]>([]);
   const [retentionPreview, setRetentionPreview] = useState<any | null>(null);
   const [retentionError, setRetentionError] = useState("");
   const [deletionRequests, setDeletionRequests] = useState<any[]>([]);
@@ -144,6 +146,7 @@ export default function Dashboard() {
       const auditData = await auditResponse.json();
       if (!auditResponse.ok) throw new Error(auditData.error || "Audit history unavailable.");
       setAuditEvents(auditData.events || []);
+      setRecordingAccessEvents(auditData.recordingEvents || []);
       setAuditError("");
       const retentionResponse = await fetch("/api/employer/privacy/retention", { cache: "no-store" });
       const retentionData = await retentionResponse.json();
@@ -185,10 +188,16 @@ export default function Dashboard() {
     if (!selected || decisionBusy) return;
     setDecisionBusy(true); setError("");
     try {
-      const r = await fetch(`/api/sessions/${selected.id}/decision`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ decision, notes: decisionNotes }) });
+      const r = await fetch(`/api/sessions/${selected.id}/decision`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ decision, notes: decisionNotes, expectedDecisionAt: selected.decisionAt }) });
       const data = await r.json();
       if (!r.ok) throw new Error(data.error || "Could not save decision.");
-      setSelected({ ...selected, employerDecision: data.decision, employerNotes: data.notes, decisionAt: data.decisionAt });
+      setSelected({
+        ...selected,
+        employerDecision: data.decision,
+        employerNotes: data.notes,
+        decisionAt: data.decisionAt,
+        decisionHistory: data.historyEvent ? [data.historyEvent, ...(selected.decisionHistory || [])] : selected.decisionHistory
+      });
       await load();
     } catch (e) { setError(e instanceof Error ? e.message : "Could not save decision."); }
     finally { setDecisionBusy(false); }
@@ -393,6 +402,22 @@ export default function Dashboard() {
       </tbody></table></div>}
       <p className="analytics-disclaimer">This feed records hiring decisions and notes. It is not a complete security access log and does not record every page view or data access.</p>
     </section>
+    <section className="dashboard-table-card audit-card recording-access-card">
+      <div className="table-heading"><div><div className="eyebrow">RECORDING SECURITY</div><h2>Recording access history</h2><p>Latest 100 authorized recording response events.</p></div><span className="analytics-updated">Newest first</span></div>
+      {auditError && <div className="error-box">{auditError}</div>}
+      {!auditError && <div className="table-scroll"><table><thead><tr><th>DATE &amp; TIME</th><th>CANDIDATE</th><th>ROLE</th><th>REQUEST</th><th>RECORDED OUTCOME</th><th /></tr></thead><tbody>
+        {recordingAccessEvents.map((event: any) => <tr key={event.id}>
+          <td>{date(event.createdAt)}</td>
+          <td>{event.interview.candidateName}</td>
+          <td>{event.interview.role}</td>
+          <td><span className="recording-method">{event.method}</span></td>
+          <td>{String(event.outcome).replaceAll("_", " ")}</td>
+          <td><button className="view-btn" onClick={() => openDetail(event.interview.id)}>Review →</button></td>
+        </tr>)}
+        {!recordingAccessEvents.length && <tr><td colSpan={6} className="empty-cell">Recording access events will appear when an authorized employer requests a recording.</td></tr>}
+      </tbody></table></div>}
+      <p className="analytics-disclaimer">A GET or HEAD event means the server prepared an authorized response. It does not confirm that the video played, was watched, or was watched in full. Browser playback may generate multiple requests for one viewing. Only minimal access metadata is shown here.</p>
+    </section>
     {compared.length > 0 && <section className="dashboard-table-card"><div className="table-heading"><div><h2>Candidate comparison</h2><p>Compare up to three candidates side by side. AI scores are advisory, not hiring decisions.</p></div><button className="outline-btn" onClick={runEvidenceComparison} disabled={compareIds.length < 2 || comparisonBusy}>{comparisonBusy ? "Comparing…" : "Compare skill evidence"}</button><button className="outline-btn" onClick={() => { setCompareIds([]); setComparison(null); }}>Clear comparison</button></div><div className="table-scroll"><table><thead><tr><th>Measure</th>{compared.map(item=><th key={item.id}>{item.candidateName}<small> · {item.role}</small></th>)}</tr></thead><tbody>{([{label:"AI score",value:(item:Item)=>item.overallScore === null ? "—" : `${item.overallScore}/100`},{label:"AI recommendation",value:(item:Item)=>item.recommendation || "—"},{label:"Employer decision",value:(item:Item)=>item.employerDecision || "Pending"},{label:"Interview status",value:(item:Item)=>item.status},{label:"Interview mode",value:(item:Item)=>item.mode},{label:"Duration",value:(item:Item)=>`${Math.floor(item.durationSeconds/60)}m ${item.durationSeconds%60}s`}]).map(metric=><tr key={metric.label}><th>{metric.label}</th>{compared.map(item=><td key={item.id}>{metric.value(item)}</td>)}</tr>)}</tbody></table></div>
       {comparison && <div className="evidence-comparison">
         <h3>Skill evidence comparison</h3>
@@ -412,7 +437,7 @@ export default function Dashboard() {
     </section>
     {selected && <div className="detail-backdrop" onClick={()=>setSelected(null)}><section className="detail-drawer" onClick={e=>e.stopPropagation()}><button className="drawer-close" onClick={()=>setSelected(null)}>×</button><div className="eyebrow">CANDIDATE REVIEW</div><h2>{selected.candidateName}</h2><p className="drawer-sub">{selected.role} · {selected.mode} interview</p><a className="outline-btn" href={`/api/sessions/${selected.id}/export`}>Download full interview report CSV ↓</a>
       {selected.reportJson ? <ReportView json={selected.reportJson}/> : <p className="drawer-sub">No completed report is available for this interview.</p>}
-      <div className="employer-decision"><div className="eyebrow">EMPLOYER DECISION</div><p>AI recommendation is advisory. Record your independent hiring decision.</p><textarea rows={3} value={decisionNotes} onChange={e=>setDecisionNotes(e.target.value)} placeholder="Optional notes for the hiring team…" /><div className="decision-actions"><button disabled={decisionBusy} onClick={()=>saveDecision("shortlist")}>Shortlist</button><button disabled={decisionBusy} onClick={()=>saveDecision("review")}>Needs review</button><button disabled={decisionBusy} onClick={()=>saveDecision("reject")}>Reject</button></div>{selected.employerDecision && <small>Current decision: <b>{selected.employerDecision}</b>{selected.decisionAt ? ` · ${date(selected.decisionAt)}` : ""}</small>}{selected.decisionHistory?.length > 0 && <div className="decision-history"><b>Decision history</b>{selected.decisionHistory.map(item=><div key={item.id}><span>{item.decision}</span><small>{date(item.createdAt)}</small>{item.notes && <p>{item.notes}</p>}</div>)}</div>}</div>
+      <div className="employer-decision"><div className="eyebrow">EMPLOYER DECISION</div><p>AI recommendation is advisory. Record your independent hiring decision.</p><label className="decision-rationale-label">Decision rationale<textarea rows={3} maxLength={3000} value={decisionNotes} onChange={e=>setDecisionNotes(e.target.value)} placeholder="Record job-related evidence or explain what should be reviewed next (up to 3,000 characters)…" /></label><small className="decision-rationale-hint">Keep notes factual and related to the role criteria. AI scores and recommendations are advisory, not a substitute for your assessment.</small><div className="decision-actions"><button disabled={decisionBusy} onClick={()=>saveDecision("shortlist")}>Shortlist</button><button disabled={decisionBusy} onClick={()=>saveDecision("review")}>Needs review</button><button disabled={decisionBusy} onClick={()=>saveDecision("reject")}>Reject</button></div>{selected.employerDecision && <small>Current decision: <b>{selected.employerDecision}</b>{selected.decisionAt ? ` · ${date(selected.decisionAt)}` : ""}</small>}{selected.decisionHistory?.length > 0 && <div className="decision-history"><b>Decision history</b>{selected.decisionHistory.map(item=><div key={item.id}><span>{item.decision}</span><small>{date(item.createdAt)}</small>{item.notes && <p>{item.notes}</p>}</div>)}</div>}</div>
       {selected.status === "completed" && <div className="privacy-deletion-request">
         <div className="eyebrow">PRIVACY MANAGEMENT</div>
         <h3>Request candidate data deletion</h3>
@@ -431,5 +456,48 @@ export default function Dashboard() {
 function ReportView({json}:{json:string}) {
   let report: any = {};
   try { report = JSON.parse(json); } catch { return <p>Report data could not be read.</p>; }
-  return <div className="drawer-report"><div className="drawer-score"><strong>{report.overallScore ?? "—"}</strong><span>/100 · {report.recommendation || "Needs review"}</span></div><p>{report.summary}</p><h3>Strengths</h3><ul>{(report.strengths||[]).map((x:string,i:number)=><li key={i}>{x}</li>)}</ul><h3>Development areas</h3><ul>{(report.improvementAreas||[]).map((x:string,i:number)=><li key={i}>{x}</li>)}</ul><h3>Skill assessment</h3>{(report.skills||[]).map((x:any,i:number)=><div className="drawer-skill" key={i}><b>{x.skill}</b><span>{x.rating}</span><p>{x.evidence}</p></div>)}<h3>Question-by-question evidence</h3>{(report.questionFeedback||[]).map((x:any,i:number)=><div className="drawer-skill" key={i}><b>Q{i+1}. {x.question}</b><p>{x.assessment}</p><small>Evidence: {x.evidence}</small></div>)}</div>;
+  const skills = Array.isArray(report.skills) ? report.skills : [];
+  const questions = Array.isArray(report.questionFeedback) ? report.questionFeedback : [];
+  const questionSummary = summarizeQuestionAssessments(questions);
+  const statusCounts = [
+    { label: "Correct", value: questionSummary.Correct },
+    { label: "Partially correct", value: questionSummary["Partially correct"] },
+    { label: "Incorrect", value: questionSummary.Incorrect },
+    { label: "Unanswered", value: questionSummary.Unanswered },
+    { label: "Unclassified", value: questionSummary.Unclassified }
+  ].filter(item => item.value > 0);
+  return <div className="drawer-report">
+    <div className="drawer-score"><strong>{report.overallScore ?? "—"}</strong><span>/100 · {report.recommendation || "Needs review"}</span></div>
+    <p>{report.summary || "No summary was provided."}</p>
+    <p className="drawer-sub">Evidence coverage: {Number.isFinite(report.evidenceCoverage) ? `${report.evidenceCoverage}% overall` : "Not available"} · {Number.isFinite(report.skillEvidenceCoverage) ? `${report.skillEvidenceCoverage}% job-related skills` : "Skill coverage not available"}</p>
+    <p className="report-review-note">AI recommendations are advisory. Missing evidence means the interview did not establish the competency; it does not prove the candidate lacks that skill.</p>
+    <h3>Strengths</h3>
+    {Array.isArray(report.strengths) && report.strengths.length ? <ul>{report.strengths.map((x:string,i:number)=><li key={i}>{x}</li>)}</ul> : <p className="report-empty">No strengths were recorded.</p>}
+    <h3>Development areas</h3>
+    {Array.isArray(report.improvementAreas) && report.improvementAreas.length ? <ul>{report.improvementAreas.map((x:string,i:number)=><li key={i}>{x}</li>)}</ul> : <p className="report-empty">No development areas were recorded.</p>}
+    <div className="report-section-heading"><h3>Job-related skill assessment</h3><small>{skills.length} competencies assessed</small></div>
+    {skills.length ? <div className="report-skill-list">{skills.map((x:any,i:number)=>{
+      const rating = typeof x.rating === "string" ? x.rating : "Insufficient evidence";
+      const ratingClass = rating.toLowerCase().replaceAll(" ", "-");
+      const hasEvidence = typeof x.evidence === "string" && x.evidence !== "Insufficient evidence";
+      return <article className="report-skill-card" key={`${x.skill || "skill"}-${i}`}>
+        <div className="report-skill-heading"><b>{x.skill || "Unnamed competency"}</b><span className={`report-rating rating-${ratingClass}`}>{rating}</span></div>
+        <p>{hasEvidence ? x.evidence : "Insufficient interview evidence was available to assess this competency."}</p>
+      </article>;
+    })}</div> : <p className="report-empty">No job-related skill assessments are available.</p>}
+    <div className="report-section-heading"><h3>Question-by-question review</h3><small>{questionSummary.total} questions</small></div>
+    {statusCounts.length > 0 && <div className="report-question-summary">{statusCounts.map(item=><span className={`question-count count-${item.label.toLowerCase().replaceAll(" ", "-")}`} key={item.label}><b>{item.value}</b> {item.label}</span>)}</div>}
+    {questions.length ? questions.map((x:any,i:number)=>{
+      const assessment = parseQuestionAssessment(x.assessment);
+      const statusClass = assessment.status.toLowerCase().replaceAll(" ", "-");
+      const evidenceAvailable = typeof x.evidence === "string" && x.evidence !== "Insufficient evidence";
+      return <article className="report-question-card" key={i}>
+        <div className="report-question-heading"><b>Q{i+1}. {x.question || "Interview question"}</b><span className={`question-status status-${statusClass}`}>{assessment.status}</span></div>
+        <p>{assessment.detail || (assessment.status === "Unanswered" ? "No candidate answer was recorded for this question." : "No explanation was provided.")}</p>
+        <small className="report-competencies">Competencies: {Array.isArray(x.testedSkills) && x.testedSkills.length ? x.testedSkills.join(", ") : "No required skill mapping available"}</small>
+        <div className="report-answer-evidence"><small>Evidence from this answer</small><p>{evidenceAvailable ? x.evidence : "Insufficient evidence from the paired answer."}</p></div>
+      </article>;
+    }) : <p className="report-empty">No question-level evidence is available.</p>}
+    {report.disclaimer && <p className="report-review-note">{report.disclaimer}</p>}
+  </div>;
 }

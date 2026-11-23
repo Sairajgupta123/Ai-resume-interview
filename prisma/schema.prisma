@@ -8,6 +8,9 @@ datasource db {
 }
 
 model Interview {
+  // Nullable during the staged legacy-data backfill; employer APIs must not infer ownership from null.
+  organizationId  String?
+  organization    EmployerOrganization? @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   id              String   @id @default(cuid())
   candidateName   String
   role            String
@@ -38,8 +41,60 @@ model Interview {
   messages        InterviewMessage[]
   decisionHistory EmployerDecisionHistory[]
   signals         InterviewSignal[]
+  recordingAccessEvents RecordingAccessEvent[]
+  @@index([organizationId, createdAt])
   @@index([createdAt])
   @@index([candidateName])
+}
+
+
+model EmployerUser {
+  id           String   @id @default(cuid())
+  username     String   @unique
+  passwordHash String
+  sessionVersion Int @default(0)
+  displayName  String?
+  disabledAt   DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  memberships  EmployerMembership[]
+
+  @@index([disabledAt])
+}
+
+model EmployerOrganization {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  memberships EmployerMembership[]
+  interviews  Interview[]
+}
+
+model EmployerMembership {
+  id             String   @id @default(cuid())
+  userId         String
+  organizationId String
+  role           String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  user           EmployerUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization   EmployerOrganization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, organizationId])
+  @@index([organizationId, role])
+}
+
+model RecordingAccessEvent {
+  id          String    @id @default(cuid())
+  interviewId String
+  method      String
+  outcome     String
+  createdAt   DateTime  @default(now())
+  interview   Interview @relation(fields: [interviewId], references: [id], onDelete: Cascade)
+
+  @@index([interviewId, createdAt])
 }
 
 model LoginAttempt {
@@ -73,7 +128,6 @@ model EmployerDecisionHistory {
 
   @@index([interviewId, createdAt])
 }
-
 
 model InterviewSignal {
   id          String    @id @default(cuid())

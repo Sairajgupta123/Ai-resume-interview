@@ -1,14 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { isEmployerAuthenticated } from "@/lib/auth";
+import { getEmployerOrganizationAccess, getEmployerSession } from "@/lib/auth";
 import { buildCandidateComparison } from "@/lib/candidate-comparison-policy.mjs";
 
 export const runtime = "nodejs";
 
 export async function POST(request: NextRequest) {
-  if (!(await isEmployerAuthenticated())) {
-    return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
-  }
+  const session = await getEmployerSession();
+  if (!session) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+  const access = session.kind === "user"
+    ? await getEmployerOrganizationAccess("interview:read")
+    : null;
+  if (session.kind === "user" && !access) return NextResponse.json({ error: "An active single-organization membership with interview read permission is required." }, { status: 403 });
   try {
     const body = await request.json();
     const rawIds: unknown[] = Array.isArray(body?.interviewIds) ? body.interviewIds : [];
@@ -19,7 +22,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Select between two and three candidates." }, { status: 400 });
     }
     const interviews = await db.interview.findMany({
-      where: { id: { in: ids }, status: "completed" },
+      where: { id: { in: ids }, status: "completed", ...(access ? { organizationId: access.organizationId } : {}) },
       select: {
         id: true, candidateName: true, role: true, overallScore: true,
         recommendation: true, reportJson: true

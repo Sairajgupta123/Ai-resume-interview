@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { candidateInvitationCookieName, getCandidateInvitationToken, hasValidCandidateInvitation } from "@/lib/invitation";
-import { elapsedInterviewSeconds, INTERVIEW_LIMIT_SECONDS, isVerifiableEvidenceQuote } from "@/lib/interview-policy.mjs";
-import { calculateEvidenceCoverage, deriveRecommendation, hasDuplicateSkills, isRatingEvidenceConsistent } from "@/lib/evaluation-policy.mjs";
+import { elapsedInterviewSeconds, findCandidateAnswerForQuestion, INTERVIEW_LIMIT_SECONDS, isVerifiableEvidenceQuote } from "@/lib/interview-policy.mjs";
+import { buildQuestionAssessmentGuidance, buildSkillEvaluationGuidance, calculateEvidenceCoverage, completeRequiredSkillEvaluations, deriveRecommendation, hasDuplicateSkills, isRatingEvidenceConsistent, isSkillEvidenceLinkedToQuestion } from "@/lib/evaluation-policy.mjs";
 import { validateInterviewerTurn } from "@/lib/interviewer-turn-policy.mjs";
 import { buildAdaptiveGuidance } from "@/lib/adaptive-interview-policy.mjs";
-import { buildCoverageGuidance, buildSkillCoverage, extractTargetSkills } from "@/lib/skill-coverage-policy.mjs";
+import { buildCoverageGuidance, buildSkillCoverage, extractRequiredJobSkills, resolveQuestionSkills } from "@/lib/skill-coverage-policy.mjs";
 import { buildFairnessGuidance, buildInterviewFairnessPlan } from "@/lib/interview-fairness-policy.mjs";
+import { buildInterviewDifficultyGuidance, buildInterviewDifficultyPlan, buildInterviewStructureGuidance, buildInterviewStructurePlan } from "@/lib/interview-structure-policy.mjs";
 
 function attachCandidateCookie(response: NextResponse, request: NextRequest, sessionId: string, expiresAt: Date | null) {
   const token = getCandidateInvitationToken(request, sessionId);
@@ -53,8 +54,8 @@ Rules:
 - Never infer competence, honesty, emotion, age, gender, disability, race, attractiveness, or personality from face, voice tone, accent, or appearance.
 - Evaluate only job-related content and evidence in answers. Be respectful and do not reveal hidden scoring rubrics.
 - For start/answer actions return ONLY valid JSON: {"message":"the next interviewer utterance","done":false,"focus":"short topic label"}.
-- End when there is enough evidence or the session is complete. For report action return ONLY JSON with keys: overallScore (integer 0-100), recommendation ("Strong match"|"Consider"|"Needs review"), summary, strengths (string array), improvementAreas (string array), skills (array of {"skill":string,"rating":"Strong"|"Good"|"Developing"|"Insufficient evidence","evidence":string}), questionFeedback (array of {"question":string,"assessment":string,"evidence":string}), and disclaimer.
-- For every skill and questionFeedback evidence field, provide a short VERBATIM quote copied exactly from a candidate answer in the transcript. If no supporting answer exists, use exactly "Insufficient evidence". Never use an interviewer question, resume text, job description, or assumptions as candidate-answer evidence.
+- End when there is enough evidence or the session is complete. For report action return ONLY JSON with keys: overallScore (integer 0-100), recommendation ("Strong match"|"Consider"|"Needs review"), summary, strengths (string array), improvementAreas (string array), skills (array of {"skill":string,"rating":"Strong"|"Good"|"Developing"|"Insufficient evidence","evidence":string}), questionFeedback (array of {"question":string copied exactly from an interviewer transcript turn,"assessment":string,"evidence":string,"testedSkills":string array of required job skills}), and disclaimer.
+- For every skill and questionFeedback evidence field, provide a short VERBATIM quote copied exactly from a candidate answer in the transcript. For questionFeedback, evidence MUST come from the candidate answer immediately following that exact interviewer question; if the question cannot be matched to its answer, use "Insufficient evidence". Copy question text exactly from the transcript. For each questionFeedback item, list testedSkills using only the required job skills that the question assessed; do not invent competency names. If no supporting answer exists, use exactly "Insufficient evidence". Never use an interviewer question, resume text, job description, or assumptions as candidate-answer evidence.
 - Do not fabricate evidence. Recommendation is advisory; employer makes the final decision.`;
 
 async function askGrok(messages: { role: "system" | "user" | "assistant"; content: string }[]) {
@@ -102,7 +103,7 @@ function boundedText(value: unknown, field: string, maxLength: number) {
   return value.trim();
 }
 
-function validateReport(raw: any, candidateAnswers: string[]) {
+function validateReport(raw: any, candidateAnswers: string[], requiredSkills: string[] = [], history: Array<{ role: string; content: string }> = []) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
     throw new Error("AI report validation failed: report must be an object.");
   }
@@ -126,7 +127,7 @@ function validateReport(raw: any, candidateAnswers: string[]) {
     throw new Error("AI report validation failed: invalid skills list.");
   }
   const ratings = ["Strong", "Good", "Developing", "Insufficient evidence"];
-  const skills = raw.skills.map((item: any, index: number) => {
+  const reportedSkills: Array<{ skill: string; rating: "Strong" | "Good" | "Developing" | "Insufficient evidence"; evidence: string }> = raw.skills.map((item: any, index: number) => {
     if (!item || typeof item !== "object" || !ratings.includes(item.rating)) {
       throw new Error(`AI report validation failed: invalid skill rating at item ${index + 1}.`);
     }
@@ -137,34 +138,62 @@ function validateReport(raw: any, candidateAnswers: string[]) {
     }
     return { skill, rating: item.rating, evidence };
   });
-  if (hasDuplicateSkills(skills)) {
-    throw new Error("AI report validation failed: duplicate or empty skill names.");
-  }
   if (!Array.isArray(raw.questionFeedback) || raw.questionFeedback.length > 40) {
     throw new Error("AI report validation failed: invalid question feedback list.");
   }
-  const questionFeedback = raw.questionFeedback.map((item: any, index: number) => {
+  const questionFeedback: Array<{ question: string; assessment: string; evidence: string; testedSkills: string[]; pairedAnswer: string | null }> = raw.questionFeedback.map((item: any, index: number) => {
     if (!item || typeof item !== "object") {
       throw new Error(`AI report validation failed: invalid question feedback at item ${index + 1}.`);
     }
+    const question = boundedText(item.question, `questionFeedback[${index}].question`, 1000);
+    const reportedEvidence = validateEvidence(item.evidence, `questionFeedback[${index}].evidence`);
+    const pairedAnswer = findCandidateAnswerForQuestion(question, history);
+    // Keep question-level evidence tied to the answer that actually followed
+    // that interviewer turn. Never borrow a quote from another answer.
+    const evidence = pairedAnswer && isVerifiableEvidenceQuote(reportedEvidence, [pairedAnswer])
+      ? reportedEvidence
+      : "Insufficient evidence";
     return {
-      question: boundedText(item.question, `questionFeedback[${index}].question`, 1000),
+      question,
       assessment: boundedText(item.assessment, `questionFeedback[${index}].assessment`, 1500),
-      evidence: validateEvidence(item.evidence, `questionFeedback[${index}].evidence`)
+      evidence,
+      testedSkills: resolveQuestionSkills(question, item.testedSkills, requiredSkills),
+      pairedAnswer
     };
   });
-  const evidenceCoverage = calculateEvidenceCoverage([...skills, ...questionFeedback]);
+  // A skill rating must be grounded in the answer to a question mapped to
+  // that same required skill. Quotes from unrelated answers are not enough.
+  const supportedReportedSkills: Array<{ skill: string; rating: "Strong" | "Good" | "Developing" | "Insufficient evidence"; evidence: string }> = reportedSkills.map(item => {
+    const linked = isSkillEvidenceLinkedToQuestion(item.skill, item.evidence, questionFeedback);
+    return linked
+      ? item
+      : { ...item, rating: "Insufficient evidence", evidence: "Insufficient evidence" };
+  });
+  // Missing or unlinked job skills remain visible as unsupported.
+  const skills = completeRequiredSkillEvaluations(requiredSkills, supportedReportedSkills);
+  if (hasDuplicateSkills(skills)) {
+    throw new Error("AI report validation failed: duplicate or empty skill names.");
+  }
+  const publicQuestionFeedback = questionFeedback.map(item => ({
+    question: item.question,
+    assessment: item.assessment,
+    evidence: item.evidence,
+    testedSkills: item.testedSkills
+  }));
+  const evidenceCoverage = calculateEvidenceCoverage([...skills, ...publicQuestionFeedback]);
+  const skillEvidenceCoverage = calculateEvidenceCoverage(skills);
   return {
     overallScore: raw.overallScore,
-    // The provider's recommendation is advisory input only. Derive the displayed
-    // recommendation from the validated score and the report's evidence coverage.
-    recommendation: deriveRecommendation(raw.overallScore, evidenceCoverage),
+    // A strong recommendation requires support in job-related skill evidence,
+    // not just well-supported narrative feedback about individual answers.
+    recommendation: deriveRecommendation(raw.overallScore, evidenceCoverage, skillEvidenceCoverage),
     evidenceCoverage,
+    skillEvidenceCoverage,
     summary: boundedText(raw.summary, "summary", 3000),
     strengths: stringList(raw.strengths, "strengths", 12),
     improvementAreas: stringList(raw.improvementAreas, "improvementAreas", 12),
     skills,
-    questionFeedback,
+    questionFeedback: publicQuestionFeedback,
     disclaimer: boundedText(raw.disclaimer, "disclaimer", 1000)
   };
 }
@@ -268,9 +297,16 @@ export async function POST(request: NextRequest) {
 
     if (body.action === "start") {
       try {
+        const openingPlan = buildInterviewStructurePlan(
+          [],
+          0,
+          INTERVIEW_LIMIT_SECONDS
+        );
+        const openingGuidance = buildInterviewStructureGuidance(openingPlan);
+        const openingDifficulty = buildInterviewDifficultyGuidance(buildInterviewDifficultyPlan([]));
         const content = await askGrok([
           { role: "system", content: SYSTEM },
-          { role: "user", content: `Begin the interview. Context:\n${context}\nReturn JSON only.` }
+          { role: "user", content: `Begin the interview. Context:\n${context}\n${openingGuidance}\n${openingDifficulty}\nOpen warmly and begin with one role-relevant technical foundation question. Return JSON only.` }
         ]);
         const parsed = parseJson(content);
         const validatedTurn = validateInterviewerTurn(parsed, []);
@@ -341,7 +377,7 @@ export async function POST(request: NextRequest) {
             })
           : (body.history || []).slice(-18);
         const adaptiveGuidance = buildAdaptiveGuidance(body.answer!);
-        const targetSkills = extractTargetSkills(body.jobDescription || "", body.resume || "");
+        const targetSkills = extractRequiredJobSkills(body.jobDescription || "");
         const coverageHistory = [...history, { role: "user", content: body.answer! }];
         const skillCoverage = buildSkillCoverage(targetSkills, coverageHistory);
         const coverageGuidance = buildCoverageGuidance(skillCoverage);
@@ -352,6 +388,14 @@ export async function POST(request: NextRequest) {
           INTERVIEW_LIMIT_SECONDS
         );
         const fairnessGuidance = buildFairnessGuidance(fairnessPlan);
+        const structurePlan = buildInterviewStructurePlan(
+          history,
+          startedAt ? elapsedInterviewSeconds(startedAt) : 0,
+          INTERVIEW_LIMIT_SECONDS
+        );
+        const structureGuidance = buildInterviewStructureGuidance(structurePlan);
+        const difficultyPlan = buildInterviewDifficultyPlan(history);
+        const difficultyGuidance = buildInterviewDifficultyGuidance(difficultyPlan);
         const previousFocuses = history
           .filter(message => message.role === "assistant")
           .map(message => message.content.slice(0, 240));
@@ -359,7 +403,7 @@ export async function POST(request: NextRequest) {
           { role: "system" as const, content: SYSTEM },
           {
             role: "user" as const,
-            content: `Interview context:\n${context}\nContinue the interview. Return JSON only.\nAdaptive follow-up guidance (${adaptiveGuidance.depth}): ${adaptiveGuidance.instruction}\nJob skill coverage (${skillCoverage.answered}/${skillCoverage.total} answered, ${skillCoverage.percent}%): ${coverageGuidance}\n${fairnessGuidance}\nPreviously covered interviewer turns (avoid repeating the same skill/question):\n${previousFocuses.join("\n")}`
+            content: `Interview context:\n${context}\nContinue the interview. Return JSON only.\n${structureGuidance}\n${difficultyGuidance}\nAdaptive follow-up guidance (${adaptiveGuidance.depth}): ${adaptiveGuidance.instruction}\nJob skill coverage (${skillCoverage.answered}/${skillCoverage.total} answered, ${skillCoverage.percent}%): ${coverageGuidance}\n${fairnessGuidance}\nPreviously covered interviewer turns (avoid repeating the same skill/question):\n${previousFocuses.join("\n")}`
           },
           ...history.map((m) => ({ role: m.role as "assistant" | "user", content: m.content })),
           { role: "user" as const, content: body.answer! }
@@ -446,11 +490,12 @@ export async function POST(request: NextRequest) {
         const transcript = history.map(m => `${m.role}: ${m.content}`).join("\n").slice(-24000);
         const content = await askGrok([
           { role: "system", content: SYSTEM },
-          { role: "user", content: `Generate the employer-facing evidence-based interview report from this saved server-side transcript. Do not infer anything from video or voice appearance.\n${context}\nTranscript:\n${transcript}\nReturn report JSON only.` }
+          { role: "user", content: `Generate the employer-facing evidence-based interview report from this saved server-side transcript. Do not infer anything from video or voice appearance.\n${context}\nEvaluation standards:\n${buildSkillEvaluationGuidance()}\nQuestion assessment standards:\n${buildQuestionAssessmentGuidance()}\nTranscript:\n${transcript}\nReturn report JSON only.` }
         ]);
         const rawReport = parseJson(content);
         const candidateAnswers = history.filter(message => message.role === "user").map(message => message.content);
-        const report = validateReport(rawReport, candidateAnswers);
+        const requiredSkills = extractRequiredJobSkills(body.jobDescription || "");
+        const report = validateReport(rawReport, candidateAnswers, requiredSkills, history);
         if (body.sessionId) {
           if (!reportLockAt) throw new Error("Interview report lock was not acquired.");
           const durationSeconds = startedAt ? Math.min(INTERVIEW_LIMIT_SECONDS, elapsedInterviewSeconds(startedAt)) : 0;

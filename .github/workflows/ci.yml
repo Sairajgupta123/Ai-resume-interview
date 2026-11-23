@@ -13,13 +13,39 @@ jobs:
       DATABASE_URL: "file:../ci.db"
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 20
       - name: Install dependencies
-        run: npm install
+        run: npm ci
+      - name: Dependency security audit (report only)
+        run: |
+          npm audit --json > "$RUNNER_TEMP/npm-audit.json" || true
+          node -e '
+            const report = require(process.argv[1]);
+            const entries = Object.entries(report.vulnerabilities || {});
+            console.log("Vulnerability summary:", JSON.stringify(report.metadata?.vulnerabilities || {}));
+            for (const [name, item] of entries) {
+              console.log(JSON.stringify({
+                package: name,
+                severity: item.severity,
+                direct: item.isDirect,
+                range: item.range,
+                fixAvailable: item.fixAvailable,
+                via: item.via,
+                advisories: (item.via || []).filter(v => typeof v === "object").map(v => ({
+                  title: v.title,
+                  url: v.url,
+                  range: v.range,
+                  severity: v.severity
+                }))
+              }));
+            }
+          ' "$RUNNER_TEMP/npm-audit.json"
+      - name: Fail on moderate or higher dependency vulnerabilities
+        run: npm audit --audit-level=moderate
       - name: Unit tests
         run: npm test
       - name: Type check

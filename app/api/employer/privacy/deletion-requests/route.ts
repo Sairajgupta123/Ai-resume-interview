@@ -1,16 +1,19 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { isEmployerAuthenticated } from "@/lib/auth";
+import { getEmployerOrganizationAccess } from "@/lib/auth";
 import { isDeletionExecutionLeaseExpired } from "@/lib/deletion-execution-policy.mjs";
 
 export const runtime = "nodejs";
 
 export async function GET() {
-  if (!(await isEmployerAuthenticated())) {
+  const access = await getEmployerOrganizationAccess("privacy:manage_requests");
+  if (!access) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401, headers: { "Cache-Control": "no-store" } });
   }
   try {
+    const ownedInterviews = await db.interview.findMany({ where: { organizationId: access.organizationId }, select: { id: true } });
     const requests = await db.privacyDeletionRequest.findMany({
+      where: { interviewId: { in: ownedInterviews.map(interview => interview.id) } },
       take: 100,
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       select: {
