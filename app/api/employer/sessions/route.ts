@@ -5,13 +5,14 @@ import { createInvitationToken, hashInvitationToken } from "@/lib/invitation";
 
 const MAX_REQUEST_BYTES = 40_000;
 const INVITATION_LIFETIME_MS = 72 * 60 * 60 * 1000;
+const privateHeaders = { "Cache-Control": "private, no-store, max-age=0" };
 
 async function readJsonBody(request: NextRequest): Promise<Record<string, unknown> | null> {
   const contentType = request.headers.get("content-type") || "";
-  if (!contentType.toLowerCase().includes("application/json")) return null;
+  if (contentType.split(";", 1)[0].trim().toLowerCase() !== "application/json") return null;
 
   const declaredLength = Number(request.headers.get("content-length") || 0);
-  if (declaredLength > MAX_REQUEST_BYTES) return null;
+  if (!Number.isSafeInteger(declaredLength) || declaredLength < 0 || declaredLength > MAX_REQUEST_BYTES) return null;
 
   const reader = request.body?.getReader();
   if (!reader) return null;
@@ -56,14 +57,14 @@ function requiredText(body: Record<string, unknown>, key: string, maxLength: num
 
 export async function POST(request: NextRequest) {
   if (!(await isEmployerAuthenticated())) {
-    return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+    return NextResponse.json({ error: "Unauthorized." }, { status: 401, headers: privateHeaders });
   }
 
   const body = await readJsonBody(request);
   if (!body) {
     return NextResponse.json(
       { error: "Send a valid JSON request smaller than 40 KB." },
-      { status: 400 }
+      { status: 400, headers: privateHeaders }
     );
   }
 
@@ -77,11 +78,11 @@ export async function POST(request: NextRequest) {
   if (!candidateName || !candidateEmail || !role || !resume || !jobDescription || !mode) {
     return NextResponse.json(
       { error: "Provide a valid candidate name, email, role, resume, job description and interview format." },
-      { status: 400 }
+      { status: 400, headers: privateHeaders }
     );
   }
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(candidateEmail)) {
-    return NextResponse.json({ error: "Enter a valid candidate email." }, { status: 400 });
+    return NextResponse.json({ error: "Enter a valid candidate email." }, { status: 400, headers: privateHeaders });
   }
 
   const candidateToken = createInvitationToken();
@@ -113,10 +114,10 @@ export async function POST(request: NextRequest) {
       },
       {
         status: 201,
-        headers: { "Cache-Control": "private, no-store, max-age=0" }
+        headers: privateHeaders
       }
     );
   } catch {
-    return NextResponse.json({ error: "Could not create candidate interview and invitation." }, { status: 500 });
+    return NextResponse.json({ error: "Could not create candidate interview and invitation." }, { status: 500, headers: privateHeaders });
   }
 }
