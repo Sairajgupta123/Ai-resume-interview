@@ -2,9 +2,16 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { validateSignalPayload } from "../lib/signalling-policy.mjs";
 
-test("accepts valid offer and answer descriptions", () => {
+test("accepts valid offer and answer descriptions from their assigned participants", () => {
   assert.deepEqual(validateSignalPayload("offer", JSON.stringify({ type: "offer", sdp: "v=0\\r\\n" }), "candidate"), { ok: true });
   assert.deepEqual(validateSignalPayload("answer", JSON.stringify({ type: "answer", sdp: "v=0\\r\\n" }), "employer"), { ok: true });
+});
+
+test("rejects session descriptions sent by the wrong participant", () => {
+  const offer = JSON.stringify({ type: "offer", sdp: "v=0" });
+  const answer = JSON.stringify({ type: "answer", sdp: "v=0" });
+  assert.equal(validateSignalPayload("offer", offer, "employer").ok, false);
+  assert.equal(validateSignalPayload("answer", answer, "candidate").ok, false);
 });
 
 test("rejects mismatched or malformed session descriptions", () => {
