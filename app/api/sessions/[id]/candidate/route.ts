@@ -5,16 +5,8 @@ import { candidateInvitationCookieName, exchangeCandidateInvitation, getCandidat
 type Context = { params: Promise<{ id: string }> };
 
 async function candidateResponse(id: string, token: string | null, exchange = false) {
-  const sessionToken = exchange
-    ? await exchangeCandidateInvitation(id, token)
-    : token;
-  const authorized = exchange
-    ? Boolean(sessionToken)
-    : await hasValidCandidateInvitation(id, sessionToken);
-  if (!authorized || !sessionToken) {
-    return NextResponse.json({ error: "This interview invitation is invalid or expired. Contact the employer for a new link." }, { status: 401, headers: { "Cache-Control": "private, no-store" } });
-  }
-
+  // Load the response data before consuming the one-time link. If the database
+  // read fails, the candidate can retry with the original invitation URL.
   const interview = await db.interview.findUnique({
     where: { id },
     select: {
@@ -36,14 +28,24 @@ async function candidateResponse(id: string, token: string | null, exchange = fa
     }
   });
 
-  if (!interview) return NextResponse.json({ error: "Interview not found." }, { status: 404 });
-  if (interview.status === "completed") return NextResponse.json({ error: "This interview has already been completed." }, { status: 409 });
-  if (!interview.inviteExpiresAt) return NextResponse.json({ error: "This interview invitation has expired." }, { status: 401 });
+  if (!interview) return NextResponse.json({ error: "Interview not found." }, { status: 404, headers: { "Cache-Control": "private, no-store" } });
+  if (interview.status === "completed") return NextResponse.json({ error: "This interview has already been completed." }, { status: 409, headers: { "Cache-Control": "private, no-store" } });
+  if (!interview.inviteExpiresAt || interview.inviteExpiresAt.getTime() <= Date.now()) {
+    return NextResponse.json({ error: "This interview invitation has expired." }, { status: 401, headers: { "Cache-Control": "private, no-store" } });
+  }
+
+  const sessionToken = exchange ? await exchangeCandidateInvitation(id, token) : token;
+  const authorized = exchange
+    ? Boolean(sessionToken)
+    : await hasValidCandidateInvitation(id, sessionToken);
+  if (!authorized || !sessionToken) {
+    return NextResponse.json({ error: "This interview invitation is invalid or expired. Contact the employer for a new link." }, { status: 401, headers: { "Cache-Control": "private, no-store" } });
+  }
 
   const { recordingPath, ...candidateInterview } = interview;
   const response = NextResponse.json({
     interview: { ...candidateInterview, recordingSaved: Boolean(recordingPath) }
-  }, { headers: { "Cache-Control": "private, no-store" } });
+  }, { headers: { "Cache-Control": "private, no-store, max-age=0" } });
   response.cookies.set(candidateInvitationCookieName(id), sessionToken, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
@@ -89,19 +91,20 @@ export async function POST(request: NextRequest, context: Context) {
     bytes.set(chunk, offset);
     offset += chunk.byteLength;
   }
+  let token: string | null = null;
   try {
     const body: unknown = JSON.parse(new TextDecoder().decode(bytes));
     if (!body || typeof body !== "object" || Array.isArray(body)) {
       return NextResponse.json({ error: "Invalid invitation request." }, { status: 400, headers });
     }
-    const token = "token" in body && typeof body.token === "string" ? body.token : null;
-    if (!token || token.length < 32 || token.length > 256) {
-      return NextResponse.json({ error: "Invalid or expired invitation token." }, { status: 401, headers });
-    }
-    return candidateResponse(id, token, true);
+    token = "token" in body && typeof body.token === "string" ? body.token : null;
   } catch {
     return NextResponse.json({ error: "Invalid invitation request." }, { status: 400, headers });
   }
+  if (!token || token.length < 32 || token.length > 256) {
+    return NextResponse.json({ error: "Invalid or expired invitation token." }, { status: 401, headers });
+  }
+  return candidateResponse(id, token, true);
 }
 
 // Refresh recovery uses only the HttpOnly cookie; bearer tokens are never accepted in query parameters.
