@@ -68,6 +68,7 @@ export default function Home() {
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const grokVoiceRef = useRef<GrokRealtimeClient | null>(null);
   const transcriptWriteRef = useRef<Promise<void>>(Promise.resolve());
+  const transcriptPersistenceFailedRef = useRef(false);
   const transcriptEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -285,6 +286,7 @@ export default function Home() {
       setVoiceStatus("off");
     }
     await transcriptWriteRef.current;
+    if (transcriptPersistenceFailedRef.current) { setError("A live transcript could not be saved. Please finish using the saved conversation or contact the employer before continuing."); return; }
     setHistory(prev => [...prev, { role: "user", content: answer }]);
     setDraft(""); setBusy(true); setError("");
     try {
@@ -307,6 +309,7 @@ export default function Home() {
       grokVoiceRef.current = null;
       setVoiceStatus("off");
       await transcriptWriteRef.current;
+      if (transcriptPersistenceFailedRef.current) throw new Error("The live transcript could not be fully saved, so the report was not generated. Please retry after restoring your connection.");
       // Save the recording before the report action closes the interview session.
       if (recorderRef.current?.state === "recording") {
         recorderRef.current.stop();
@@ -457,6 +460,8 @@ export default function Home() {
 
 
   const startGrokVoice = async (targetSessionId: string, openingMessage: string) => {
+    transcriptWriteRef.current = Promise.resolve();
+    transcriptPersistenceFailedRef.current = false;
     const mediaStream = streamRef.current;
     if (!mediaStream || !targetSessionId) return;
     const instructions = [
@@ -486,18 +491,31 @@ export default function Home() {
         },
         onTranscript: (speaker, text) => {
           transcriptWriteRef.current = transcriptWriteRef.current.then(async () => {
-            const response = await fetch("/api/sessions/" + targetSessionId + "/transcript", {
-              method: "POST",
-              credentials: "same-origin",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ role: speaker, content: text })
-            });
-            const result = await response.json();
-            if (!response.ok) throw new Error(result.error || "Could not save the live transcript.");
-            setHistory(previous => [...previous, { role: speaker, content: text }]);
+            let lastError: Error | null = null;
+            for (let attempt = 0; attempt < 2; attempt += 1) {
+              try {
+                const response = await fetch("/api/sessions/" + targetSessionId + "/transcript", {
+                  method: "POST",
+                  credentials: "same-origin",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ role: speaker, content: text })
+                });
+                const result = await response.json();
+                if (!response.ok) throw new Error(result.error || "Could not save the live transcript.");
+                setHistory(previous => [...previous, { role: speaker, content: text }]);
+                return;
+              } catch (error) {
+                lastError = error instanceof Error ? error : new Error("Could not save the live transcript.");
+                if (attempt === 0) await new Promise(resolve => window.setTimeout(resolve, 500));
+              }
+            }
+            throw lastError || new Error("Could not save the live transcript.");
           }).catch(error => {
+            transcriptPersistenceFailedRef.current = true;
             setError(error instanceof Error ? error.message : "Could not save the live transcript.");
             setVoiceStatus("unavailable");
+            grokVoiceRef.current?.close();
+            grokVoiceRef.current = null;
           });
         }
       }
