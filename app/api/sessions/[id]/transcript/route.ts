@@ -23,13 +23,33 @@ export async function POST(request: NextRequest, context: Context) {
       return NextResponse.json({ error: "A JSON transcript entry is required." }, { status: 415 });
     }
 
-    const rawBody = await request.text();
-    if (new TextEncoder().encode(rawBody).byteLength > 16_384) {
+    const declaredLength = Number(request.headers.get("content-length") || 0);
+    if (declaredLength > 16_384) {
       return NextResponse.json({ error: "Transcript request is too large." }, { status: 413 });
+    }
+    const reader = request.body?.getReader();
+    if (!reader) return NextResponse.json({ error: "Transcript request body is missing." }, { status: 400 });
+    const chunks: Uint8Array[] = [];
+    let totalBytes = 0;
+    while (true) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      totalBytes += chunk.value.byteLength;
+      if (totalBytes > 16_384) {
+        await reader.cancel();
+        return NextResponse.json({ error: "Transcript request is too large." }, { status: 413 });
+      }
+      chunks.push(chunk.value);
+    }
+    const bytes = new Uint8Array(totalBytes);
+    let offset = 0;
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset);
+      offset += chunk.byteLength;
     }
     let body: { role?: unknown; content?: unknown };
     try {
-      const parsed: unknown = JSON.parse(rawBody);
+      const parsed: unknown = JSON.parse(new TextDecoder().decode(bytes));
       if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
         return NextResponse.json({ error: "Transcript payload must be an object." }, { status: 400 });
       }
@@ -85,6 +105,8 @@ export async function POST(request: NextRequest, context: Context) {
       ) {
         throw new Error("INTERVIEW_NOT_ACTIVE");
       }
+      const messageCount = await tx.interviewMessage.count({ where: { interviewId: id } });
+      if (messageCount >= 200) throw new Error("TRANSCRIPT_LIMIT_REACHED");
       await tx.interviewMessage.create({
         data: { interviewId: id, role: body.role as string, content }
       });
@@ -96,6 +118,9 @@ export async function POST(request: NextRequest, context: Context) {
   } catch (error) {
     if (error instanceof Error && error.message === "INTERVIEW_NOT_ACTIVE") {
       return NextResponse.json({ error: "The interview is no longer active." }, { status: 409 });
+    }
+    if (error instanceof Error && error.message === "TRANSCRIPT_LIMIT_REACHED") {
+      return NextResponse.json({ error: "The transcript has reached its message limit." }, { status: 409 });
     }
     return NextResponse.json({ error: "Could not save the transcript entry. Please retry." }, { status: 500 });
   }
