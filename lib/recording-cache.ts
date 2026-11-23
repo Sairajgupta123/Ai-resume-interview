@@ -70,7 +70,16 @@ export async function getCachedRecording(sessionId: string): Promise<CachedRecor
     request.onsuccess = () => {
       const rows = (request.result as Array<{ index: number; mimeType: string; blob: Blob }>).sort((a, b) => a.index - b.index);
       if (!rows.length) return resolve(null);
-      resolve({ chunks: rows.map(row => row.blob), mimeType: rows[0].mimeType || "video/webm" });
+      // A missing IndexedDB segment would silently concatenate an incomplete,
+      // potentially unplayable video. Never present a gapped cache as recoverable.
+      const hasGap = rows.some((row, index) => !Number.isSafeInteger(row.index) || row.index !== index || !(row.blob instanceof Blob) || row.blob.size < 1);
+      const mimeType = rows[0].mimeType || "video/webm";
+      const hasMixedTypes = rows.some(row => (row.mimeType || "video/webm") !== mimeType);
+      if (hasGap || hasMixedTypes) {
+        reject(new Error("Saved recording segments are incomplete or inconsistent. The video cannot be safely recovered."));
+        return;
+      }
+      resolve({ chunks: rows.map(row => row.blob), mimeType });
     };
     request.onerror = () => reject(request.error || new Error("Could not recover saved recording segments."));
   });
