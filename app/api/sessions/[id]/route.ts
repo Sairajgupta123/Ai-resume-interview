@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { getEmployerOrganizationAccess, getEmployerSession, isEmployerAuthenticated } from "@/lib/auth";
+import { getEmployerOrganizationAccess, getEmployerSession } from "@/lib/auth";
 import { getCandidateInvitationToken, hasValidCandidateInvitation } from "@/lib/invitation";
 import { elapsedInterviewSeconds, INTERVIEW_LIMIT_SECONDS } from "@/lib/interview-policy.mjs";
 
@@ -10,18 +10,22 @@ export async function PUT(request: NextRequest, context: Context) {
   const { id } = await context.params;
   try {
     const body = await request.json();
-    const interview = await db.interview.findUnique({
-      where: { id },
+    const employerSession = await getEmployerSession();
+    const employerAccess = employerSession?.kind === "user"
+      ? await getEmployerOrganizationAccess("interview:read")
+      : null;
+    const employer = employerSession?.kind === "legacy" || Boolean(employerAccess);
+    const candidate = await hasValidCandidateInvitation(id, getCandidateInvitationToken(request, id));
+    if (!employer && !candidate) return NextResponse.json({ error: "Unauthorized interview update." }, { status: 401 });
+
+    const interview = await db.interview.findFirst({
+      where: { id, ...(employerAccess ? { organizationId: employerAccess.organizationId } : {}) },
       select: { id: true, status: true, startedAt: true }
     });
     if (!interview) return NextResponse.json({ error: "Interview not found." }, { status: 404 });
     if (interview.status === "completed") {
       return NextResponse.json({ error: "Completed interview sessions are read-only." }, { status: 409 });
     }
-
-    const employer = await isEmployerAuthenticated();
-    const candidate = await hasValidCandidateInvitation(id, getCandidateInvitationToken(request, id));
-    if (!employer && !candidate) return NextResponse.json({ error: "Unauthorized interview update." }, { status: 401 });
 
     // Transcript entries, reports, and duration are server-owned. In particular,
     // never trust a candidate-supplied timer value for employer-facing analytics.
@@ -34,7 +38,7 @@ export async function PUT(request: NextRequest, context: Context) {
         elapsedInterviewSeconds(interview.startedAt)
       );
       const updated = await db.interview.updateMany({
-        where: { id, status: "in_progress", startedAt: interview.startedAt },
+        where: { id, ...(employerAccess ? { organizationId: employerAccess.organizationId } : {}), status: "in_progress", startedAt: interview.startedAt },
         data: { durationSeconds }
       });
       if (updated.count !== 1) {
