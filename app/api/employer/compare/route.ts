@@ -37,7 +37,12 @@ export async function POST(request: NextRequest) {
     const bytes = new Uint8Array(total);
     let offset = 0;
     for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
-    const body: unknown = JSON.parse(new TextDecoder().decode(bytes));
+    let body: unknown;
+    try {
+      body = JSON.parse(new TextDecoder().decode(bytes));
+    } catch {
+      return NextResponse.json({ error: "Invalid JSON comparison request." }, { status: 400, headers });
+    }
     if (!body || typeof body !== "object" || Array.isArray(body)) {
       return NextResponse.json({ error: "Invalid comparison request." }, { status: 400, headers });
     }
@@ -50,9 +55,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Select two or three different valid candidates." }, { status: 400, headers });
     }
     const ids = rawIds as string[];
-    if (ids.length < 2 || ids.length > 3) {
-      return NextResponse.json({ error: "Select between two and three candidates." }, { status: 400 });
-    }
     const interviews = await db.interview.findMany({
       where: { id: { in: ids }, status: "completed" },
       select: {
