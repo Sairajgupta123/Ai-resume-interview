@@ -17,6 +17,7 @@ async function candidateResponse(id: string, token: string | null, exchange = fa
       resumeText: true,
       jobDescription: true,
       status: true,
+      reportJson: true,
       recordingPath: true,
       inviteExpiresAt: true,
       startedAt: true,
@@ -30,7 +31,6 @@ async function candidateResponse(id: string, token: string | null, exchange = fa
   });
 
   if (!interview) return NextResponse.json({ error: "Interview not found." }, { status: 404, headers: { "Cache-Control": "private, no-store" } });
-  if (interview.status === "completed") return NextResponse.json({ error: "This interview has already been completed." }, { status: 409, headers: { "Cache-Control": "private, no-store" } });
   if (!interview.inviteExpiresAt || interview.inviteExpiresAt.getTime() <= Date.now()) {
     return NextResponse.json({ error: "This interview invitation has expired." }, { status: 401, headers: { "Cache-Control": "private, no-store" } });
   }
@@ -42,11 +42,24 @@ async function candidateResponse(id: string, token: string | null, exchange = fa
   if (!authorized || !sessionToken) {
     return NextResponse.json({ error: "This interview invitation is invalid or expired. Contact the employer for a new link." }, { status: 401, headers: { "Cache-Control": "private, no-store" } });
   }
+  let completedReport: unknown = null;
+  if (interview.status === "completed") {
+    if (!interview.reportJson) {
+      return NextResponse.json({ error: "This interview has already been completed." }, { status: 409, headers: { "Cache-Control": "private, no-store" } });
+    }
+    try {
+      completedReport = JSON.parse(interview.reportJson);
+      if (!completedReport || typeof completedReport !== "object" || Array.isArray(completedReport)) throw new Error("Invalid saved report");
+    } catch {
+      return NextResponse.json({ error: "The completed interview report could not be restored. Contact the hiring team." }, { status: 500, headers: { "Cache-Control": "private, no-store" } });
+    }
+  }
 
-  const { recordingPath, messages, ...candidateInterview } = interview;
+  const { recordingPath, messages, reportJson: _reportJson, ...candidateInterview } = interview;
   const response = NextResponse.json({
     interview: {
       ...candidateInterview,
+      ...(completedReport ? { completedReport } : {}),
       // The database query is newest-first to bound recovery work; the UI
       // receives the retained turns in their original conversation order.
       messages: messages.slice().reverse(),
