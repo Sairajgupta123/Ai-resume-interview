@@ -106,18 +106,32 @@ export class GrokRealtimeClient {
 
     try {
       await new Promise<void>((resolve, reject) => {
+        const cleanup = () => {
+          window.clearTimeout(timeout);
+          socket.removeEventListener("open", onOpen);
+          socket.removeEventListener("error", onError);
+          socket.removeEventListener("close", onClose);
+        };
         const timeout = window.setTimeout(() => {
+          cleanup();
           socket.close();
           reject(new Error("AI voice connection timed out."));
         }, 15_000);
-        socket.addEventListener("open", () => {
-          window.clearTimeout(timeout);
+        const onOpen = () => {
+          cleanup();
           resolve();
-        }, { once: true });
-        socket.addEventListener("error", () => {
-          window.clearTimeout(timeout);
+        };
+        const onError = () => {
+          cleanup();
           reject(new Error("Could not connect to the AI voice service."));
-        }, { once: true });
+        };
+        const onClose = () => {
+          cleanup();
+          reject(new Error("AI voice connection closed before it was ready."));
+        };
+        socket.addEventListener("open", onOpen, { once: true });
+        socket.addEventListener("error", onError, { once: true });
+        socket.addEventListener("close", onClose, { once: true });
       });
       await sessionCreated;
     } catch (error) {
