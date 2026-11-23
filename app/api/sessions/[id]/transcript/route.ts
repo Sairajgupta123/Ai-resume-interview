@@ -59,14 +59,16 @@ export async function POST(request: NextRequest, context: Context) {
     await db.$transaction(async (tx) => {
       const current = await tx.interview.findUnique({
         where: { id },
-        select: { status: true, mode: true, consentAcceptedAt: true, startedAt: true }
+        select: { status: true, mode: true, consentAcceptedAt: true, startedAt: true, reportLockAt: true }
       });
       if (
         !current ||
         current.status !== "in_progress" ||
         current.mode !== "live" ||
         !current.consentAcceptedAt ||
-        !current.startedAt
+        !current.startedAt ||
+        current.reportLockAt !== null ||
+        elapsedInterviewSeconds(current.startedAt) >= INTERVIEW_LIMIT_SECONDS
       ) {
         throw new Error("INTERVIEW_NOT_ACTIVE");
       }
