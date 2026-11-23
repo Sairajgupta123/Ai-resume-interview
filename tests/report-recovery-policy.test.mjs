@@ -40,3 +40,19 @@ test("rejects oversized feedback entries and invalid disclaimer", () => {
   assert.equal(isRestorableInterviewReport({ ...validReport(), questionFeedback: [{ question: "x".repeat(1001), assessment: "ok", evidence: "I used SQL queries." }] }), false);
   assert.equal(isRestorableInterviewReport({ ...validReport(), disclaimer: 42 }), false);
 });
+
+test("rejects reports whose recommendation is inconsistent with score and evidence", () => {
+  assert.equal(isRestorableInterviewReport({ ...validReport(), recommendation: "Needs review" }), false);
+  assert.equal(isRestorableInterviewReport({ ...validReport(), overallScore: 59 }), false);
+});
+
+test("rejects weak evidence paired with a positive skill rating", () => {
+  assert.equal(isRestorableInterviewReport({
+    ...validReport(),
+    skills: [{ skill: "SQL", rating: "Strong", evidence: "short" }]
+  }), false);
+  assert.equal(isRestorableInterviewReport({
+    ...validReport(),
+    skills: [{ skill: "SQL", rating: "Insufficient evidence", evidence: "No evidence" }]
+  }), false);
+});
