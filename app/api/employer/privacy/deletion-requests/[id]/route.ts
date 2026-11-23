@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { isEmployerAuthenticated } from "@/lib/auth";
+import { getEmployerOrganizationAccess } from "@/lib/auth";
 import { validateDeletionRequestInput } from "@/lib/privacy-deletion-policy.mjs";
 
 export const runtime = "nodejs";
@@ -8,11 +8,13 @@ export const runtime = "nodejs";
 type Context = { params: Promise<{ id: string }> };
 
 export async function GET() {
-  if (!(await isEmployerAuthenticated())) {
+  const access = await getEmployerOrganizationAccess("privacy:manage_requests");
+  if (!access) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401, headers: { "Cache-Control": "no-store" } });
   }
   try {
     const requests = await db.privacyDeletionRequest.findMany({
+      where: { interview: { organizationId: access.organizationId } },
       take: 100,
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       select: {
@@ -36,14 +38,15 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest, context: Context) {
-  if (!(await isEmployerAuthenticated())) {
+  const access = await getEmployerOrganizationAccess("privacy:manage_requests");
+  if (!access) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401, headers: { "Cache-Control": "no-store" } });
   }
   const { id } = await context.params;
   try {
     const body = await request.json();
-    const interview = await db.interview.findUnique({
-      where: { id },
+    const interview = await db.interview.findFirst({
+      where: { id, organizationId: access.organizationId },
       select: { id: true, candidateName: true, candidateEmail: true, role: true, status: true }
     });
     if (!interview) return NextResponse.json({ error: "Interview not found." }, { status: 404 });
