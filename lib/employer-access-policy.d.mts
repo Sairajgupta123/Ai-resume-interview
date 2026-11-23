@@ -6,6 +6,7 @@ export const EMPLOYER_PERMISSIONS: readonly [
   "interview:export",
   "audit:read",
   "organization:manage_members",
+  "privacy:manage_requests",
   "privacy:approve_deletion",
   "privacy:execute_deletion"
 ];
@@ -17,6 +18,7 @@ export type EmployerPermission =
   | "interview:export"
   | "audit:read"
   | "organization:manage_members"
+  | "privacy:manage_requests"
   | "privacy:approve_deletion"
   | "privacy:execute_deletion";
 export function normalizeEmployerRole(role: unknown): EmployerRole | null;
