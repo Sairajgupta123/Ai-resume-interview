@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getCandidateInvitationToken, hasValidCandidateInvitation } from "@/lib/invitation";
 import { elapsedInterviewSeconds, INTERVIEW_LIMIT_SECONDS } from "@/lib/interview-policy.mjs";
-import { isTranscriptRetryCompatible, isNextTranscriptRole } from "@/lib/transcript-policy.mjs";
+import { isTranscriptRetryCompatible } from "@/lib/transcript-policy.mjs";
 
 export const runtime = "nodejs";
 
@@ -129,9 +129,6 @@ export async function POST(request: NextRequest, context: Context) {
         orderBy: { createdAt: "desc" },
         select: { role: true, createdAt: true }
       });
-      if (latestMessage && !isNextTranscriptRole(latestMessage.role, body.role)) {
-        throw new Error("TRANSCRIPT_ROLE_ORDER");
-      }
       const messageCount = await tx.interviewMessage.count({ where: { interviewId: id } });
       if (messageCount >= 200) throw new Error("TRANSCRIPT_LIMIT_REACHED");
       const createdAt = new Date(Math.max(Date.now(), (latestMessage?.createdAt.getTime() || 0) + 1));
@@ -149,9 +146,6 @@ export async function POST(request: NextRequest, context: Context) {
     }
     if (error instanceof Error && error.message === "TRANSCRIPT_LIMIT_REACHED") {
       return NextResponse.json({ error: "The transcript has reached its message limit." }, { status: 409, headers: { "Cache-Control": "private, no-store, max-age=0" } });
-    }
-    if (error instanceof Error && error.message === "TRANSCRIPT_ROLE_ORDER") {
-      return NextResponse.json({ error: "Transcript entries must alternate between candidate and interviewer turns." }, { status: 409, headers: { "Cache-Control": "private, no-store, max-age=0" } });
     }
     if (error instanceof Error && error.message === "TRANSCRIPT_ID_CONFLICT") {
       return NextResponse.json({ error: "Transcript message ID conflict." }, { status: 409, headers: { "Cache-Control": "private, no-store, max-age=0" } });
