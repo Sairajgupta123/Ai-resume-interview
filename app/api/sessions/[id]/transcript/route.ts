@@ -61,6 +61,7 @@ export async function POST(request: NextRequest, context: Context) {
     if (body.role !== "user" && body.role !== "assistant") {
       return NextResponse.json({ error: "Transcript speaker must be user or assistant." }, { status: 400 });
     }
+    const role: "user" | "assistant" = body.role;
     if (
       typeof body.clientMessageId !== "string" ||
       !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(body.clientMessageId)
@@ -119,7 +120,7 @@ export async function POST(request: NextRequest, context: Context) {
       if (existing) {
         if (!isTranscriptRetryCompatible(existing, {
           interviewId: id,
-          role: body.role,
+          role,
           content
         })) throw new Error("TRANSCRIPT_ID_CONFLICT");
         return;
@@ -133,7 +134,7 @@ export async function POST(request: NextRequest, context: Context) {
       if (messageCount >= 200) throw new Error("TRANSCRIPT_LIMIT_REACHED");
       const createdAt = new Date(Math.max(Date.now(), (latestMessage?.createdAt.getTime() || 0) + 1));
       await tx.interviewMessage.create({
-        data: { interviewId: id, role: body.role as string, content, clientMessageId: body.clientMessageId as string, createdAt }
+        data: { interviewId: id, role, content, clientMessageId: body.clientMessageId as string, createdAt }
       });
     });
 
