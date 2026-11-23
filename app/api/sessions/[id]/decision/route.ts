@@ -4,20 +4,21 @@ import { isEmployerAuthenticated } from "@/lib/auth";
 
 type Context = { params: Promise<{ id: string }> };
 const decisions = ["shortlist", "review", "reject"] as const;
+const privateHeaders = { "Cache-Control": "private, no-store, max-age=0" };
 
 export async function POST(request: NextRequest, context: Context) {
-  if (!(await isEmployerAuthenticated())) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+  if (!(await isEmployerAuthenticated())) return NextResponse.json({ error: "Unauthorized." }, { status: 401, headers: privateHeaders });
   const { id } = await context.params;
   const contentType = request.headers.get("content-type") || "";
-  if (!contentType.toLowerCase().includes("application/json")) {
-    return NextResponse.json({ error: "A JSON decision payload is required." }, { status: 415 });
+  if (contentType.split(";", 1)[0].trim().toLowerCase() !== "application/json") {
+    return NextResponse.json({ error: "A JSON decision payload is required." }, { status: 415, headers: privateHeaders });
   }
   const declaredLength = Number(request.headers.get("content-length") || 0);
-  if (declaredLength > 8_192) {
-    return NextResponse.json({ error: "Decision request is too large." }, { status: 413 });
+  if (!Number.isSafeInteger(declaredLength) || declaredLength < 0 || declaredLength > 8_192) {
+    return NextResponse.json({ error: "Decision request is too large." }, { status: 413, headers: privateHeaders });
   }
   const reader = request.body?.getReader();
-  if (!reader) return NextResponse.json({ error: "Decision request body is missing." }, { status: 400 });
+  if (!reader) return NextResponse.json({ error: "Decision request body is missing." }, { status: 400, headers: privateHeaders });
   const chunks: Uint8Array[] = [];
   let totalBytes = 0;
   try {
@@ -27,12 +28,12 @@ export async function POST(request: NextRequest, context: Context) {
       totalBytes += chunk.value.byteLength;
       if (totalBytes > 8_192) {
         await reader.cancel();
-        return NextResponse.json({ error: "Decision request is too large." }, { status: 413 });
+        return NextResponse.json({ error: "Decision request is too large." }, { status: 413, headers: privateHeaders });
       }
       chunks.push(chunk.value);
     }
   } catch {
-    return NextResponse.json({ error: "Could not read decision request body." }, { status: 400 });
+    return NextResponse.json({ error: "Could not read decision request body." }, { status: 400, headers: privateHeaders });
   }
   const bytes = new Uint8Array(totalBytes);
   let offset = 0;
@@ -44,31 +45,31 @@ export async function POST(request: NextRequest, context: Context) {
   try {
     body = JSON.parse(new TextDecoder().decode(bytes));
   } catch {
-    return NextResponse.json({ error: "Request body must contain valid JSON." }, { status: 400 });
+    return NextResponse.json({ error: "Request body must contain valid JSON." }, { status: 400, headers: privateHeaders });
   }
   try {
     if (!body || typeof body !== "object" || Array.isArray(body)) {
-      return NextResponse.json({ error: "A valid decision payload is required." }, { status: 400 });
+      return NextResponse.json({ error: "A valid decision payload is required." }, { status: 400, headers: privateHeaders });
     }
     const payload = body as Record<string, unknown>;
     const decision = typeof payload.decision === "string" ? payload.decision.trim().toLowerCase() : "";
     if (!decisions.includes(decision as typeof decisions[number])) {
-      return NextResponse.json({ error: "Choose shortlist, review or reject." }, { status: 400 });
+      return NextResponse.json({ error: "Choose shortlist, review or reject." }, { status: 400, headers: privateHeaders });
     }
     if (payload.notes !== undefined && payload.notes !== null && typeof payload.notes !== "string") {
-      return NextResponse.json({ error: "Decision notes must be plain text." }, { status: 400 });
+      return NextResponse.json({ error: "Decision notes must be plain text." }, { status: 400, headers: privateHeaders });
     }
     const notes = typeof payload.notes === "string" ? payload.notes.trim() : "";
     if (notes.length > 3000) {
-      return NextResponse.json({ error: "Decision notes must be 3,000 characters or fewer." }, { status: 413 });
+      return NextResponse.json({ error: "Decision notes must be 3,000 characters or fewer." }, { status: 413, headers: privateHeaders });
     }
     const interview = await db.interview.findUnique({
       where: { id },
       select: { id: true, status: true }
     });
-    if (!interview) return NextResponse.json({ error: "Interview not found." }, { status: 404 });
+    if (!interview) return NextResponse.json({ error: "Interview not found." }, { status: 404, headers: privateHeaders });
     if (interview.status !== "completed") {
-      return NextResponse.json({ error: "Employer decisions can be recorded only after an interview is completed." }, { status: 409 });
+      return NextResponse.json({ error: "Employer decisions can be recorded only after an interview is completed." }, { status: 409, headers: privateHeaders });
     }
     const updated = await db.$transaction(async tx => {
       // Re-check status inside the transaction to prevent a stale dashboard
@@ -103,11 +104,11 @@ export async function POST(request: NextRequest, context: Context) {
       notes: updated.employerNotes,
       decisionAt: updated.decisionAt,
       decisionHistory
-    });
+    }, { headers: privateHeaders });
   } catch (error) {
     if (error instanceof Error && error.message === "INTERVIEW_NOT_COMPLETED") {
-      return NextResponse.json({ error: "Employer decisions can be recorded only after an interview is completed." }, { status: 409 });
+      return NextResponse.json({ error: "Employer decisions can be recorded only after an interview is completed." }, { status: 409, headers: privateHeaders });
     }
-    return NextResponse.json({ error: "Could not save employer decision." }, { status: 500 });
+    return NextResponse.json({ error: "Could not save employer decision." }, { status: 500, headers: privateHeaders });
   }
 }
