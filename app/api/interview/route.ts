@@ -4,6 +4,7 @@ import { candidateInvitationCookieName, getCandidateInvitationToken, hasValidCan
 import { elapsedInterviewSeconds, INTERVIEW_LIMIT_SECONDS, isVerifiableEvidenceQuote, restoreChronologicalOrder } from "@/lib/interview-policy.mjs";
 import { calculateEvidenceCoverage, deriveRecommendation, hasDuplicateSkills, isRatingEvidenceConsistent } from "@/lib/evaluation-policy.mjs";
 import { isRestorableInterviewReport } from "@/lib/report-recovery-policy.mjs";
+import { buildBoundedReportTranscript } from "@/lib/report-transcript-policy.mjs";
 import { extractGrokAssistantText } from "@/lib/grok-response-policy.mjs";
 import { validateInterviewerTurn } from "@/lib/interviewer-turn-policy.mjs";
 import { buildAdaptiveGuidance } from "@/lib/adaptive-interview-policy.mjs";
@@ -590,13 +591,20 @@ export async function POST(request: NextRequest) {
         if (body.sessionId && history.filter(message => message.role === "user").length === 0) {
           return privateJson({ error: "No candidate answers are available to evaluate yet." }, { status: 409 });
         }
-        const transcript = history.map(m => `${m.role}: ${m.content}`).join("\n").slice(-24000);
+        const boundedTranscript = buildBoundedReportTranscript(history, 24_000);
+        if (body.sessionId && !boundedTranscript.messages.some(message => message.role === "user")) {
+          return privateJson({ error: "No candidate answers are available in the report context. Please contact the hiring team." }, { status: 409 });
+        }
+        const transcript = boundedTranscript.transcript;
         const content = await askGrok([
           { role: "system", content: SYSTEM },
-          { role: "user", content: `Generate the employer-facing evidence-based interview report from this saved server-side transcript. Do not infer anything from video or voice appearance.\n${context}\nTranscript:\n${transcript}\nReturn report JSON only.` }
+          { role: "user", content: `Generate the employer-facing evidence-based interview report from this saved server-side transcript. Do not infer anything from video or voice appearance.\n${context}\nTranscript (complete messages only; ${boundedTranscript.omittedMessages} older messages omitted due to the report context limit):\n${transcript}\nReturn report JSON only.` }
         ]);
         const rawReport = parseJson(content);
-        const candidateAnswers = history.filter(message => message.role === "user").map(message => message.content);
+        // Evidence is validated against exactly the candidate answers the model saw.
+        const candidateAnswers = boundedTranscript.messages
+          .filter(message => message.role === "user")
+          .map(message => message.content);
         const report = validateReport(rawReport, candidateAnswers);
         if (body.sessionId) {
           if (!reportLockAt) throw new Error("Interview report lock was not acquired.");
