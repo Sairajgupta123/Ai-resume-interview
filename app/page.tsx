@@ -471,6 +471,7 @@ export default function Home() {
     if (recorderRef.current?.state === "recording" || recordingSavedRef.current || recordingUploadInProgressRef.current) return;
     let resolveCompletion: (saved: boolean) => void = () => {};
     let completionSettled = false;
+    let recorderFailed = false;
     const settleCompletion = (saved: boolean) => {
       if (completionSettled) return;
       completionSettled = true;
@@ -502,7 +503,8 @@ export default function Home() {
         }
       };
       recorder.onerror = () => {
-        setError("The browser encountered a video recording error. The recording may be incomplete; the interview answers can still be submitted.");
+        recorderFailed = true;
+        setError("The browser encountered a recording error. This video will not be uploaded as a complete recording; recover any saved segments or continue without a video.");
       };
       recorder.onstop = async () => {
         // Lock the recorder immediately; do not allow a second recording while
@@ -511,6 +513,9 @@ export default function Home() {
         setUploadingRecording(true);
         await recordingPersistenceRef.current;
         try {
+          if (recorderFailed) {
+            throw new Error("Recording stopped after a browser error. The video was not uploaded; recover saved segments or continue without video.");
+          }
           const type = recorder.mimeType || "video/webm";
           const extension = type.includes("mp4") ? "mp4" : "webm";
           const filename = `mzobs-interview-${Date.now()}.${extension}`;
