@@ -655,7 +655,7 @@ export default function Home() {
   };
 
   const enableCamera = async (targetSessionId = sessionId) => {
-    if (cameraRequestRef.current) return;
+    if (cameraRequestRef.current || streamRef.current) return;
     cameraRequestRef.current = true;
     let acquiredStream: MediaStream | null = null;
     try {
