@@ -8,8 +8,52 @@ type Context = { params: Promise<{ id: string }> };
 
 export async function PUT(request: NextRequest, context: Context) {
   const { id } = await context.params;
+  const headers = { "Cache-Control": "private, no-store, max-age=0" };
+  if (!(request.headers.get("content-type") || "").toLowerCase().includes("application/json")) {
+    return NextResponse.json({ error: "A JSON session update is required." }, { status: 415, headers });
+  }
+  const declaredLength = Number(request.headers.get("content-length") || 0);
+  if (!Number.isSafeInteger(declaredLength) || declaredLength < 0 || declaredLength > 8_192) {
+    return NextResponse.json({ error: "Session update is too large." }, { status: 413, headers });
+  }
+  const reader = request.body?.getReader();
+  if (!reader) return NextResponse.json({ error: "Session update body is missing." }, { status: 400, headers });
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
   try {
-    const body = await request.json();
+    while (true) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      totalBytes += chunk.value.byteLength;
+      if (totalBytes > 8_192) {
+        await reader.cancel();
+        return NextResponse.json({ error: "Session update is too large." }, { status: 413, headers });
+      }
+      chunks.push(chunk.value);
+    }
+  } catch {
+    return NextResponse.json({ error: "Could not read session update body." }, { status: 400, headers });
+  }
+  const bytes = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  let body: Record<string, unknown>;
+  try {
+    const parsed: unknown = JSON.parse(new TextDecoder().decode(bytes));
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return NextResponse.json({ error: "Session update must be a JSON object." }, { status: 400, headers });
+    }
+    body = parsed as Record<string, unknown>;
+  } catch {
+    return NextResponse.json({ error: "Invalid session update JSON." }, { status: 400, headers });
+  }
+  if (Object.keys(body).length !== 1 || typeof body.durationSeconds !== "number" || !Number.isFinite(body.durationSeconds) || body.durationSeconds < 0) {
+    return NextResponse.json({ error: "Only a valid duration update is accepted." }, { status: 400, headers });
+  }
+  try {
     const interview = await db.interview.findUnique({
       where: { id },
       select: { id: true, status: true, startedAt: true }
