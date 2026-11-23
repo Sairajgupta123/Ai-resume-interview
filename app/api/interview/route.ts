@@ -29,9 +29,17 @@ export const runtime = "nodejs";
 const GROK_TIMEOUT_MS = 45_000;
 const OPERATION_LOCK_STALE_MS = 90_000;
 
+const PRIVATE_HEADERS = { "Cache-Control": "private, no-store, max-age=0" };
+
+function privateJson(body: unknown, init?: ResponseInit) {
+  const headers = new Headers(init?.headers);
+  headers.set("Cache-Control", "private, no-store, max-age=0");
+  return NextResponse.json(body, { ...init, headers });
+}
+
 type Message = { role: "assistant" | "user"; content: string };
 async function readBoundedJson(request: NextRequest, maxBytes: number): Promise<{ value: unknown } | { error: string; status: number }> {
-  if (!(request.headers.get("content-type") || "").toLowerCase().includes("application/json")) {
+  if ((request.headers.get("content-type") || "").split(";", 1)[0].trim().toLowerCase() !== "application/json") {
     return { error: "A JSON request body is required.", status: 415 };
   }
   const declaredLength = request.headers.get("content-length");
@@ -234,21 +242,21 @@ export async function POST(request: NextRequest) {
     // for the validated fields while preventing unbounded JSON buffering.
     const parsedRequest = await readBoundedJson(request, 40 * 1024);
     if ("error" in parsedRequest) {
-      return NextResponse.json({ error: parsedRequest.error }, { status: parsedRequest.status });
+      return privateJson({ error: parsedRequest.error }, { status: parsedRequest.status });
     }
     const body = parsedRequest.value as Payload;
     if (!["start", "answer", "report"].includes(body.action)) {
-      return NextResponse.json({ error: "Unsupported interview action." }, { status: 400 });
+      return privateJson({ error: "Unsupported interview action." }, { status: 400 });
     }
 
     // Every AI operation must belong to a persisted interview and a valid candidate
     // invitation. Do not expose an anonymous Grok proxy that can be abused for API spend.
     if (typeof body.sessionId !== "string" || !body.sessionId.trim()) {
-      return NextResponse.json({ error: "A valid interview invitation is required." }, { status: 401 });
+      return privateJson({ error: "A valid interview invitation is required." }, { status: 401 });
     }
 
     if (body.action === "start" && body.consentAccepted !== true) {
-      return NextResponse.json({ error: "Candidate consent is required before the interview can start." }, { status: 400 });
+      return privateJson({ error: "Candidate consent is required before the interview can start." }, { status: 400 });
     }
 
     let startedAt: Date | null = null;
@@ -262,12 +270,12 @@ export async function POST(request: NextRequest) {
           resumeText: true, jobDescription: true, mode: true, startedAt: true, consentAcceptedAt: true, inviteExpiresAt: true
         }
       });
-      if (!session) return NextResponse.json({ error: "Interview session not found." }, { status: 404 });
+      if (!session) return privateJson({ error: "Interview session not found." }, { status: 404 });
       if (!session.invitationTokenHash || !(await hasValidCandidateInvitation(body.sessionId, getCandidateInvitationToken(request, body.sessionId)))) {
-        return NextResponse.json({ error: "Invalid or expired candidate invitation." }, { status: 401 });
+        return privateJson({ error: "Invalid or expired candidate invitation." }, { status: 401 });
       }
       if (session.status === "completed" && body.action !== "report") {
-        return NextResponse.json({ error: "This interview has already been completed." }, { status: 409 });
+        return privateJson({ error: "This interview has already been completed." }, { status: 409 });
       }
       if (session.status === "completed" && body.action === "report") {
         const completed = await db.interview.findUnique({
@@ -275,16 +283,16 @@ export async function POST(request: NextRequest) {
           select: { reportJson: true }
         });
         if (!completed?.reportJson) {
-          return NextResponse.json({ error: "The completed interview report is unavailable. Contact the hiring team." }, { status: 409 });
+          return privateJson({ error: "The completed interview report is unavailable. Contact the hiring team." }, { status: 409 });
         }
         try {
           const savedReport: unknown = JSON.parse(completed.reportJson);
           if (!isRestorableInterviewReport(savedReport)) throw new Error("Invalid saved report");
-          return attachCandidateCookie(NextResponse.json(savedReport, {
+          return attachCandidateCookie(privateJson(savedReport, {
             headers: { "Cache-Control": "private, no-store, max-age=0" }
           }), request, body.sessionId, session.inviteExpiresAt);
         } catch {
-          return NextResponse.json({ error: "The saved interview report could not be restored. Contact the hiring team." }, { status: 500, headers: { "Cache-Control": "private, no-store, max-age=0" } });
+          return privateJson({ error: "The saved interview report could not be restored. Contact the hiring team." }, { status: 500, headers: { "Cache-Control": "private, no-store, max-age=0" } });
         }
       }
 
@@ -304,10 +312,10 @@ export async function POST(request: NextRequest) {
             select: { content: true }
           });
           if (firstQuestion) {
-            const response = NextResponse.json({ message: firstQuestion.content, done: false, focus: "Interview introduction" });
+            const response = privateJson({ message: firstQuestion.content, done: false, focus: "Interview introduction" });
             return attachCandidateCookie(response, request, body.sessionId, invitationExpiresAt);
           }
-          return NextResponse.json({ error: "Interview initialization is incomplete. Please contact the hiring team." }, { status: 409 });
+          return privateJson({ error: "Interview initialization is incomplete. Please contact the hiring team." }, { status: 409 });
         }
         const lockAt = new Date();
         const lock = await db.interview.updateMany({
@@ -324,22 +332,22 @@ export async function POST(request: NextRequest) {
             orderBy: { createdAt: "asc" },
             select: { content: true }
           });
-          if (existingQuestion) return NextResponse.json({ message: existingQuestion.content, done: false, focus: "Interview introduction" });
-          return NextResponse.json({ error: "Interview is already initializing. Please wait a moment and retry." }, { status: 409 });
+          if (existingQuestion) return privateJson({ message: existingQuestion.content, done: false, focus: "Interview introduction" });
+          return privateJson({ error: "Interview is already initializing. Please wait a moment and retry." }, { status: 409 });
         }
         startLockAt = lockAt;
       } else {
-        if (!startedAt) return NextResponse.json({ error: "The interview has not been started." }, { status: 409 });
+        if (!startedAt) return privateJson({ error: "The interview has not been started." }, { status: 409 });
       }
     }
 
     if (body.action === "answer") {
       const answer = typeof body.answer === "string" ? body.answer.trim() : "";
-      if (!answer) return NextResponse.json({ error: "Please provide an answer before submitting." }, { status: 400 });
-      if (answer.length > 12000) return NextResponse.json({ error: "Answer is too long. Please keep it under 12,000 characters." }, { status: 413 });
+      if (!answer) return privateJson({ error: "Please provide an answer before submitting." }, { status: 400 });
+      if (answer.length > 12000) return privateJson({ error: "Answer is too long. Please keep it under 12,000 characters." }, { status: 413 });
       body.answer = answer;
       if (typeof body.requestId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(body.requestId)) {
-        return NextResponse.json({ error: "A valid answer request ID is required. Please retry." }, { status: 400 });
+        return privateJson({ error: "A valid answer request ID is required. Please retry." }, { status: 400 });
       }
       // If the previous response was lost after the transaction committed, return
       // the saved interviewer turn rather than evaluating or storing the answer twice.
@@ -349,7 +357,7 @@ export async function POST(request: NextRequest) {
       });
       if (previousAnswer) {
         if (previousAnswer.interviewId !== body.sessionId || previousAnswer.role !== "user") {
-          return NextResponse.json({ error: "This answer request ID has already been used." }, { status: 409 });
+          return privateJson({ error: "This answer request ID has already been used." }, { status: 409 });
         }
         const savedTurn = await db.interviewMessage.findFirst({
           where: {
@@ -360,8 +368,8 @@ export async function POST(request: NextRequest) {
           orderBy: { createdAt: "asc" },
           select: { content: true }
         });
-        if (!savedTurn) return NextResponse.json({ error: "Your answer is still being processed. Please retry shortly." }, { status: 409 });
-        const response = NextResponse.json({
+        if (!savedTurn) return privateJson({ error: "Your answer is still being processed. Please retry shortly." }, { status: 409 });
+        const response = privateJson({
           message: savedTurn.content,
           done: false,
           focus: "Interview follow-up",
@@ -370,7 +378,7 @@ export async function POST(request: NextRequest) {
         return attachCandidateCookie(response, request, body.sessionId!, invitationExpiresAt);
       }
       if (startedAt && elapsedInterviewSeconds(startedAt) >= INTERVIEW_LIMIT_SECONDS) {
-        return NextResponse.json({ error: "The 15-minute interview time limit has been reached. Generate your report to finish." }, { status: 409 });
+        return privateJson({ error: "The 15-minute interview time limit has been reached. Generate your report to finish." }, { status: 409 });
       }
     }
 
@@ -414,7 +422,7 @@ export async function POST(request: NextRequest) {
             });
           });
         }
-        const response = NextResponse.json(parsed);
+        const response = privateJson(parsed);
         return body.sessionId
           ? attachCandidateCookie(response, request, body.sessionId, invitationExpiresAt)
           : response;
@@ -444,7 +452,7 @@ export async function POST(request: NextRequest) {
           data: { answerLockAt: lockAt, reportLockAt: null }
         });
         if (lock.count !== 1) {
-          return NextResponse.json({ error: "Another interview action is being processed. Please wait and retry." }, { status: 409 });
+          return privateJson({ error: "Another interview action is being processed. Please wait and retry." }, { status: 409 });
         }
         answerLockAt = lockAt;
       }
@@ -496,7 +504,7 @@ export async function POST(request: NextRequest) {
           // The request passed the deadline check before the provider call. Preserve that
           // in-flight answer even if Grok finishes just after the 15-minute boundary.
           if (!startedAt || !answerLockAt) {
-            return NextResponse.json({ error: "The interview answer could not be committed. Please retry." }, { status: 409 });
+            return privateJson({ error: "The interview answer could not be committed. Please retry." }, { status: 409 });
           }
           await db.$transaction(async (tx) => {
             const current = await tx.interview.findUnique({
@@ -537,7 +545,7 @@ export async function POST(request: NextRequest) {
           });
           answerLockAt = null;
         }
-        return NextResponse.json({
+        return privateJson({
           ...parsed,
           timeLimitReached: !!startedAt && elapsedInterviewSeconds(startedAt) >= INTERVIEW_LIMIT_SECONDS
         });
@@ -567,7 +575,7 @@ export async function POST(request: NextRequest) {
           data: { reportLockAt: lockAt, answerLockAt: null }
         });
         if (lock.count !== 1) {
-          return NextResponse.json({ error: "Another interview action is being processed. Please wait and retry." }, { status: 409 });
+          return privateJson({ error: "Another interview action is being processed. Please wait and retry." }, { status: 409 });
         }
         reportLockAt = lockAt;
       }
@@ -581,7 +589,7 @@ export async function POST(request: NextRequest) {
             }))
           : (body.history || []).slice(-40);
         if (body.sessionId && history.filter(message => message.role === "user").length === 0) {
-          return NextResponse.json({ error: "No candidate answers are available to evaluate yet." }, { status: 409 });
+          return privateJson({ error: "No candidate answers are available to evaluate yet." }, { status: 409 });
         }
         const transcript = history.map(m => `${m.role}: ${m.content}`).join("\n").slice(-24000);
         const content = await askGrok([
@@ -616,7 +624,7 @@ export async function POST(request: NextRequest) {
           });
           reportLockAt = null;
         }
-        const response = NextResponse.json(report, {
+        const response = privateJson(report, {
           headers: { "Cache-Control": "private, no-store, max-age=0" }
         });
         // Retain the scoped HttpOnly invitation cookie until its original expiry.
@@ -634,7 +642,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({ error: "Unsupported interview action." }, { status: 400 });
+    return privateJson({ error: "Unsupported interview action." }, { status: 400 });
   } catch (error) {
     const message = error instanceof Error ? error.message : "";
     const aiFailure = message.startsWith("AI report validation failed")
@@ -644,6 +652,6 @@ export async function POST(request: NextRequest) {
       ? "The AI interviewer could not complete this step. Please retry in a moment."
       : "The interview service encountered an unexpected error. Please retry or contact the hiring team.";
     // Do not return upstream provider bodies, infrastructure details or secrets to candidates.
-    return NextResponse.json({ error: clientMessage }, { status: aiFailure ? 502 : 500 });
+    return privateJson({ error: clientMessage }, { status: aiFailure ? 502 : 500 });
   }
 }
