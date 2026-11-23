@@ -390,10 +390,30 @@ export async function POST(request: NextRequest) {
             if (!current || current.status !== "in_progress" || current.answerLockAt?.getTime() !== answerLockAt!.getTime()) {
               throw new Error("Interview answer request expired. Please retry.");
             }
+            const latestMessage = await tx.interviewMessage.findFirst({
+              where: { interviewId: body.sessionId },
+              orderBy: { createdAt: "desc" },
+              select: { createdAt: true }
+            });
+            const userMessageAt = new Date(Math.max(
+              Date.now(),
+              (latestMessage?.createdAt.getTime() || 0) + 1
+            ));
+            const assistantMessageAt = new Date(userMessageAt.getTime() + 1);
             await tx.interviewMessage.createMany({
               data: [
-                { interviewId: body.sessionId!, role: "user", content: body.answer! },
-                { interviewId: body.sessionId!, role: "assistant", content: parsed.message.slice(0, 12000) }
+                {
+                  interviewId: body.sessionId!,
+                  role: "user",
+                  content: body.answer!,
+                  createdAt: userMessageAt
+                },
+                {
+                  interviewId: body.sessionId!,
+                  role: "assistant",
+                  content: parsed.message.slice(0, 12000),
+                  createdAt: assistantMessageAt
+                }
               ]
             });
             await tx.interview.update({ where: { id: body.sessionId }, data: { answerLockAt: null } });
