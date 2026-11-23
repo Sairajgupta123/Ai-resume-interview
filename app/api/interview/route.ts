@@ -202,7 +202,27 @@ export async function POST(request: NextRequest) {
       if (!session.invitationTokenHash || !(await hasValidCandidateInvitation(body.sessionId, getCandidateInvitationToken(request, body.sessionId)))) {
         return NextResponse.json({ error: "Invalid or expired candidate invitation." }, { status: 401 });
       }
-      if (session.status === "completed") return NextResponse.json({ error: "This interview has already been completed." }, { status: 409 });
+      if (session.status === "completed" && body.action !== "report") {
+        return NextResponse.json({ error: "This interview has already been completed." }, { status: 409 });
+      }
+      if (session.status === "completed" && body.action === "report") {
+        const completed = await db.interview.findUnique({
+          where: { id: body.sessionId },
+          select: { reportJson: true }
+        });
+        if (!completed?.reportJson) {
+          return NextResponse.json({ error: "The completed interview report is unavailable. Contact the hiring team." }, { status: 409 });
+        }
+        try {
+          const savedReport: unknown = JSON.parse(completed.reportJson);
+          if (!savedReport || typeof savedReport !== "object" || Array.isArray(savedReport)) throw new Error("Invalid saved report");
+          return attachCandidateCookie(NextResponse.json(savedReport, {
+            headers: { "Cache-Control": "private, no-store, max-age=0" }
+          }), request, body.sessionId, session.inviteExpiresAt);
+        } catch {
+          return NextResponse.json({ error: "The saved interview report could not be restored. Contact the hiring team." }, { status: 500 });
+        }
+      }
 
       body.candidateName = session.candidateName;
       body.role = session.role;
@@ -532,16 +552,13 @@ export async function POST(request: NextRequest) {
           });
           reportLockAt = null;
         }
-        const response = NextResponse.json(report);
-        if (body.sessionId) {
-          response.cookies.set(candidateInvitationCookieName(body.sessionId), "", {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === "production",
-            sameSite: "lax",
-            path: "/",
-            maxAge: 0
-          });
-        }
+        const response = NextResponse.json(report, {
+          headers: { "Cache-Control": "private, no-store, max-age=0" }
+        });
+        // Retain the scoped HttpOnly invitation cookie until its original expiry.
+        // It allows a candidate to safely recover the committed report after a
+        // lost response or browser refresh without exposing the bearer token.
+        if (body.sessionId) attachCandidateCookie(response, request, body.sessionId, invitationExpiresAt);
         return response;
       } finally {
         if (body.sessionId && reportLockAt) {
