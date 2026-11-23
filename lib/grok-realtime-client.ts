@@ -36,6 +36,7 @@ export class GrokRealtimeClient {
   private stream: MediaStream;
   private instructions: string;
   private initialMessage: string;
+  private openingTranscriptPending = true;
 
   constructor(args: {
     sessionId: string;
@@ -200,7 +201,13 @@ export class GrokRealtimeClient {
       return;
     }
     if (data.type === "response.output_audio_transcript.done" && data.transcript?.trim()) {
-      this.callbacks.onTranscript("assistant", data.transcript.trim());
+      const transcript = data.transcript.trim();
+      if (this.openingTranscriptPending && transcript === this.initialMessage.trim()) {
+        this.openingTranscriptPending = false;
+        return;
+      }
+      this.openingTranscriptPending = false;
+      this.callbacks.onTranscript("assistant", transcript);
       return;
     }
     if (data.type === "input_audio_buffer.speech_started") {
