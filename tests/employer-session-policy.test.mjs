@@ -19,9 +19,7 @@ test("rejects malformed identity, version, and session-version claims", () => {
     { ...valid, sv: -1 },
     { ...valid, sv: 1.5 },
     { ...valid, iat: "1800000000000" },
-    { ...valid, extra: "ignored" }
   ]) {
-    if (payload?.extra) continue;
     assert.equal(isEmployerUserSessionPayload(payload, now), false);
   }
 });
@@ -29,4 +27,8 @@ test("rejects malformed identity, version, and session-version claims", () => {
 test("rejects expired and future-issued sessions", () => {
   assert.equal(isEmployerUserSessionPayload({ ...valid, iat: now - 12 * 60 * 60 * 1000 }, now), false);
   assert.equal(isEmployerUserSessionPayload({ ...valid, iat: now + 1 }, now), false);
+});
+
+test("ignores non-security metadata while validating the signed identity claims", () => {
+  assert.equal(isEmployerUserSessionPayload({ ...valid, displayName: "Recruiter" }, now), true);
 });
