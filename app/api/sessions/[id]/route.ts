@@ -58,20 +58,20 @@ export async function PUT(request: NextRequest, context: Context) {
       where: { id },
       select: { id: true, status: true, startedAt: true }
     });
-    if (!interview) return NextResponse.json({ error: "Interview not found." }, { status: 404 });
+    if (!interview) return NextResponse.json({ error: "Interview not found." }, { status: 404, headers });
     if (interview.status === "completed") {
-      return NextResponse.json({ error: "Completed interview sessions are read-only." }, { status: 409 });
+      return NextResponse.json({ error: "Completed interview sessions are read-only." }, { status: 409, headers });
     }
 
     const employer = await isEmployerAuthenticated();
     const candidate = await hasValidCandidateInvitation(id, getCandidateInvitationToken(request, id));
-    if (!employer && !candidate) return NextResponse.json({ error: "Unauthorized interview update." }, { status: 401 });
+    if (!employer && !candidate) return NextResponse.json({ error: "Unauthorized interview update." }, { status: 401, headers });
 
     // Transcript entries, reports, and duration are server-owned. In particular,
     // never trust a candidate-supplied timer value for employer-facing analytics.
     if (typeof body.durationSeconds === "number") {
       if (interview.status !== "in_progress" || !interview.startedAt) {
-        return NextResponse.json({ error: "Interview duration is available only after the interview starts." }, { status: 409 });
+        return NextResponse.json({ error: "Interview duration is available only after the interview starts." }, { status: 409, headers });
       }
       const durationSeconds = Math.min(
         INTERVIEW_LIMIT_SECONDS,
@@ -82,12 +82,12 @@ export async function PUT(request: NextRequest, context: Context) {
         data: { durationSeconds }
       });
       if (updated.count !== 1) {
-        return NextResponse.json({ error: "The interview changed while its duration was being updated." }, { status: 409 });
+        return NextResponse.json({ error: "The interview changed while its duration was being updated." }, { status: 409, headers });
       }
     }
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true }, { headers });
   } catch {
-    return NextResponse.json({ error: "Could not update interview." }, { status: 500 });
+    return NextResponse.json({ error: "Could not update interview." }, { status: 500, headers });
   }
 }
 
