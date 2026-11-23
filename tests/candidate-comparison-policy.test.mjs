@@ -62,6 +62,29 @@ test("rejects missing or malformed skill reports", () => {
   ]), /valid completed report/);
 });
 
+test("rejects invalid candidate identifiers and clamps untrusted score and recommendation metadata", () => {
+  assert.throws(() => buildCandidateComparison([
+    candidate("", "A", "Engineer", [{ skill: "SQL", rating: "Good", evidence: "I used SQL" }]),
+    candidate("b", "B", "Engineer", [{ skill: "SQL", rating: "Good", evidence: "I used SQL" }])
+  ]), /valid completed report/);
+  const result = buildCandidateComparison([
+    { ...candidate("a", "A", "Engineer", [{ skill: "SQL", rating: "Good", evidence: "I used SQL" }], 999), recommendation: "Guaranteed hire" },
+    candidate("b", "B", "Engineer", [{ skill: "SQL", rating: "Good", evidence: "I used SQL" }])
+  ]);
+  assert.equal(result.candidates[0].overallScore, null);
+  assert.equal(result.candidates[0].recommendation, "Needs review");
+});
+
+test("treats oversized or malformed skill evidence as insufficient evidence", () => {
+  const result = buildCandidateComparison([
+    candidate("a", "A", "Engineer", [{ skill: "SQL", rating: "Strong", evidence: "x".repeat(1201) }]),
+    candidate("b", "B", "Engineer", [{ skill: "SQL", rating: "Good", evidence: "I used SQL queries" }])
+  ]);
+  assert.equal(result.skills[0].candidates[0].rating, "Strong");
+  assert.equal(result.skills[0].candidates[0].evidence, "Insufficient evidence");
+  assert.equal(result.candidates[0].evidenceSkillCount, 0);
+});
+
 test("does not promote missing evidence into a positive rating", () => {
   const result = buildCandidateComparison([
     candidate("a", "A", "Engineer", [{ skill: "SQL", rating: "Strong", evidence: "I built SQL reporting" }]),
