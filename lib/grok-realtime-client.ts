@@ -155,65 +155,73 @@ export class GrokRealtimeClient {
       if (!this.closed) this.callbacks.onError?.("The AI voice connection encountered an error.");
     });
 
-    this.audioContext = new AudioContext();
-    await this.audioContext.resume();
-    const sessionReady = new Promise<void>((resolve, reject) => {
-      const cleanup = () => {
-        window.clearTimeout(timeout);
-        socket.removeEventListener("message", onMessage);
-        socket.removeEventListener("close", onClose);
-      };
-      const timeout = window.setTimeout(() => {
-        cleanup();
-        reject(new Error("AI voice session setup timed out."));
-      }, 10_000);
-      const onClose = () => {
-        cleanup();
-        reject(new Error("AI voice connection closed during session setup."));
-      };
-      const onMessage = (message: MessageEvent) => {
-        try {
-          const payload = JSON.parse(String(message.data)) as RealtimeEvent;
-          if (payload.type === "session.updated") {
-            cleanup();
-            resolve();
-          } else if (payload.type === "error") {
-            cleanup();
-            reject(new Error(payload.error?.message || "AI voice session setup failed."));
+    try {
+      this.audioContext = new AudioContext();
+      await this.audioContext.resume();
+      const sessionReady = new Promise<void>((resolve, reject) => {
+        const cleanup = () => {
+          window.clearTimeout(timeout);
+          socket.removeEventListener("message", onMessage);
+          socket.removeEventListener("close", onClose);
+        };
+        const timeout = window.setTimeout(() => {
+          cleanup();
+          reject(new Error("AI voice session setup timed out."));
+        }, 10_000);
+        const onClose = () => {
+          cleanup();
+          reject(new Error("AI voice connection closed during session setup."));
+        };
+        const onMessage = (message: MessageEvent) => {
+          try {
+            const payload = JSON.parse(String(message.data)) as RealtimeEvent;
+            if (payload.type === "session.updated") {
+              cleanup();
+              resolve();
+            } else if (payload.type === "error") {
+              cleanup();
+              reject(new Error(payload.error?.message || "AI voice session setup failed."));
+            }
+          } catch { /* ignore non-JSON events */ }
+        };
+        socket.addEventListener("message", onMessage);
+        socket.addEventListener("close", onClose, { once: true });
+      });
+      socket.send(JSON.stringify({
+        type: "session.update",
+        session: {
+          instructions: this.instructions,
+          voice: "eve",
+          turn_detection: { type: "server_vad" },
+          audio: {
+            input: {
+              format: { type: "audio/pcm", rate: SAMPLE_RATE },
+              transcription: { model: "grok-transcribe", language_hint: "en" }
+            },
+            output: { format: { type: "audio/pcm", rate: SAMPLE_RATE } }
           }
-        } catch { /* ignore non-JSON events */ }
-      };
-      socket.addEventListener("message", onMessage);
-      socket.addEventListener("close", onClose, { once: true });
-    });
-    socket.send(JSON.stringify({
-      type: "session.update",
-      session: {
-        instructions: this.instructions,
-        voice: "eve",
-        turn_detection: { type: "server_vad" },
-        audio: {
-          input: {
-            format: { type: "audio/pcm", rate: SAMPLE_RATE },
-            transcription: { model: "grok-transcribe", language_hint: "en" }
-          },
-          output: { format: { type: "audio/pcm", rate: SAMPLE_RATE } }
         }
-      }
-    }));
-    await sessionReady;
-    if (this.closed) return;
-    this.startAudioGraph();
-    socket.send(JSON.stringify({
-      type: "conversation.item.create",
-      item: {
-        type: "force_message",
-        role: "assistant",
-        interruptible: true,
-        content: [{ type: "output_text", text: this.initialMessage }]
-      }
-    }));
-    this.callbacks.onStatus?.("connected");
+      }));
+      await sessionReady;
+      if (this.closed) return;
+      this.startAudioGraph();
+      socket.send(JSON.stringify({
+        type: "conversation.item.create",
+        item: {
+          type: "force_message",
+          role: "assistant",
+          interruptible: true,
+          content: [{ type: "output_text", text: this.initialMessage }]
+        }
+      }));
+      this.callbacks.onStatus?.("connected");
+  
+    } catch (error) {
+      this.stopAudioGraph();
+      if (socket.readyState < WebSocket.CLOSING) socket.close();
+      this.socket = null;
+      throw error;
+    }
   }
 
   private startAudioGraph() {
