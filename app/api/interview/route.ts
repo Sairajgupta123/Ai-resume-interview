@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { candidateInvitationCookieName, getCandidateInvitationToken, hasValidCandidateInvitation } from "@/lib/invitation";
-import { elapsedInterviewSeconds, INTERVIEW_LIMIT_SECONDS, isVerifiableEvidenceQuote } from "@/lib/interview-policy.mjs";
+import { elapsedInterviewSeconds, INTERVIEW_LIMIT_SECONDS, isVerifiableEvidenceQuote, restoreChronologicalOrder } from "@/lib/interview-policy.mjs";
 import { calculateEvidenceCoverage, deriveRecommendation, hasDuplicateSkills, isRatingEvidenceConsistent } from "@/lib/evaluation-policy.mjs";
 import { validateInterviewerTurn } from "@/lib/interviewer-turn-policy.mjs";
 import { buildAdaptiveGuidance } from "@/lib/adaptive-interview-policy.mjs";
@@ -334,11 +334,13 @@ export async function POST(request: NextRequest) {
       }
       try {
         const history = body.sessionId
-          ? await db.interviewMessage.findMany({
+          ? restoreChronologicalOrder(await db.interviewMessage.findMany({
               where: { interviewId: body.sessionId },
-              orderBy: { createdAt: "asc" }, take: 40,
+              // Fetch the most recent context, then restore chronological order
+              // for the model and the interviewer fairness/coverage policies.
+              orderBy: { createdAt: "desc" }, take: 40,
               select: { role: true, content: true }
-            })
+            }))
           : (body.history || []).slice(-18);
         const adaptiveGuidance = buildAdaptiveGuidance(body.answer!);
         const targetSkills = extractTargetSkills(body.jobDescription || "", body.resume || "");
