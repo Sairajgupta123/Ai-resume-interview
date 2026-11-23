@@ -598,6 +598,10 @@ export default function Home() {
       initialMessage: openingMessage,
       callbacks: {
         onStatus: status => setVoiceStatus(status === "closed" ? "off" : status),
+        onMicrophoneState: state => {
+          const mutedMessage = "Your microphone is muted. Unmute it to continue the live voice interview, or type your answer.";
+          setError(previous => state === "muted" ? mutedMessage : previous === mutedMessage ? "" : previous);
+        },
         onError: message => {
           grokVoiceRef.current?.close();
           grokVoiceRef.current = null;
