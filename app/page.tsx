@@ -83,7 +83,7 @@ export default function Home() {
       window.history.replaceState({}, "", `/?candidateInterviewId=${encodeURIComponent(invitedId)}`);
     }
     let cancelled = false;
-    const invitationUrl = `/api/sessions/${invitedId}/candidate`;
+    const invitationUrl = `/api/sessions/${encodeURIComponent(invitedId)}/candidate`;
     fetch(invitationUrl, token
       ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token }), credentials: "same-origin", cache: "no-store" }
       : { method: "GET", credentials: "same-origin", cache: "no-store" })
@@ -94,6 +94,19 @@ export default function Home() {
       })
       .then(interview => {
         if (cancelled) return;
+        if (
+          !interview ||
+          typeof interview !== "object" ||
+          typeof interview.id !== "string" ||
+          typeof interview.candidateName !== "string" ||
+          typeof interview.role !== "string" ||
+          typeof interview.resumeText !== "string" ||
+          typeof interview.jobDescription !== "string" ||
+          !Array.isArray(interview.messages) ||
+          (interview.mode !== "live" && interview.mode !== "recorded")
+        ) {
+          throw new Error("The invitation returned incomplete interview details. Contact the employer for a new link.");
+        }
         // The response has now set the HttpOnly cookie for subsequent requests.
         setSessionId(interview.id);
         if (interview.recordingSaved) {
