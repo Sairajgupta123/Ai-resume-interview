@@ -361,15 +361,36 @@ export default function Home() {
       if (pendingTranscriptRef.current.length > 0 && sessionId) {
         const pendingEntries = [...pendingTranscriptRef.current];
         for (const entry of pendingEntries) {
-          const response = await fetch("/api/sessions/" + sessionId + "/transcript", {
-            method: "POST",
-            credentials: "same-origin",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(entry)
-          });
-          const result = await response.json();
-          if (!response.ok) throw new Error(result.error || "The live transcript could not be recovered. The report was not generated.");
-          pendingTranscriptRef.current = pendingTranscriptRef.current.filter(item => item.clientMessageId !== entry.clientMessageId);
+          let saved = false;
+          let lastError: Error | null = null;
+          for (let attempt = 0; attempt < 4; attempt += 1) {
+            try {
+              const response = await fetch("/api/sessions/" + sessionId + "/transcript", {
+                method: "POST",
+                credentials: "same-origin",
+                cache: "no-store",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(entry),
+                signal: AbortSignal.timeout(10_000)
+              });
+              const result = await response.json().catch(() => ({}));
+              if (!response.ok) {
+                const message = typeof result.error === "string" ? result.error : "The live transcript could not be recovered.";
+                const retryable = response.status === 408 || response.status === 429 || response.status >= 500;
+                throw Object.assign(new Error(message), { retryable });
+              }
+              pendingTranscriptRef.current = pendingTranscriptRef.current.filter(item => item.clientMessageId !== entry.clientMessageId);
+              saved = true;
+              break;
+            } catch (error) {
+              lastError = error instanceof Error ? error : new Error("The live transcript could not be recovered.");
+              if (error && typeof error === "object" && "retryable" in error && error.retryable === false) break;
+              if (attempt < 3) await new Promise(resolve => window.setTimeout(resolve, 500 * (2 ** attempt)));
+            }
+          }
+          if (!saved) {
+            throw new Error((lastError?.message || "The live transcript could not be recovered.") + " The report was not generated.");
+          }
         }
       }
       transcriptPersistenceFailedRef.current = pendingTranscriptRef.current.length > 0;
