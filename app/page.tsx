@@ -165,9 +165,15 @@ export default function Home() {
         });
         streamRef.current!.getTracks().forEach(track => peer!.addTrack(track, streamRef.current!));
         peer.onicecandidate = event => {
-          if (event.candidate && !stopped) void fetch(`/api/sessions/${sessionId}/signals`, {
-            method: "POST", headers, credentials: "same-origin", body: JSON.stringify({ kind: "ice", payload: JSON.stringify(event.candidate.toJSON()) })
-          });
+          if (event.candidate && !stopped) {
+            void fetch(`/api/sessions/${sessionId}/signals`, {
+              method: "POST", headers, credentials: "same-origin", body: JSON.stringify({ kind: "ice", payload: JSON.stringify(event.candidate.toJSON()) })
+            }).then(response => {
+              if (!response.ok && !stopped) setError("Live video network setup was interrupted. Please check your connection.");
+            }).catch(() => {
+              if (!stopped) setError("Could not send live video network information. Check your connection.");
+            });
+          }
         };
         const offer = await peer.createOffer();
         await peer.setLocalDescription(offer);
