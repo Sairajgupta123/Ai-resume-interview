@@ -41,6 +41,7 @@ export default function Dashboard() {
   const employerLocalRef = useRef<HTMLVideoElement>(null);
   const [liveCallState, setLiveCallState] = useState("Waiting for candidate…");
   const employerPeerRef = useRef<RTCPeerConnection | null>(null);
+  const employerStopCallRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     if (!authenticated || !selected || selected.mode !== "live" || selected.status === "completed") {
@@ -53,6 +54,17 @@ export default function Dashboard() {
     let localStream: MediaStream | null = null;
     let cursor = "";
     let cursorId = "";
+    const stopLocalCall = () => {
+      stopped = true;
+      if (timer !== undefined) window.clearInterval(timer);
+      peer?.close();
+      if (employerPeerRef.current === peer) employerPeerRef.current = null;
+      localStream?.getTracks().forEach(track => track.stop());
+      localStream = null;
+      if (employerLocalRef.current) employerLocalRef.current.srcObject = null;
+      if (employerVideoRef.current) employerVideoRef.current.srcObject = null;
+    };
+    employerStopCallRef.current = stopLocalCall;
     const pendingIce: RTCIceCandidateInit[] = [];
     const postSignal = (kind: string, payload: string) => fetch(`/api/sessions/${selected.id}/signals`, {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind, payload })
@@ -107,14 +119,8 @@ export default function Dashboard() {
                 if (peer!.remoteDescription) await peer!.addIceCandidate(candidate).catch(() => {});
                 else if (pendingIce.length < 128) pendingIce.push(candidate);
               } else if (signal.kind === "hangup") {
-                stopped = true;
-                if (timer !== undefined) window.clearInterval(timer);
+                stopLocalCall();
                 setLiveCallState("Candidate ended the call.");
-                peer!.close();
-                localStream?.getTracks().forEach(track => track.stop());
-                localStream = null;
-                if (employerLocalRef.current) employerLocalRef.current.srcObject = null;
-                if (employerVideoRef.current) employerVideoRef.current.srcObject = null;
               }
             }
           } catch { /* retry on transient network errors */ }
@@ -128,34 +134,37 @@ export default function Dashboard() {
     };
     void start();
     return () => {
-      stopped = true;
-      if (timer !== undefined) window.clearInterval(timer);
-      peer?.close();
-      if (employerPeerRef.current === peer) employerPeerRef.current = null;
-      localStream?.getTracks().forEach(track => track.stop());
-      if (employerVideoRef.current) employerVideoRef.current.srcObject = null;
-      if (employerLocalRef.current) employerLocalRef.current.srcObject = null;
+      stopLocalCall();
+      if (employerStopCallRef.current === stopLocalCall) employerStopCallRef.current = null;
     };
   }, [authenticated, selected?.id, selected?.mode, selected?.status]);
 
   const endLiveCall = async () => {
     if (!selected || selected.mode !== "live" || selected.status === "completed") return;
+    let notified = false;
     try {
-      await fetch(`/api/sessions/${selected.id}/signals`, {
+      const response = await fetch(`/api/sessions/${selected.id}/signals`, {
         method: "POST",
         credentials: "same-origin",
         cache: "no-store",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ kind: "hangup", payload: "employer-ended" })
       });
+      notified = response.ok;
+    } catch {
+      notified = false;
     } finally {
+      employerStopCallRef.current?.();
+      employerStopCallRef.current = null;
       employerPeerRef.current?.close();
       employerPeerRef.current = null;
       const stream = employerLocalRef.current?.srcObject;
       if (stream instanceof MediaStream) stream.getTracks().forEach(track => track.stop());
       if (employerLocalRef.current) employerLocalRef.current.srcObject = null;
       if (employerVideoRef.current) employerVideoRef.current.srcObject = null;
-      setLiveCallState("You ended the live video connection.");
+      setLiveCallState(notified
+        ? "You ended the live video connection."
+        : "Live connection ended on this device, but the employer could not notify the candidate. Refresh and check the interview before reconnecting.");
     }
   };
 
