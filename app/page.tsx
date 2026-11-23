@@ -195,7 +195,7 @@ export default function Home() {
                 if (peer!.remoteDescription) await peer!.addIceCandidate(candidate).catch(() => {});
                 else if (pendingIce.length < 128) pendingIce.push(candidate);
               }
-              if (signal.kind === "hangup") { peer!.close(); setError("Employer ended the live video connection."); }
+              if (signal.kind === "hangup") { stopped = true; if (timer !== undefined) window.clearInterval(timer); peer!.close(); setError("Employer ended the live video connection."); }
             }
           } catch { /* retry on next poll */ }
           finally { polling = false; }
