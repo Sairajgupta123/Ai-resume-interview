@@ -21,7 +21,8 @@ async function candidateResponse(id: string, token: string | null, exchange = fa
       inviteExpiresAt: true,
       startedAt: true,
       messages: {
-        orderBy: { createdAt: "asc" },
+        // Keep the newest turns available for candidate refresh recovery.
+        orderBy: { createdAt: "desc" },
         take: 100,
         select: { role: true, content: true }
       }
@@ -42,9 +43,15 @@ async function candidateResponse(id: string, token: string | null, exchange = fa
     return NextResponse.json({ error: "This interview invitation is invalid or expired. Contact the employer for a new link." }, { status: 401, headers: { "Cache-Control": "private, no-store" } });
   }
 
-  const { recordingPath, ...candidateInterview } = interview;
+  const { recordingPath, messages, ...candidateInterview } = interview;
   const response = NextResponse.json({
-    interview: { ...candidateInterview, recordingSaved: Boolean(recordingPath) }
+    interview: {
+      ...candidateInterview,
+      // The database query is newest-first to bound recovery work; the UI
+      // receives the retained turns in their original conversation order.
+      messages: messages.slice().reverse(),
+      recordingSaved: Boolean(recordingPath)
+    }
   }, { headers: { "Cache-Control": "private, no-store, max-age=0" } });
   response.cookies.set(candidateInvitationCookieName(id), sessionToken, {
     httpOnly: true,
