@@ -575,11 +575,53 @@ export default function Home() {
 
 
   const startGrokVoice = async (targetSessionId: string, openingMessage: string) => {
-    transcriptWriteRef.current = Promise.resolve();
-    transcriptPersistenceFailedRef.current = false;
-    pendingTranscriptRef.current = [];
     const mediaStream = streamRef.current;
     if (!mediaStream || !targetSessionId) return;
+
+    // Never discard transcript entries from a previous voice connection.
+    // Retry them with their original IDs before accepting a new live session.
+    await transcriptWriteRef.current;
+    if (pendingTranscriptRef.current.length > 0) {
+      const pendingEntries = [...pendingTranscriptRef.current];
+      for (const entry of pendingEntries) {
+        let saved = false;
+        let lastError: Error | null = null;
+        for (let attempt = 0; attempt < 4; attempt += 1) {
+          try {
+            const response = await fetch("/api/sessions/" + targetSessionId + "/transcript", {
+              method: "POST",
+              credentials: "same-origin",
+              cache: "no-store",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(entry),
+              signal: AbortSignal.timeout(10_000)
+            });
+            const result = await response.json().catch(() => ({}));
+            if (!response.ok) {
+              const message = typeof result.error === "string" ? result.error : "Could not recover the previous live transcript.";
+              const retryable = response.status === 408 || response.status === 429 || response.status >= 500;
+              if (!retryable) throw Object.assign(new Error(message), { retryable: false });
+              throw new Error(message);
+            }
+            pendingTranscriptRef.current = pendingTranscriptRef.current.filter(item => item.clientMessageId !== entry.clientMessageId);
+            saved = true;
+            break;
+          } catch (error) {
+            lastError = error instanceof Error ? error : new Error("Could not recover the previous live transcript.");
+            if (error && typeof error === "object" && "retryable" in error && error.retryable === false) break;
+            if (attempt < 3) await new Promise(resolve => window.setTimeout(resolve, 500 * (2 ** attempt)));
+          }
+        }
+        if (!saved) {
+          transcriptPersistenceFailedRef.current = true;
+          setError(lastError?.message || "A previous live transcript could not be recovered. Continue by typing after restoring your connection.");
+          setVoiceStatus("unavailable");
+          return;
+        }
+      }
+    }
+    transcriptPersistenceFailedRef.current = false;
+    transcriptWriteRef.current = Promise.resolve();
     const instructions = [
       "You are MZOBS, a professional, fair and concise AI interviewer conducting a structured 15-minute job interview.",
       "Ask one question at a time. Listen carefully and adapt follow-up questions to the candidate's actual answers. Do not repeat questions.",
