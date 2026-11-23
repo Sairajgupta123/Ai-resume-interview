@@ -65,6 +65,7 @@ export default function Home() {
   const recordingPersistenceRef = useRef<Promise<void>>(Promise.resolve());
   const recordingPersistenceFailedRef = useRef(false);
   const finishStartedRef = useRef(false);
+  const pendingAnswerRef = useRef<{ answer: string; requestId: string } | null>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const grokVoiceRef = useRef<GrokRealtimeClient | null>(null);
   const transcriptWriteRef = useRef<Promise<void>>(Promise.resolve());
@@ -305,19 +306,29 @@ export default function Home() {
     }
     await transcriptWriteRef.current;
     if (transcriptPersistenceFailedRef.current) { setError("A live transcript could not be saved. Please finish using the saved conversation or contact the employer before continuing."); return; }
-    setHistory(prev => [...prev, { role: "user", content: answer }]);
+    const pending = pendingAnswerRef.current;
+    const requestId = pending?.answer === answer ? pending.requestId : crypto.randomUUID();
+    pendingAnswerRef.current = { answer, requestId };
+    setHistory(prev => {
+      const last = prev[prev.length - 1];
+      return last?.role === "user" && last.content === answer ? prev : [...prev, { role: "user", content: answer }];
+    });
     setDraft(""); setBusy(true); setError("");
     try {
-      const data = await callApi({ action: "answer", candidateName, role, resume, jobDescription, mode, sessionId, history, answer }) as InterviewReply;
+      const data = await callApi({ action: "answer", candidateName, role, resume, jobDescription, mode, sessionId, history, answer, requestId }) as InterviewReply;
+      pendingAnswerRef.current = null;
       setHistory(prev => [...prev, { role: "assistant", content: data.message }]);
       if (sessionId) await fetch(`/api/sessions/${sessionId}`, { method: "PUT", headers: { "Content-Type": "application/json", ...(inviteToken ? { "x-interview-invite": inviteToken } : {}) }, body: JSON.stringify({ durationSeconds: seconds }) });
       speak(data.message);
       if (data.done || data.timeLimitReached) await finishInterview();
-    } catch (e) { setError(e instanceof Error ? e.message : "Could not submit answer."); }
+    } catch (e) {
+      setDraft(answer);
+      setError(e instanceof Error ? e.message : "Could not submit answer. Your answer is preserved; submit again to retry safely.");
+    }
     finally { setBusy(false); }
   };
 
-  const finishInterview = async (transcript = history) => {
+    const finishInterview = async (transcript = history) => {
     if (finishStartedRef.current) return;
     finishStartedRef.current = true;
     setBusy(true); setError("");
