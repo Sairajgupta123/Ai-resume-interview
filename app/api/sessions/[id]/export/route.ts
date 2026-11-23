@@ -1,28 +1,38 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { isEmployerAuthenticated } from "@/lib/auth";
-import { normalizeReportForExport } from "@/lib/report-export-policy.mjs";
+import { normalizeReportForExport, safeCsvCell } from "@/lib/report-export-policy.mjs";
 
 type Context = { params: Promise<{ id: string }> };
 
-function csvCell(value: unknown) {
-  const raw = value === null || value === undefined ? "" : String(value);
-  const text = typeof value !== "number" && /^[\t\r\n ]*[-=+@]/.test(raw) ? "'" + raw : raw;
-  return `"${text.replace(/"/g, '""')}"`;
-}
-
 export async function GET(_request: Request, context: Context) {
-  if (!(await isEmployerAuthenticated())) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+  const headers = { "Cache-Control": "private, no-store, max-age=0" };
+  if (!(await isEmployerAuthenticated())) return NextResponse.json({ error: "Unauthorized." }, { status: 401, headers });
   const { id } = await context.params;
   try {
     const interview = await db.interview.findUnique({
       where: { id },
-      include: {
-        messages: { orderBy: { createdAt: "asc" } },
-        decisionHistory: { orderBy: { createdAt: "asc" } }
+      select: {
+        id: true, candidateName: true, role: true, mode: true, status: true,
+        durationSeconds: true, createdAt: true, overallScore: true,
+        recommendation: true, employerDecision: true, employerNotes: true,
+        reportJson: true,
+        messages: {
+          orderBy: { createdAt: "asc" },
+          take: 200,
+          select: { role: true, content: true, createdAt: true }
+        },
+        decisionHistory: {
+          orderBy: { createdAt: "asc" },
+          take: 100,
+          select: { decision: true, notes: true, createdAt: true }
+        }
       }
     });
-    if (!interview) return NextResponse.json({ error: "Interview not found." }, { status: 404 });
+    if (!interview) return NextResponse.json({ error: "Interview not found." }, { status: 404, headers });
+    if (interview.status !== "completed" || !interview.reportJson) {
+      return NextResponse.json({ error: "Only completed interviews with a report can be exported." }, { status: 409, headers });
+    }
 
     const report = normalizeReportForExport(interview.reportJson);
     const rows: unknown[][] = [
@@ -61,16 +71,16 @@ export async function GET(_request: Request, context: Context) {
       ["Speaker", "Message", "Timestamp"],
       ...interview.messages.map(message => [message.role === "assistant" ? "AI interviewer" : "Candidate", message.content, message.createdAt.toISOString()])
     ];
-    const csv = rows.map(row => row.map(csvCell).join(",")).join("\r\n");
+    const csv = rows.map(row => row.map(safeCsvCell).join(",")).join("\r\n");
     const filename = `mzobs-interview-${interview.id}.csv`;
     return new NextResponse("\uFEFF" + csv, {
       headers: {
         "Content-Type": "text/csv; charset=utf-8",
         "Content-Disposition": `attachment; filename="${filename}"`,
-        "Cache-Control": "private, no-store"
+        "Cache-Control": "private, no-store, max-age=0"
       }
     });
   } catch {
-    return NextResponse.json({ error: "Could not export interview report." }, { status: 500 });
+    return NextResponse.json({ error: "Could not export interview report." }, { status: 500, headers });
   }
 }
