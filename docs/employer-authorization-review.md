@@ -36,7 +36,7 @@ The current shared employer session is an authentication gate, not an organizati
 
 1. **Identity:** replace the shared environment-variable login with individual employer identities. Store password hashes using a suitable password-hashing algorithm; never store plaintext passwords.
 2. **Organizations and membership:** schema foundation is present: `EmployerUser`, `EmployerOrganization`, and `EmployerMembership`. Membership links a user to an organization and carries a role. The pure permission matrix is present, but no authentication or API route consumes it yet.
-3. **Tenant ownership:** `Interview.organizationId` is currently nullable as a safe additive schema step. Create one explicit legacy organization, backfill every existing interview and related employer-owned data, verify there are no unowned rows, then make ownership required before enabling tenant-scoped APIs.
+3. **Tenant ownership:** `Interview.organizationId` is currently nullable as a safe additive schema step. A dry-run-first backfill command now requires explicit `LEGACY_ORGANIZATION_NAME` and `LEGACY_ORGANIZATION_SLUG`, refuses ambiguous databases with multiple organizations, applies organization creation and interview assignment in one transaction, and verifies no interviews remain unassigned. It has not been run against a user database. Back up the SQLite file, inspect the dry-run output, then explicitly apply it. Related employer-owned records reference interviews and inherit their organization scope through that relation.
 4. **Session claims:** sign a session containing a stable employer user ID and session version/expiry. Resolve active organization membership server-side on each request; do not trust an organization ID supplied only by the browser.
 5. **Scoped data access:** every employer list, detail, export, comparison, analytics, audit, recording, invitation, decision, retention, and deletion query must be constrained by the authenticated organization. For ID-based operations, first prove the interview belongs to that organization. Return a consistent not-found response for foreign-tenant IDs to avoid disclosing their existence.
 6. **Audit attribution:** attach actor user ID and organization ID to employer decision and security audit events. Preserve the current minimal recording-access event semantics; a prepared response is not proof of viewing.
@@ -49,9 +49,30 @@ The current shared employer session is an authentication gate, not an organizati
 - [x] Add organization, employer-user, and membership schema foundations without changing existing interview ownership.
 - [x] Add a tested, deny-by-default role-permission matrix.
 - [x] Add fail-closed Prisma query-scope builders and tests proving that missing organization identity cannot produce an unscoped query.
-- [ ] Create and verify a legacy organization; backfill existing interviews before making ownership required.
+- [x] Add a dry-run-first, transactional legacy-organization backfill command with explicit configuration and fail-closed ambiguity checks.
+- [ ] Back up the real database, review dry-run counts, apply the backfill, and verify zero unassigned interviews before making ownership required.
 - [ ] Replace shared login with individual employer identity and organization-aware sessions.
 - [ ] Enforce organization scoping and role permissions across every employer API.
+
+## Legacy organization backfill procedure
+
+Run this only against a backed-up database after `npm install` and `npm run db:push` have synchronized the additive schema.
+
+PowerShell example:
+
+```powershell
+$env:LEGACY_ORGANIZATION_NAME = "MZOBS Legacy"
+$env:LEGACY_ORGANIZATION_SLUG = "mzobs-legacy"
+npm run db:backfill-legacy-organization
+```
+
+The default command is read-only and prints the planned organization action and count of interviews with no organization. Review the output and confirm the backup before applying:
+
+```powershell
+npm run db:backfill-legacy-organization -- --apply
+```
+
+The apply operation runs organization selection/creation, assignment of only rows whose `organizationId` is null, and the final zero-unassigned check in one database transaction. It refuses multiple existing organizations or a mismatched existing slug. The script has not been run on the user's local database; do not claim that any candidate record has been migrated.
 
 ## Recommended implementation order
 
