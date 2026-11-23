@@ -42,10 +42,21 @@ export async function POST(request: NextRequest) {
 }
 
 export async function GET() {
-  if (!(await isEmployerAuthenticated())) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
-  const interviews = await db.interview.findMany({
-    orderBy: { createdAt: "desc" },
-    select: { id: true, candidateName: true, role: true, mode: true, status: true, overallScore: true, recommendation: true, employerDecision: true, durationSeconds: true, createdAt: true }
-  });
-  return NextResponse.json({ interviews });
+  const headers = { "Cache-Control": "private, no-store, max-age=0" };
+  if (!(await isEmployerAuthenticated())) {
+    return NextResponse.json({ error: "Unauthorized." }, { status: 401, headers });
+  }
+  try {
+    const interviews = await db.interview.findMany({
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true, candidateName: true, role: true, mode: true, status: true,
+        overallScore: true, recommendation: true, employerDecision: true,
+        durationSeconds: true, createdAt: true
+      }
+    });
+    return NextResponse.json({ interviews }, { headers });
+  } catch {
+    return NextResponse.json({ error: "Could not load employer interviews." }, { status: 500, headers });
+  }
 }
