@@ -9,6 +9,7 @@ type TranscriptRole = "user" | "assistant";
 type GrokRealtimeCallbacks = {
   onTranscript: (role: TranscriptRole, text: string) => void;
   onStatus?: (status: "connecting" | "connected" | "closed") => void;
+  onMicrophoneState?: (state: "muted" | "live") => void;
   onError?: (message: string) => void;
 };
 
@@ -40,6 +41,12 @@ export class GrokRealtimeClient {
   private audioTrack: MediaStreamTrack | null = null;
   private readonly onMicrophoneEnded = () => {
     if (!this.closed) this.callbacks.onError?.("The microphone stopped. Reconnect your microphone or continue by typing.");
+  };
+  private readonly onMicrophoneMute = () => {
+    if (!this.closed) this.callbacks.onMicrophoneState?.("muted");
+  };
+  private readonly onMicrophoneUnmute = () => {
+    if (!this.closed) this.callbacks.onMicrophoneState?.("live");
   };
   private instructions: string;
   private initialMessage: string;
@@ -234,12 +241,15 @@ export class GrokRealtimeClient {
     const source = audioContext.createMediaStreamSource(new MediaStream([audioTrack]));
     this.audioTrack = audioTrack;
     audioTrack.addEventListener("ended", this.onMicrophoneEnded, { once: true });
+    audioTrack.addEventListener("mute", this.onMicrophoneMute);
+    audioTrack.addEventListener("unmute", this.onMicrophoneUnmute);
+    if (audioTrack.muted) this.onMicrophoneMute();
     const processor = audioContext.createScriptProcessor(4096, 1, 1);
     const silentGain = audioContext.createGain();
     silentGain.gain.value = 0;
     processor.onaudioprocess = event => {
       const socket = this.socket;
-      if (this.closed || !socket || socket.readyState !== WebSocket.OPEN) return;
+      if (this.closed || audioTrack.muted || !audioTrack.enabled || !socket || socket.readyState !== WebSocket.OPEN) return;
       const pcm = resampleFloat32ToPcm16(
         event.inputBuffer.getChannelData(0),
         audioContext.sampleRate,
@@ -323,6 +333,8 @@ export class GrokRealtimeClient {
 
   private stopAudioGraph() {
     this.audioTrack?.removeEventListener("ended", this.onMicrophoneEnded);
+    this.audioTrack?.removeEventListener("mute", this.onMicrophoneMute);
+    this.audioTrack?.removeEventListener("unmute", this.onMicrophoneUnmute);
     this.audioTrack = null;
     this.processor?.disconnect();
     this.inputSource?.disconnect();
