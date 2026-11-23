@@ -110,6 +110,10 @@ export default function Home() {
         }
         // The response has now set the HttpOnly cookie for subsequent requests.
         setSessionId(interview.id);
+        if (interview.status === "completed" && interview.completedReport && typeof interview.completedReport === "object") {
+          setReport(interview.completedReport as Report);
+          setPhase("report");
+        }
         if (interview.recordingSaved) {
           recordingSavedRef.current = true;
           setRecordingSaved(true);
