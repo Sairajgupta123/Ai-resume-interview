@@ -11,7 +11,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401, headers });
   }
   try {
-    if (!(request.headers.get("content-type") || "").toLowerCase().includes("application/json")) {
+    if ((request.headers.get("content-type") || "").split(";", 1)[0].trim().toLowerCase() !== "application/json") {
       return NextResponse.json({ error: "A JSON comparison request is required." }, { status: 415, headers });
     }
     const declaredLength = request.headers.get("content-length");
