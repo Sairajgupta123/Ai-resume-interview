@@ -9,7 +9,7 @@ type Context = { params: Promise<{ id: string }> };
 export async function PUT(request: NextRequest, context: Context) {
   const { id } = await context.params;
   const headers = { "Cache-Control": "private, no-store, max-age=0" };
-  if (!(request.headers.get("content-type") || "").toLowerCase().includes("application/json")) {
+  if ((request.headers.get("content-type") || "").split(";", 1)[0].trim().toLowerCase() !== "application/json") {
     return NextResponse.json({ error: "A JSON session update is required." }, { status: 415, headers });
   }
   const declaredLength = Number(request.headers.get("content-length") || 0);
