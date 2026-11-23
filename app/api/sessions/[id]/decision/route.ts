@@ -8,8 +8,13 @@ const decisions = ["shortlist", "review", "reject"] as const;
 export async function POST(request: NextRequest, context: Context) {
   if (!(await isEmployerAuthenticated())) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   const { id } = await context.params;
+  let body: unknown;
   try {
-    const body: unknown = await request.json();
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Request body must contain valid JSON." }, { status: 400 });
+  }
+  try {
     if (!body || typeof body !== "object" || Array.isArray(body)) {
       return NextResponse.json({ error: "A valid decision payload is required." }, { status: 400 });
     }
