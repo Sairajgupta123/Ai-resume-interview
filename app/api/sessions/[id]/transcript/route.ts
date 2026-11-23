@@ -23,7 +23,16 @@ export async function POST(request: NextRequest, context: Context) {
       return NextResponse.json({ error: "A JSON transcript entry is required." }, { status: 415 });
     }
 
-    const body = await request.json() as { role?: unknown; content?: unknown };
+    const rawBody = await request.text();
+    if (new TextEncoder().encode(rawBody).byteLength > 16_384) {
+      return NextResponse.json({ error: "Transcript request is too large." }, { status: 413 });
+    }
+    let body: { role?: unknown; content?: unknown };
+    try {
+      body = JSON.parse(rawBody) as { role?: unknown; content?: unknown };
+    } catch {
+      return NextResponse.json({ error: "Invalid transcript JSON." }, { status: 400 });
+    }
     if (body.role !== "user" && body.role !== "assistant") {
       return NextResponse.json({ error: "Transcript speaker must be user or assistant." }, { status: 400 });
     }
