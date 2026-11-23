@@ -57,7 +57,7 @@ async function access(request: NextRequest, id: string) {
 
 export async function GET(request: NextRequest, context: Context) {
   const { id } = await context.params;
-  const headers = { "Cache-Control": "private, no-store, max-age=0" };
+  const headers = { "Cache-Control": "private, no-store, max-age=0", Pragma: "no-cache" };
   const sender = await access(request, id);
   if (!sender) return NextResponse.json({ error: "Unauthorized." }, { status: 401, headers });
   const interview = await db.interview.findUnique({ where: { id }, select: { status: true, mode: true, startedAt: true, consentAcceptedAt: true } });
@@ -85,7 +85,7 @@ export async function GET(request: NextRequest, context: Context) {
 }
 export async function POST(request: NextRequest, context: Context) {
   const { id } = await context.params;
-  const headers = { "Cache-Control": "private, no-store, max-age=0" };
+  const headers = { "Cache-Control": "private, no-store, max-age=0", Pragma: "no-cache" };
   const sender = await access(request, id);
   if (!sender) return NextResponse.json({ error: "Unauthorized." }, { status: 401, headers });
   try {
