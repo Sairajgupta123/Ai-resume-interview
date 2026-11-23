@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { isEmployerAuthenticated } from "@/lib/auth";
 import { normalizeReportForExport, safeCsvCell } from "@/lib/report-export-policy.mjs";
+import { isRestorableInterviewReport } from "@/lib/report-recovery-policy.mjs";
 
 type Context = { params: Promise<{ id: string }> };
 
@@ -34,7 +35,16 @@ export async function GET(_request: Request, context: Context) {
       return NextResponse.json({ error: "Only completed interviews with a report can be exported." }, { status: 409, headers });
     }
 
-    const report = normalizeReportForExport(interview.reportJson);
+    let parsedReport: unknown;
+    try {
+      parsedReport = JSON.parse(interview.reportJson);
+    } catch {
+      return NextResponse.json({ error: "The saved interview report is invalid and cannot be exported." }, { status: 409, headers });
+    }
+    if (!isRestorableInterviewReport(parsedReport)) {
+      return NextResponse.json({ error: "The saved interview report failed validation and cannot be exported." }, { status: 409, headers });
+    }
+    const report = normalizeReportForExport(parsedReport);
     const rows: unknown[][] = [
       ["MZOBS AI INTERVIEW REPORT"],
       ["Candidate", interview.candidateName],
