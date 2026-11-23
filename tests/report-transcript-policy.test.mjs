@@ -26,6 +26,17 @@ test("does not cut a candidate answer in the middle", () => {
   assert.equal(result.omittedMessages, 1);
 });
 
+test("does not backfill older turns when a recent complete turn cannot fit", () => {
+  const messages = [
+    { role: "user", content: "old" },
+    { role: "assistant", content: "m".repeat(80) },
+    { role: "user", content: "latest" }
+  ];
+  const result = buildBoundedReportTranscript(messages, 20);
+  assert.deepEqual(result.messages, [{ role: "user", content: "latest" }]);
+  assert.equal(result.omittedMessages, 2);
+});
+
 test("preserves original order and excludes malformed entries", () => {
   const result = buildBoundedReportTranscript([
     { role: "user", content: "first" },
