@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { isEmployerAuthenticated } from "@/lib/auth";
+import { getEmployerOrganizationAccess } from "@/lib/auth";
 import { canClaimDeletionExecution, DELETION_EXECUTION_LEASE_MS } from "@/lib/deletion-execution-policy.mjs";
 import { finalizeDeletionExecution, markDeletionExecutionFailed } from "@/lib/deletion-execution-service.mjs";
 import { deleteStoredInterviewRecording } from "@/lib/deletion-storage.mjs";
@@ -10,12 +10,13 @@ export const runtime = "nodejs";
 type Context = { params: Promise<{ id: string }> };
 
 export async function POST(_request: Request, context: Context) {
-  if (!(await isEmployerAuthenticated())) {
+  const access = await getEmployerOrganizationAccess("privacy:execute_deletion");
+  if (!access) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401, headers: { "Cache-Control": "no-store" } });
   }
   const { id } = await context.params;
   try {
-    const requestRecord = await db.privacyDeletionRequest.findUnique({ where: { id } });
+    const requestRecord = await db.privacyDeletionRequest.findFirst({ where: { id, interview: { organizationId: access.organizationId } } });
     if (!requestRecord) return NextResponse.json({ error: "Deletion request not found." }, { status: 404 });
     if (!canClaimDeletionExecution(requestRecord)) {
       return NextResponse.json({ error: "Candidate verification and employer approval are required, or another deletion worker currently holds the execution lease." }, { status: 409, headers: { "Cache-Control": "no-store" } });
@@ -27,6 +28,7 @@ export async function POST(_request: Request, context: Context) {
     const claim = await db.privacyDeletionRequest.updateMany({
       where: {
         id,
+        interview: { organizationId: access.organizationId },
         // Keep candidate verification as an atomic database precondition, not only a pre-read check.
         verifiedAt: { not: null },
         OR: [
@@ -48,8 +50,8 @@ export async function POST(_request: Request, context: Context) {
     }
 
     try {
-      const interview = await db.interview.findUnique({
-        where: { id: requestRecord.interviewId },
+      const interview = await db.interview.findFirst({
+        where: { id: requestRecord.interviewId, organizationId: access.organizationId },
         select: { id: true, recordingPath: true }
       });
       if (interview?.recordingPath) await deleteStoredInterviewRecording(interview.recordingPath);
