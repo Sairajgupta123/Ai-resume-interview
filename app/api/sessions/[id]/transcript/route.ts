@@ -9,6 +9,7 @@ export const runtime = "nodejs";
 type Context = { params: Promise<{ id: string }> };
 
 const MAX_TRANSCRIPT_LENGTH = 12_000;
+const privateHeaders = { "Cache-Control": "private, no-store, max-age=0" };
 
 export async function POST(request: NextRequest, context: Context) {
   const { id } = await context.params;
@@ -16,20 +17,20 @@ export async function POST(request: NextRequest, context: Context) {
   try {
     const token = getCandidateInvitationToken(request, id);
     if (!(await hasValidCandidateInvitation(id, token))) {
-      return NextResponse.json({ error: "Unauthorized interview session." }, { status: 401, headers: { "Cache-Control": "private, no-store, max-age=0" } });
+      return NextResponse.json({ error: "Unauthorized interview session." }, { status: 401, headers: privateHeaders });
     }
 
     const contentType = request.headers.get("content-type") || "";
-    if (!contentType.toLowerCase().includes("application/json")) {
-      return NextResponse.json({ error: "A JSON transcript entry is required." }, { status: 415 });
+    if (contentType.split(";", 1)[0].trim().toLowerCase() !== "application/json") {
+      return NextResponse.json({ error: "A JSON transcript entry is required." }, { status: 415, headers: privateHeaders });
     }
 
     const declaredLength = Number(request.headers.get("content-length") || 0);
-    if (declaredLength > 16_384) {
-      return NextResponse.json({ error: "Transcript request is too large." }, { status: 413 });
+    if (!Number.isSafeInteger(declaredLength) || declaredLength < 0 || declaredLength > 16_384) {
+      return NextResponse.json({ error: "Transcript request is too large." }, { status: 413, headers: privateHeaders });
     }
     const reader = request.body?.getReader();
-    if (!reader) return NextResponse.json({ error: "Transcript request body is missing." }, { status: 400 });
+    if (!reader) return NextResponse.json({ error: "Transcript request body is missing." }, { status: 400, headers: privateHeaders });
     const chunks: Uint8Array[] = [];
     let totalBytes = 0;
     while (true) {
@@ -38,7 +39,7 @@ export async function POST(request: NextRequest, context: Context) {
       totalBytes += chunk.value.byteLength;
       if (totalBytes > 16_384) {
         await reader.cancel();
-        return NextResponse.json({ error: "Transcript request is too large." }, { status: 413 });
+        return NextResponse.json({ error: "Transcript request is too large." }, { status: 413, headers: privateHeaders });
       }
       chunks.push(chunk.value);
     }
@@ -52,35 +53,35 @@ export async function POST(request: NextRequest, context: Context) {
     try {
       const parsed: unknown = JSON.parse(new TextDecoder().decode(bytes));
       if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-        return NextResponse.json({ error: "Transcript payload must be an object." }, { status: 400 });
+        return NextResponse.json({ error: "Transcript payload must be an object." }, { status: 400, headers: privateHeaders });
       }
       body = parsed as { role?: unknown; content?: unknown; clientMessageId?: unknown };
     } catch {
-      return NextResponse.json({ error: "Invalid transcript JSON." }, { status: 400 });
+      return NextResponse.json({ error: "Invalid transcript JSON." }, { status: 400, headers: privateHeaders });
     }
     if (body.role !== "user" && body.role !== "assistant") {
-      return NextResponse.json({ error: "Transcript speaker must be user or assistant." }, { status: 400 });
+      return NextResponse.json({ error: "Transcript speaker must be user or assistant." }, { status: 400, headers: privateHeaders });
     }
     const role: "user" | "assistant" = body.role;
     if (
       typeof body.clientMessageId !== "string" ||
       !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(body.clientMessageId)
     ) {
-      return NextResponse.json({ error: "A valid transcript message ID is required." }, { status: 400 });
+      return NextResponse.json({ error: "A valid transcript message ID is required." }, { status: 400, headers: privateHeaders });
     }
     if (typeof body.content !== "string" || !body.content.trim()) {
-      return NextResponse.json({ error: "Transcript text is required." }, { status: 400 });
+      return NextResponse.json({ error: "Transcript text is required." }, { status: 400, headers: privateHeaders });
     }
     const content = body.content.trim();
     if (content.length > MAX_TRANSCRIPT_LENGTH) {
-      return NextResponse.json({ error: "Transcript entry is too long." }, { status: 413 });
+      return NextResponse.json({ error: "Transcript entry is too long." }, { status: 413, headers: privateHeaders });
     }
 
     const interview = await db.interview.findUnique({
       where: { id },
       select: { mode: true, status: true, startedAt: true, consentAcceptedAt: true, inviteExpiresAt: true }
     });
-    if (!interview) return NextResponse.json({ error: "Interview not found." }, { status: 404 });
+    if (!interview) return NextResponse.json({ error: "Interview not found." }, { status: 404, headers: privateHeaders });
     if (
       interview.mode !== "live" ||
       interview.status !== "in_progress" ||
@@ -89,10 +90,10 @@ export async function POST(request: NextRequest, context: Context) {
       !interview.inviteExpiresAt ||
       interview.inviteExpiresAt.getTime() <= Date.now()
     ) {
-      return NextResponse.json({ error: "A consented, active live interview is required." }, { status: 409 });
+      return NextResponse.json({ error: "A consented, active live interview is required." }, { status: 409, headers: privateHeaders });
     }
     if (elapsedInterviewSeconds(interview.startedAt) >= INTERVIEW_LIMIT_SECONDS) {
-      return NextResponse.json({ error: "The interview time limit has been reached." }, { status: 409 });
+      return NextResponse.json({ error: "The interview time limit has been reached." }, { status: 409, headers: privateHeaders });
     }
 
     // Re-check the active session inside the transaction so a concurrent report or
@@ -139,7 +140,7 @@ export async function POST(request: NextRequest, context: Context) {
     });
 
     return NextResponse.json({ saved: true }, {
-      headers: { "Cache-Control": "no-store, private" }
+      headers: privateHeaders
     });
   } catch (error) {
     if (error instanceof Error && error.message === "INTERVIEW_NOT_ACTIVE") {
