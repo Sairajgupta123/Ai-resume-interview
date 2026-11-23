@@ -87,6 +87,7 @@ export class GrokRealtimeClient {
           }
         } catch { /* ignore non-JSON events */ }
       };
+      void sessionCreated.catch(() => undefined);
       socket.addEventListener("message", onMessage);
       socket.addEventListener("close", () => {
         window.clearTimeout(timeout);
