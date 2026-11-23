@@ -50,3 +50,23 @@ test("unknown roles and permissions deny access by default", () => {
   assert.equal(hasEmployerPermission("owner", "system:root"), false);
   assert.equal(hasEmployerPermission("admin", null), false);
 });
+
+import { resolveEmployerMembershipAccess } from "../lib/employer-access-policy.mjs";
+
+test("organization access resolves only one membership with the requested permission", () => {
+  assert.deepEqual(
+    resolveEmployerMembershipAccess([{ organizationId: "org-a", role: "recruiter" }], "interview:create"),
+    { organizationId: "org-a", role: "recruiter" }
+  );
+  assert.equal(resolveEmployerMembershipAccess([{ organizationId: "org-a", role: "reviewer" }], "interview:create"), null);
+});
+
+test("organization access fails closed for zero, multiple, or malformed memberships", () => {
+  assert.equal(resolveEmployerMembershipAccess([], "interview:read"), null);
+  assert.equal(resolveEmployerMembershipAccess([
+    { organizationId: "org-a", role: "owner" },
+    { organizationId: "org-b", role: "owner" }
+  ], "interview:read"), null);
+  assert.equal(resolveEmployerMembershipAccess([{ organizationId: " ", role: "owner" }], "interview:read"), null);
+  assert.equal(resolveEmployerMembershipAccess(null, "interview:read"), null);
+});
