@@ -109,6 +109,10 @@ export default function Dashboard() {
               } else if (signal.kind === "hangup") {
                 setLiveCallState("Candidate ended the call.");
                 peer!.close();
+                localStream?.getTracks().forEach(track => track.stop());
+                localStream = null;
+                if (employerLocalRef.current) employerLocalRef.current.srcObject = null;
+                if (employerVideoRef.current) employerVideoRef.current.srcObject = null;
               }
             }
           } catch { /* retry on transient network errors */ }
