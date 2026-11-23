@@ -118,7 +118,12 @@ export async function GET(_request: NextRequest, context: Context) {
       }
     });
     if (!interview) return NextResponse.json({ error: "Interview not found." }, { status: 404, headers });
-    return NextResponse.json({ interview }, { headers });
+    // Expose only whether a recording exists. Keep local paths and private object
+    // keys inside the server so dashboard clients cannot inspect storage layout.
+    const { recordingPath, ...publicInterview } = interview;
+    return NextResponse.json({
+      interview: { ...publicInterview, hasRecording: Boolean(recordingPath) }
+    }, { headers });
   } catch {
     return NextResponse.json({ error: "Could not load interview details." }, { status: 500, headers });
   }
