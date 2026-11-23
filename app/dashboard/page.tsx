@@ -207,7 +207,7 @@ export default function Dashboard() {
           !("decisionHistory" in data.interview) || !Array.isArray(data.interview.decisionHistory)) {
         throw new Error("The interview response was incomplete. Refresh the dashboard and try again.");
       }
-      const interview = data.interview as Item & { employerNotes?: string | null; messages: unknown[]; decisionHistory: unknown[] };
+      const interview = data.interview as Detail;
       setSelected(interview);
       setDecisionNotes(typeof interview.employerNotes === "string" ? interview.employerNotes : "");
     } catch (failure) {
@@ -240,7 +240,7 @@ export default function Dashboard() {
         employerDecision: decision,
         employerNotes: "notes" in data && typeof data.notes === "string" ? data.notes : null,
         decisionAt: "decisionAt" in data && typeof data.decisionAt === "string" ? data.decisionAt : selected.decisionAt,
-        decisionHistory: data.decisionHistory
+        decisionHistory: data.decisionHistory as Detail["decisionHistory"]
       });
       await load();
     } catch (failure) {
