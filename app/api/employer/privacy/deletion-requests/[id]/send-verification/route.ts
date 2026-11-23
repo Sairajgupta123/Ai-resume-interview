@@ -14,7 +14,7 @@ export async function POST(request: Request, context: Context) {
   const interview = await db.interview.findFirst({ where: { id, organizationId: access.organizationId }, select: { id: true } });
   if (!interview) return NextResponse.json({ error: "Interview not found." }, { status: 404 });
 
-  const deletion = await db.privacyDeletionRequest.findFirst({ where: { interviewId: id, interview: { organizationId: access.organizationId } } });
+  const deletion = await db.privacyDeletionRequest.findUnique({ where: { interviewId: id } });
   if (!deletion || deletion.status !== "pending_candidate_verification") return NextResponse.json({ error: "No pending candidate verification request exists." }, { status: 409 });
   if (!deletion.candidateEmailSnapshot) return NextResponse.json({ error: "The deletion request has no candidate email snapshot. Do not verify identity using name alone." }, { status: 409 });
   if (!process.env.RESEND_API_KEY || !process.env.PRIVACY_FROM_EMAIL || !process.env.NEXT_PUBLIC_APP_URL) {
