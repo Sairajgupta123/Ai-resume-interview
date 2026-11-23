@@ -86,27 +86,33 @@ export class GrokRealtimeClient {
     this.socket = socket;
 
     const sessionCreated = new Promise<void>((resolve, reject) => {
-      const timeout = window.setTimeout(() => reject(new Error("AI voice session initialization timed out.")), 15_000);
+      const cleanup = () => {
+        window.clearTimeout(timeout);
+        socket.removeEventListener("message", onMessage);
+        socket.removeEventListener("close", onClose);
+      };
+      const timeout = window.setTimeout(() => {
+        cleanup();
+        reject(new Error("AI voice session initialization timed out."));
+      }, 15_000);
       const onMessage = (event: MessageEvent) => {
         try {
           const payload = JSON.parse(String(event.data)) as RealtimeEvent;
           if (payload.type === "session.created") {
-            window.clearTimeout(timeout);
-            socket.removeEventListener("message", onMessage);
+            cleanup();
             resolve();
           } else if (payload.type === "error") {
-            window.clearTimeout(timeout);
-            socket.removeEventListener("message", onMessage);
+            cleanup();
             reject(new Error(payload.error?.message || "AI voice session initialization failed."));
           }
         } catch { /* ignore non-JSON events */ }
       };
-      socket.addEventListener("message", onMessage);
-      socket.addEventListener("close", () => {
-        window.clearTimeout(timeout);
-        socket.removeEventListener("message", onMessage);
+      const onClose = () => {
+        cleanup();
         reject(new Error("AI voice connection closed during initialization."));
-      }, { once: true });
+      };
+      socket.addEventListener("message", onMessage);
+      socket.addEventListener("close", onClose, { once: true });
     });
     // Attach after initialization; referencing this promise in its executor hits the temporal dead zone.
     void sessionCreated.catch(() => undefined);
