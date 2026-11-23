@@ -3,8 +3,17 @@ import assert from "node:assert/strict";
 import { buildCandidateComparison } from "../lib/candidate-comparison-policy.mjs";
 
 const candidate = (id, name, role, skills, score = 80) => ({
-  id, candidateName: name, role, overallScore: score, recommendation: "Consider",
-  reportJson: JSON.stringify({ skills })
+  id, candidateName: name, role, overallScore: score, recommendation: "Strong match",
+  reportJson: JSON.stringify({
+    overallScore: score,
+    recommendation: "Strong match",
+    summary: "Demonstrated job-related technical knowledge.",
+    strengths: [],
+    improvementAreas: [],
+    skills,
+    questionFeedback: [],
+    disclaimer: "AI assessment is advisory and requires human review."
+  })
 });
 
 test("compares skill evidence across candidates without choosing a winner", () => {
@@ -55,24 +64,28 @@ test("rejects fewer than two or more than three candidates", () => {
   assert.throws(() => buildCandidateComparison([candidate("a", "A", "Engineer", [{ skill: "SQL", rating: "Good", evidence: "I used SQL" }])]), /two and three/);
 });
 
-test("rejects missing or malformed skill reports", () => {
+test("rejects missing, malformed or incomplete reports", () => {
   assert.throws(() => buildCandidateComparison([
     candidate("a", "A", "Engineer", [{ skill: "SQL", rating: "Good", evidence: "I used SQL" }]),
     { id: "b", candidateName: "B", role: "Engineer", reportJson: "{broken" }
   ]), /valid completed report/);
+  assert.throws(() => buildCandidateComparison([
+    candidate("a", "A", "Engineer", [{ skill: "SQL", rating: "Good", evidence: "I used SQL" }]),
+    { id: "b", candidateName: "B", role: "Engineer", reportJson: JSON.stringify({ skills: [{ skill: "SQL", rating: "Good", evidence: "I used SQL" }] }) }
+  ]), /valid completed report/);
 });
 
-test("rejects invalid candidate identifiers and clamps untrusted score and recommendation metadata", () => {
+test("rejects invalid candidate identifiers and uses validated report metadata over stale columns", () => {
   assert.throws(() => buildCandidateComparison([
     candidate("", "A", "Engineer", [{ skill: "SQL", rating: "Good", evidence: "I used SQL" }]),
     candidate("b", "B", "Engineer", [{ skill: "SQL", rating: "Good", evidence: "I used SQL" }])
   ]), /valid completed report/);
   const result = buildCandidateComparison([
-    { ...candidate("a", "A", "Engineer", [{ skill: "SQL", rating: "Good", evidence: "I used SQL" }], 999), recommendation: "Guaranteed hire" },
+    { ...candidate("a", "A", "Engineer", [{ skill: "SQL", rating: "Good", evidence: "I used SQL" }], 80), overallScore: 999, recommendation: "Guaranteed hire" },
     candidate("b", "B", "Engineer", [{ skill: "SQL", rating: "Good", evidence: "I used SQL" }])
   ]);
-  assert.equal(result.candidates[0].overallScore, null);
-  assert.equal(result.candidates[0].recommendation, "Needs review");
+  assert.equal(result.candidates[0].overallScore, 80);
+  assert.equal(result.candidates[0].recommendation, "Strong match");
 });
 
 test("treats oversized or malformed skill evidence as insufficient evidence", () => {
