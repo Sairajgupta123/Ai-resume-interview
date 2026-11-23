@@ -57,6 +57,7 @@ export default function Home() {
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const cameraRequestRef = useRef(false);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const recordingCompleteRef = useRef<Promise<boolean> | null>(null);
   const recordingSavedRef = useRef(false);
@@ -654,18 +655,30 @@ export default function Home() {
   };
 
   const enableCamera = async (targetSessionId = sessionId) => {
+    if (cameraRequestRef.current) return;
+    cameraRequestRef.current = true;
+    let acquiredStream: MediaStream | null = null;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
-      streamRef.current = stream;
-      if (videoRef.current) videoRef.current.srcObject = stream;
+      acquiredStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+      // A second stream must never silently replace tracks still used by recording or live voice.
+      streamRef.current?.getTracks().forEach(track => track.stop());
+      streamRef.current = acquiredStream;
+      if (videoRef.current) videoRef.current.srcObject = acquiredStream;
       setCameraOn(true);
       const cached = targetSessionId ? await getCachedRecording(targetSessionId).catch(() => null) : null;
+      if (streamRef.current !== acquiredStream || acquiredStream.getTracks().every(track => track.readyState !== "live")) return;
       if (cached?.chunks.length) {
         setRecoverableRecording(true);
       } else {
-        startRecording(stream, targetSessionId);
+        startRecording(acquiredStream, targetSessionId);
       }
-    } catch { setError("Camera/microphone permission was not granted. You can still answer by typing."); }
+    } catch {
+      acquiredStream?.getTracks().forEach(track => track.stop());
+      if (streamRef.current === acquiredStream) streamRef.current = null;
+      setError("Camera/microphone permission was not granted. You can still answer by typing.");
+    } finally {
+      cameraRequestRef.current = false;
+    }
   };
 
   const toggleRecording = () => {
