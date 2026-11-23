@@ -100,14 +100,11 @@ test("rejects invalid candidate identifiers and uses validated report metadata o
   assert.equal(result.candidates[0].recommendation, "Strong match");
 });
 
-test("treats oversized or malformed skill evidence as insufficient evidence", () => {
-  const result = buildCandidateComparison([
+test("rejects oversized evidence in a report before comparison", () => {
+  assert.throws(() => buildCandidateComparison([
     candidate("a", "A", "Engineer", [{ skill: "SQL", rating: "Strong", evidence: "x".repeat(1201) }]),
     candidate("b", "B", "Engineer", [{ skill: "SQL", rating: "Good", evidence: "I used SQL queries" }])
-  ]);
-  assert.equal(result.skills[0].candidates[0].rating, "Insufficient evidence");
-  assert.equal(result.skills[0].candidates[0].evidence, "Insufficient evidence");
-  assert.equal(result.candidates[0].evidenceSkillCount, 0);
+  ]), /valid completed report/);
 });
 
 test("does not promote missing evidence into a positive rating", () => {
