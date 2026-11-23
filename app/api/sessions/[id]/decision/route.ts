@@ -72,7 +72,19 @@ export async function POST(request: NextRequest, context: Context) {
         decisionAt: new Date()
       }, select: { employerDecision: true, employerNotes: true, decisionAt: true } })
     ]);
-    return NextResponse.json({ ok: true, decision: updated.employerDecision, notes: updated.employerNotes, decisionAt: updated.decisionAt });
+    const decisionHistory = await db.employerDecisionHistory.findMany({
+      where: { interviewId: id },
+      orderBy: { createdAt: "desc" },
+      take: 50,
+      select: { id: true, decision: true, notes: true, createdAt: true }
+    });
+    return NextResponse.json({
+      ok: true,
+      decision: updated.employerDecision,
+      notes: updated.employerNotes,
+      decisionAt: updated.decisionAt,
+      decisionHistory
+    });
   } catch {
     return NextResponse.json({ error: "Could not save employer decision." }, { status: 500 });
   }
