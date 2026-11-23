@@ -35,14 +35,22 @@ The current shared employer session is an authentication gate, not an organizati
 ## Target model before multi-company use
 
 1. **Identity:** replace the shared environment-variable login with individual employer identities. Store password hashes using a suitable password-hashing algorithm; never store plaintext passwords.
-2. **Organizations and membership:** add `EmployerOrganization` and `EmployerMembership` records. Membership must link a user to an organization and carry a server-validated role such as owner, admin, recruiter, or reviewer.
-3. **Tenant ownership:** add a required `organizationId` relation to every employer-owned interview and related employer data. Backfill existing interviews to one explicitly created legacy organization before making the relation required.
+2. **Organizations and membership:** schema foundation is present: `EmployerUser`, `EmployerOrganization`, and `EmployerMembership`. Membership links a user to an organization and carries a role. The pure permission matrix is present, but no authentication or API route consumes it yet.
+3. **Tenant ownership:** `Interview.organizationId` is currently nullable as a safe additive schema step. Create one explicit legacy organization, backfill every existing interview and related employer-owned data, verify there are no unowned rows, then make ownership required before enabling tenant-scoped APIs.
 4. **Session claims:** sign a session containing a stable employer user ID and session version/expiry. Resolve active organization membership server-side on each request; do not trust an organization ID supplied only by the browser.
 5. **Scoped data access:** every employer list, detail, export, comparison, analytics, audit, recording, invitation, decision, retention, and deletion query must be constrained by the authenticated organization. For ID-based operations, first prove the interview belongs to that organization. Return a consistent not-found response for foreign-tenant IDs to avoid disclosing their existence.
 6. **Audit attribution:** attach actor user ID and organization ID to employer decision and security audit events. Preserve the current minimal recording-access event semantics; a prepared response is not proof of viewing.
 7. **Role authorization:** enforce server-side permissions for inviting candidates, reviewing reports, making decisions, exporting data, managing members, and approving/executing deletion requests. Authentication alone must not imply every permission.
 8. **Migration safety:** use a staged migration with a backup, explicit legacy-organization backfill, integrity checks, and rollback plan. Do not create a nullable organization field and leave unowned interviews silently accessible.
 9. **Verification:** add integration tests with two organizations proving that cross-tenant list, detail, recording, export, comparison, decision, audit, invitation, analytics, and deletion access is denied. Include role-matrix tests and candidate-invitation regression tests.
+
+## Implementation progress
+
+- [x] Add organization, employer-user, and membership schema foundations without changing existing interview ownership.
+- [x] Add a tested, deny-by-default role-permission matrix.
+- [ ] Create and verify a legacy organization; backfill existing interviews before making ownership required.
+- [ ] Replace shared login with individual employer identity and organization-aware sessions.
+- [ ] Enforce organization scoping and role permissions across every employer API.
 
 ## Recommended implementation order
 
