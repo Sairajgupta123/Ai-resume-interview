@@ -126,38 +126,42 @@ async function deleteRecording(storedPath: string) {
 
 export async function POST(request: NextRequest, context: Context) {
   const { id } = await context.params;
+  const privateHeaders = { "Cache-Control": "private, no-store, max-age=0" };
+  // Authenticate before looking up the interview so unauthorised callers cannot
+  // distinguish a missing interview from an existing one or inspect its state.
+  const employer = await isEmployerAuthenticated();
+  const candidate = employer ? false : await hasValidCandidateInvitation(id, getCandidateInvitationToken(request, id));
+  if (!employer && !candidate) {
+    return NextResponse.json({ error: "Unauthorized recording upload." }, { status: 401, headers: privateHeaders });
+  }
   try {
     const interview = await db.interview.findUnique({
       where: { id },
       select: { id: true, recordingPath: true, status: true, consentAcceptedAt: true, startedAt: true }
     });
-    if (!interview) return NextResponse.json({ error: "Interview not found." }, { status: 404 });
+    if (!interview) return NextResponse.json({ error: "Interview not found." }, { status: 404, headers: privateHeaders });
     if (interview.status === "completed") {
-      return NextResponse.json({ error: "Recording uploads are closed for completed interviews." }, { status: 409 });
+      return NextResponse.json({ error: "Recording uploads are closed for completed interviews." }, { status: 409, headers: privateHeaders });
     }
     if (!interview.consentAcceptedAt || !interview.startedAt || interview.status !== "in_progress") {
-      return NextResponse.json({ error: "Recording is only accepted after the candidate has consented and started the interview." }, { status: 403 });
+      return NextResponse.json({ error: "Recording is only accepted after the candidate has consented and started the interview." }, { status: 403, headers: privateHeaders });
     }
-
-    const employer = await isEmployerAuthenticated();
-    const candidate = await hasValidCandidateInvitation(id, getCandidateInvitationToken(request, id));
-    if (!employer && !candidate) return NextResponse.json({ error: "Unauthorized recording upload." }, { status: 401 });
 
     const contentLength = Number(request.headers.get("content-length") || 0);
     if (!Number.isSafeInteger(contentLength) || contentLength < 0 || contentLength > MAX_RECORDING_BYTES + 1024 * 1024) {
-      return NextResponse.json({ error: "Recording upload exceeds the 100 MB limit." }, { status: 413 });
+      return NextResponse.json({ error: "Recording upload exceeds the 100 MB limit." }, { status: 413, headers: privateHeaders });
     }
     const form = await request.formData();
     const file = form.get("recording");
-    if (!(file instanceof File)) return NextResponse.json({ error: "Recording file is required." }, { status: 400 });
+    if (!(file instanceof File)) return NextResponse.json({ error: "Recording file is required." }, { status: 400, headers: privateHeaders });
     const mimeType = file.type.split(";")[0].trim();
     if (file.size < 1 || file.size > MAX_RECORDING_BYTES) {
-      return NextResponse.json({ error: "Recording must be smaller than 100 MB." }, { status: 413 });
+      return NextResponse.json({ error: "Recording must be smaller than 100 MB." }, { status: 413, headers: privateHeaders });
     }
     const bytes = Buffer.from(await file.arrayBuffer());
     const validation = inspectRecordingUpload(mimeType, file.size, bytes);
     if (!validation.ok) {
-      return NextResponse.json({ error: validation.error }, { status: validation.status });
+      return NextResponse.json({ error: validation.error }, { status: validation.status, headers: privateHeaders });
     }
     const extension = validation.extension;
 
@@ -177,9 +181,9 @@ export async function POST(request: NextRequest, context: Context) {
     });
 
     if (!replacement.ok) {
-      return NextResponse.json({ error: "The interview changed while this recording was uploading. Please retry." }, { status: 409 });
+      return NextResponse.json({ error: "The interview changed while this recording was uploading. Please retry." }, { status: 409, headers: privateHeaders });
     }
-    return NextResponse.json({ ok: true, message: "Recording saved to private storage." });
+    return NextResponse.json({ ok: true, message: "Recording saved to private storage." }, { headers: privateHeaders });
   } catch (error) {
     const message = error instanceof Error ? error.message : "";
     const missingConfiguration = message.includes("Configure S3_ENDPOINT") || message.includes("Private cloud recording storage is not configured");
@@ -190,7 +194,7 @@ export async function POST(request: NextRequest, context: Context) {
         : storageUnavailable
           ? "Private recording storage is temporarily unavailable. Please retry."
           : "Could not save recording on the server."
-    }, { status: missingConfiguration ? 503 : storageUnavailable ? 502 : 500 });
+    }, { status: missingConfiguration ? 503 : storageUnavailable ? 502 : 500, headers: privateHeaders });
   }
 }
 
