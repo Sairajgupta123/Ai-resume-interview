@@ -200,14 +200,14 @@ export async function POST(request: NextRequest, context: Context) {
 
 export async function GET(request: NextRequest, context: Context) {
   if (!(await isEmployerAuthenticated())) {
-    return NextResponse.json({ error: "Unauthorized." }, { status: 401, headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json({ error: "Unauthorized." }, { status: 401, headers: { "Cache-Control": "private, no-store, max-age=0", Pragma: "no-cache" } });
   }
   const { id } = await context.params;
   const interview = await db.interview.findUnique({ where: { id }, select: { recordingPath: true } });
   if (!interview?.recordingPath) {
     return NextResponse.json({ error: "No recording is available." }, {
       status: 404,
-      headers: { "Cache-Control": "private, no-store, max-age=0" }
+      headers: { "Cache-Control": "private, no-store, max-age=0", Pragma: "no-cache" }
     });
   }
 
