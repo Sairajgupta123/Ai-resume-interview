@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { isEmployerAuthenticated } from "@/lib/auth";
+import { getEmployerOrganizationAccess, getEmployerSession, isEmployerAuthenticated } from "@/lib/auth";
 import { getCandidateInvitationToken, hasValidCandidateInvitation } from "@/lib/invitation";
 import { elapsedInterviewSeconds, INTERVIEW_LIMIT_SECONDS } from "@/lib/interview-policy.mjs";
 
@@ -48,10 +48,16 @@ export async function PUT(request: NextRequest, context: Context) {
 }
 
 export async function GET(_request: NextRequest, context: Context) {
-  if (!(await isEmployerAuthenticated())) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+  const session = await getEmployerSession();
+  if (!session) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+  const access = session.kind === "user"
+    ? await getEmployerOrganizationAccess("interview:read")
+    : null;
+  if (session.kind === "user" && !access) return NextResponse.json({ error: "An active single-organization membership with interview read permission is required." }, { status: 403 });
   const { id } = await context.params;
-  const interview = await db.interview.findUnique({
-    where: { id }, include: { messages: { orderBy: { createdAt: "asc" } }, decisionHistory: { orderBy: { createdAt: "desc" } } }
+  const interview = await db.interview.findFirst({
+    where: { id, ...(access ? { organizationId: access.organizationId } : {}) },
+    include: { messages: { orderBy: { createdAt: "asc" } }, decisionHistory: { orderBy: { createdAt: "desc" } } }
   });
   if (!interview) return NextResponse.json({ error: "Interview not found." }, { status: 404 });
   return NextResponse.json(
