@@ -48,6 +48,7 @@ The current shared employer session is an authentication gate, not an organizati
 
 - [x] Add organization, employer-user, and membership schema foundations without changing existing interview ownership.
 - [x] Add a tested, deny-by-default role-permission matrix.
+- [x] Add fail-closed Prisma query-scope builders and tests proving that missing organization identity cannot produce an unscoped query.
 - [ ] Create and verify a legacy organization; backfill existing interviews before making ownership required.
 - [ ] Replace shared login with individual employer identity and organization-aware sessions.
 - [ ] Enforce organization scoping and role permissions across every employer API.
