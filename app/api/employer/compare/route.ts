@@ -6,15 +6,50 @@ import { buildCandidateComparison } from "@/lib/candidate-comparison-policy.mjs"
 export const runtime = "nodejs";
 
 export async function POST(request: NextRequest) {
+  const headers = { "Cache-Control": "private, no-store, max-age=0" };
   if (!(await isEmployerAuthenticated())) {
-    return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+    return NextResponse.json({ error: "Unauthorized." }, { status: 401, headers });
   }
   try {
-    const body = await request.json();
-    const rawIds: unknown[] = Array.isArray(body?.interviewIds) ? body.interviewIds : [];
-    const ids: string[] = Array.from(new Set<string>(
-      rawIds.filter((id): id is string => typeof id === "string" && id.length > 0)
-    ));
+    if (!(request.headers.get("content-type") || "").toLowerCase().includes("application/json")) {
+      return NextResponse.json({ error: "A JSON comparison request is required." }, { status: 415, headers });
+    }
+    const declaredLength = request.headers.get("content-length");
+    if (declaredLength !== null) {
+      const size = Number(declaredLength);
+      if (!Number.isSafeInteger(size) || size < 0) return NextResponse.json({ error: "Invalid request content length." }, { status: 400, headers });
+      if (size > 4_096) return NextResponse.json({ error: "Comparison request is too large." }, { status: 413, headers });
+    }
+    const reader = request.body?.getReader();
+    if (!reader) return NextResponse.json({ error: "A comparison request body is required." }, { status: 400, headers });
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    while (true) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      total += chunk.value.byteLength;
+      if (total > 4_096) {
+        await reader.cancel().catch(() => undefined);
+        return NextResponse.json({ error: "Comparison request is too large." }, { status: 413, headers });
+      }
+      chunks.push(chunk.value);
+    }
+    const bytes = new Uint8Array(total);
+    let offset = 0;
+    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+    const body: unknown = JSON.parse(new TextDecoder().decode(bytes));
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return NextResponse.json({ error: "Invalid comparison request." }, { status: 400, headers });
+    }
+    const rawIds: unknown[] = Array.isArray((body as { interviewIds?: unknown }).interviewIds)
+      ? (body as { interviewIds: unknown[] }).interviewIds
+      : [];
+    if (rawIds.length < 2 || rawIds.length > 3 ||
+        rawIds.some(id => typeof id !== "string" || !id.trim() || id.length > 128) ||
+        new Set(rawIds).size !== rawIds.length) {
+      return NextResponse.json({ error: "Select two or three different valid candidates." }, { status: 400, headers });
+    }
+    const ids = rawIds as string[];
     if (ids.length < 2 || ids.length > 3) {
       return NextResponse.json({ error: "Select between two and three candidates." }, { status: 400 });
     }
@@ -26,15 +61,15 @@ export async function POST(request: NextRequest) {
       }
     });
     if (interviews.length !== ids.length) {
-      return NextResponse.json({ error: "One or more selected interviews are unavailable or incomplete." }, { status: 404 });
+      return NextResponse.json({ error: "One or more selected interviews are unavailable or incomplete." }, { status: 404, headers });
     }
     const result = buildCandidateComparison(interviews);
-    return NextResponse.json({ comparison: result });
+    return NextResponse.json({ comparison: result }, { headers });
   } catch (error) {
     const message = error instanceof Error ? error.message : "";
     if (message.startsWith("Select") || message.startsWith("Every selected")) {
-      return NextResponse.json({ error: message }, { status: 400 });
+      return NextResponse.json({ error: message }, { status: 400, headers });
     }
-    return NextResponse.json({ error: "Could not compare the selected candidates." }, { status: 500 });
+    return NextResponse.json({ error: "Could not compare the selected candidates." }, { status: 500, headers });
   }
 }
