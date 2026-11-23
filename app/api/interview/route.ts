@@ -489,11 +489,12 @@ export async function POST(request: NextRequest) {
       }
       try {
         const history = body.sessionId
-          ? await db.interviewMessage.findMany({
+          ? restoreChronologicalOrder(await db.interviewMessage.findMany({
               where: { interviewId: body.sessionId },
-              orderBy: { createdAt: "asc" }, take: 200,
+              // Evaluate the most recent bounded transcript, not only its oldest turns.
+              orderBy: { createdAt: "desc" }, take: 200,
               select: { role: true, content: true }
-            })
+            }))
           : (body.history || []).slice(-40);
         if (body.sessionId && history.filter(message => message.role === "user").length === 0) {
           return NextResponse.json({ error: "No candidate answers are available to evaluate yet." }, { status: 409 });
