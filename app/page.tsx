@@ -490,6 +490,7 @@ export default function Home() {
           setVoiceStatus("unavailable");
         },
         onTranscript: (speaker, text) => {
+          const clientMessageId = crypto.randomUUID();
           transcriptWriteRef.current = transcriptWriteRef.current.then(async () => {
             let lastError: Error | null = null;
             for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -498,7 +499,7 @@ export default function Home() {
                   method: "POST",
                   credentials: "same-origin",
                   headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ role: speaker, content: text })
+                  body: JSON.stringify({ role: speaker, content: text, clientMessageId })
                 });
                 const result = await response.json();
                 if (!response.ok) throw new Error(result.error || "Could not save the live transcript.");
