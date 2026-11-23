@@ -442,11 +442,24 @@ export default function Home() {
           if (blob.size < 1) throw new Error("The browser did not produce a video recording. Please retry.");
           const form = new FormData();
           form.append("recording", blob, filename);
-          const response = await fetch(`/api/sessions/${targetSessionId}/recording`, {
-            method: "POST",
-            credentials: "same-origin",
-            body: form
-          });
+          const uploadController = new AbortController();
+          const uploadTimeout = window.setTimeout(() => uploadController.abort(), 45_000);
+          let response: Response;
+          try {
+            response = await fetch(`/api/sessions/${targetSessionId}/recording`, {
+              method: "POST",
+              credentials: "same-origin",
+              body: form,
+              signal: uploadController.signal
+            });
+          } catch (uploadError) {
+            if (uploadController.signal.aborted) {
+              throw new Error("Recording upload timed out after 45 seconds. Your locally saved segments will be kept for recovery.");
+            }
+            throw uploadError;
+          } finally {
+            window.clearTimeout(uploadTimeout);
+          }
           const data = await response.json();
           if (!response.ok) throw new Error(data.error || "Recording upload failed.");
           recordingSavedRef.current = true;
