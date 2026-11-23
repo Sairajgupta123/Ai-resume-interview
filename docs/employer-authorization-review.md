@@ -11,7 +11,7 @@ This review covers the employer login/session model, candidate interview ownersh
 - Sessions expire after 12 hours and are invalidated when the account is disabled, loses all valid memberships, or its `sessionVersion` changes.
 - Login attempts remain rate-limited through the `LoginAttempt` table.
 - The session resolver returns the user's organization memberships and roles from the database; it does not trust organization IDs or roles supplied by the browser.
-- **Authorization rollout is partial:** organization membership and role checks are now applied to interview creation/listing, interview detail, decisions, exports, invitation renewal, candidate comparisons, analytics, audit history, recording playback, and live signalling. Multi-organization accounts are deliberately denied these endpoints until an organization-selection flow exists. Privacy-deletion endpoints and several other employer/candidate routes still need review and enforcement. The system is not yet safe for general multi-company onboarding.
+- **Authorization rollout is partial:** organization membership and role checks are now applied to interview creation/listing, interview detail, decisions, exports, invitation renewal, candidate comparisons, analytics, audit history, recording playback, and live signalling. Multi-organization accounts are deliberately denied these endpoints until an organization-selection flow exists. Privacy-deletion request, candidate-verification email, approval, execution, and retention-preview routes now require owner/admin permissions and are scoped through the related interview organization. Several other employer/candidate routes still need review and enforcement. The system is not yet safe for general multi-company onboarding.
 
 ## Protected employer data surfaces reviewed
 
@@ -24,13 +24,14 @@ The following routes require the shared employer session before returning or cha
 - `POST /api/sessions/[id]/decision` — records employer decisions.
 - `POST /api/sessions/[id]/invite` and `POST /api/sessions` — creates or reissues candidate invitations.
 - `POST /api/employer/sessions`, `GET /api/employer/analytics`, `GET /api/employer/audit`, and `POST /api/employer/compare`.
-- Employer privacy/deletion and retention routes under `/api/employer/privacy/*`.
+- `GET/POST /api/employer/privacy/deletion-requests` and the request detail, verification-email, approval, and execution routes. These require owner/admin privacy permissions and scope through the linked interview organization.
+- `GET /api/employer/privacy/retention` — owner/admin-only retention preview scoped to the current organization.
 
 Candidate-facing access is separate: invitation tokens are stored as hashes, the one-time invitation is exchanged through a POST body, and subsequent candidate requests use a session-scoped HttpOnly cookie. Candidate access is checked against the requested interview ID. Candidate endpoints must continue to avoid returning employer-only decisions, reports, recording storage paths, or other candidates' data.
 
 ## Important limitation
 
-The current shared employer session is an authentication gate, not an organization-level authorization decision. Since all interviews are global to that account, adding multiple employer logins without adding ownership and tenant scoping would expose one company's candidate data to another. Do not enable multiple organizations or invite external employer accounts until the target controls below are implemented and tested.
+The legacy shared employer session is still a temporary compatibility path for older core APIs, but privacy-management endpoints deliberately reject it because it has no organization identity. Since all interviews are global to that account, adding multiple employer logins without adding ownership and tenant scoping would expose one company's candidate data to another. Do not enable multiple organizations or invite external employer accounts until the target controls below are implemented and tested.
 
 ## Target model before multi-company use
 
@@ -55,8 +56,9 @@ The current shared employer session is an authentication gate, not an organizati
 - [x] Add a session-version field to support future server-side session revocation.
 - [ ] Execute the organization backfill and initial-owner bootstrap against a backed-up local database.
 - [ ] Back up the real database, review dry-run counts, apply the backfill, and verify zero unassigned interviews before making ownership required.
-- [ ] Replace shared login with individual employer identity and organization-aware sessions.
-- [ ] Enforce organization scoping and role permissions across every employer API.
+- [x] Replace shared login with individual employer identity and organization-aware sessions (legacy fallback remains only until the first DB-backed user exists).
+- [x] Enforce organization scoping and owner/admin permissions on privacy deletion requests, verification email, approval, execution, and retention preview.
+- [ ] Enforce organization scoping and role permissions across every remaining employer API and candidate-facing edge case.
 
 ## Legacy organization backfill procedure
 
