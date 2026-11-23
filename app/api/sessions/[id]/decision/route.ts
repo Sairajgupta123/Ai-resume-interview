@@ -9,12 +9,22 @@ export async function POST(request: NextRequest, context: Context) {
   if (!(await isEmployerAuthenticated())) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   const { id } = await context.params;
   try {
-    const body = await request.json();
-    const decision = String(body.decision || "").toLowerCase();
+    const body: unknown = await request.json();
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return NextResponse.json({ error: "A valid decision payload is required." }, { status: 400 });
+    }
+    const payload = body as Record<string, unknown>;
+    const decision = typeof payload.decision === "string" ? payload.decision.trim().toLowerCase() : "";
     if (!decisions.includes(decision as typeof decisions[number])) {
       return NextResponse.json({ error: "Choose shortlist, review or reject." }, { status: 400 });
     }
-    const notes = String(body.notes || "").trim().slice(0, 3000);
+    if (payload.notes !== undefined && payload.notes !== null && typeof payload.notes !== "string") {
+      return NextResponse.json({ error: "Decision notes must be plain text." }, { status: 400 });
+    }
+    const notes = typeof payload.notes === "string" ? payload.notes.trim() : "";
+    if (notes.length > 3000) {
+      return NextResponse.json({ error: "Decision notes must be 3,000 characters or fewer." }, { status: 413 });
+    }
     const interview = await db.interview.findUnique({ where: { id }, select: { id: true } });
     if (!interview) return NextResponse.json({ error: "Interview not found." }, { status: 404 });
     const [, updated] = await db.$transaction([
