@@ -670,8 +670,6 @@ export default function Home() {
     let acquiredStream: MediaStream | null = null;
     try {
       acquiredStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
-      // A second stream must never silently replace tracks still used by recording or live voice.
-      streamRef.current?.getTracks().forEach(track => track.stop());
       streamRef.current = acquiredStream;
       if (videoRef.current) videoRef.current.srcObject = acquiredStream;
       setCameraOn(true);
