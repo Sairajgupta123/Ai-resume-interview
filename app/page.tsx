@@ -496,7 +496,7 @@ export default function Home() {
       if (!cached || cached.chunks.length === 0) throw new Error("No recoverable recording segments were found.");
       const blob = new Blob(cached.chunks, { type: cached.mimeType || "video/webm" });
       if (blob.size < 1) throw new Error("The recovered recording is empty.");
-      const extension = cached.mimeType.includes("mp4") ? "mp4" : "webm";
+      const extension = cached.mimeType.includes("quicktime") ? "mov" : cached.mimeType.includes("mp4") ? "mp4" : "webm";
       const form = new FormData();
       form.append("recording", blob, `mzobs-recovered-${Date.now()}.${extension}`);
       const uploadController = new AbortController();
@@ -588,7 +588,7 @@ export default function Home() {
             throw new Error("Recording stopped after a browser error. The video was not uploaded; recover saved segments or continue without video.");
           }
           const type = recorder.mimeType || "video/webm";
-          const extension = type.includes("mp4") ? "mp4" : "webm";
+          const extension = type.includes("quicktime") ? "mov" : type.includes("mp4") ? "mp4" : "webm";
           const filename = `mzobs-interview-${Date.now()}.${extension}`;
           const blob = new Blob(chunks, { type });
           if (!targetSessionId) throw new Error("Interview session is not available for recording upload.");
