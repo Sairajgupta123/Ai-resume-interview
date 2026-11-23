@@ -476,8 +476,10 @@ export default function Home() {
       instructions,
       initialMessage: openingMessage,
       callbacks: {
-        onStatus: status => setVoiceStatus(status === "connected" ? "connected" : "off"),
+        onStatus: status => setVoiceStatus(status),
         onError: message => {
+          grokVoiceRef.current?.close();
+          grokVoiceRef.current = null;
           setError(message);
           setVoiceStatus("unavailable");
         },
