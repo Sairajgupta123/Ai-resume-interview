@@ -15,7 +15,7 @@ export default function NewInterview() {
   const [error,setError]=useState("");
 
   const create=async(e:React.FormEvent)=>{
-    e.preventDefault();setBusy(true);setError("");setInviteUrl("");
+    e.preventDefault();setBusy(true);setError("");setInviteUrl("");setCopied(false);
     try {
       const response=await fetch("/api/employer/sessions",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({candidateName,candidateEmail,role,resume,jobDescription,mode})});
       const data:unknown=await response.json();
