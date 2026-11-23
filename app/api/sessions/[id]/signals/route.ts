@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { isEmployerAuthenticated } from "@/lib/auth";
 import { getCandidateInvitationToken, hasValidCandidateInvitation } from "@/lib/invitation";
+import { validateSignalPayload } from "@/lib/signalling-policy.mjs";
 
 export const runtime = "nodejs";
 type Context = { params: Promise<{ id: string }> };
@@ -91,8 +92,12 @@ export async function POST(request: NextRequest, context: Context) {
   try {
     const body = await readSignalBody(request);
     if (!body) return NextResponse.json({ error: "Send a valid signalling JSON body smaller than 32 KB." }, { status: 400, headers });
-    if (typeof body.kind !== "string" || !allowed.has(body.kind) || typeof body.payload !== "string" || body.payload.length > 24000) {
+    if (typeof body.kind !== "string" || !allowed.has(body.kind) || typeof body.payload !== "string") {
       return NextResponse.json({ error: "Invalid signalling message." }, { status: 400, headers });
+    }
+    const validation = validateSignalPayload(body.kind, body.payload, sender);
+    if (!validation.ok) {
+      return NextResponse.json({ error: validation.error }, { status: 400, headers });
     }
     const interview = await db.interview.findUnique({ where: { id }, select: { mode: true, status: true, startedAt: true, consentAcceptedAt: true } });
     if (!interview) return NextResponse.json({ error: "Interview not found." }, { status: 404, headers });
