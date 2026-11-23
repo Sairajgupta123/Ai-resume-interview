@@ -38,6 +38,7 @@ type Payload = {
   history?: Message[];
   answer?: string;
   sessionId?: string;
+  requestId?: string;
   consentAccepted?: boolean;
 };
 
@@ -256,6 +257,37 @@ export async function POST(request: NextRequest) {
       if (!answer) return NextResponse.json({ error: "Please provide an answer before submitting." }, { status: 400 });
       if (answer.length > 12000) return NextResponse.json({ error: "Answer is too long. Please keep it under 12,000 characters." }, { status: 413 });
       body.answer = answer;
+      if (typeof body.requestId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(body.requestId)) {
+        return NextResponse.json({ error: "A valid answer request ID is required. Please retry." }, { status: 400 });
+      }
+      // If the previous response was lost after the transaction committed, return
+      // the saved interviewer turn rather than evaluating or storing the answer twice.
+      const previousAnswer = await db.interviewMessage.findUnique({
+        where: { clientMessageId: body.requestId },
+        select: { interviewId: true, role: true, createdAt: true }
+      });
+      if (previousAnswer) {
+        if (previousAnswer.interviewId !== body.sessionId || previousAnswer.role !== "user") {
+          return NextResponse.json({ error: "This answer request ID has already been used." }, { status: 409 });
+        }
+        const savedTurn = await db.interviewMessage.findFirst({
+          where: {
+            interviewId: body.sessionId,
+            role: "assistant",
+            createdAt: { gt: previousAnswer.createdAt }
+          },
+          orderBy: { createdAt: "asc" },
+          select: { content: true }
+        });
+        if (!savedTurn) return NextResponse.json({ error: "Your answer is still being processed. Please retry shortly." }, { status: 409 });
+        const response = NextResponse.json({
+          message: savedTurn.content,
+          done: false,
+          focus: "Interview follow-up",
+          timeLimitReached: !!startedAt && elapsedInterviewSeconds(startedAt) >= INTERVIEW_LIMIT_SECONDS
+        });
+        return attachCandidateCookie(response, request, body.sessionId!, invitationExpiresAt);
+      }
     }
 
     const context = [
@@ -406,6 +438,7 @@ export async function POST(request: NextRequest) {
                   interviewId: body.sessionId!,
                   role: "user",
                   content: body.answer!,
+                  clientMessageId: body.requestId!,
                   createdAt: userMessageAt
                 },
                 {
