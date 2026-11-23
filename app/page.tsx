@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { cacheRecordingChunk, clearCachedRecording, getCachedRecording } from "@/lib/recording-cache";
+import { GrokRealtimeClient } from "@/lib/grok-realtime-client";
 
 type ChatMessage = { role: "assistant" | "user"; content: string };
 type Report = {
@@ -51,6 +52,7 @@ export default function Home() {
   const [recoverableRecording, setRecoverableRecording] = useState(false);
   const [seconds, setSeconds] = useState(0);
   const [listening, setListening] = useState(false);
+  const [voiceStatus, setVoiceStatus] = useState<"off" | "connecting" | "connected" | "unavailable">("off");
   const videoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
@@ -64,6 +66,8 @@ export default function Home() {
   const recordingPersistenceFailedRef = useRef(false);
   const finishStartedRef = useRef(false);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const grokVoiceRef = useRef<GrokRealtimeClient | null>(null);
+  const transcriptWriteRef = useRef<Promise<void>>(Promise.resolve());
   const transcriptEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -201,6 +205,8 @@ export default function Home() {
 
   useEffect(() => () => {
     recognitionRef.current?.stop();
+    grokVoiceRef.current?.close();
+    grokVoiceRef.current = null;
     streamRef.current?.getTracks().forEach((track) => track.stop());
     if (typeof window !== "undefined" && window.speechSynthesis) window.speechSynthesis.cancel();
   }, []);
@@ -257,8 +263,15 @@ export default function Home() {
       setInviteToken("");
       const initial = [{ role: "assistant" as const, content: data.message }];
       if (history.length === 0) setHistory(initial);
-      setPhase("interview"); speak(data.message);
-      await enableCamera(activeSessionId);
+      setPhase("interview");
+      if (mode === "live") {
+        await enableCamera(activeSessionId);
+        if (streamRef.current) await startGrokVoice(activeSessionId, data.message);
+        else speak(data.message);
+      } else {
+        speak(data.message);
+        await enableCamera(activeSessionId);
+      }
     } catch (e) { setError(e instanceof Error ? e.message : "Could not start interview."); }
     finally { setBusy(false); }
   };
@@ -266,15 +279,20 @@ export default function Home() {
   const sendAnswer = async (value = draft) => {
     const answer = value.trim();
     if (!answer || busy) return;
-    const updated = [...history, { role: "user" as const, content: answer }];
-    setHistory(updated); setDraft(""); setBusy(true); setError("");
+    if (grokVoiceRef.current) {
+      grokVoiceRef.current.close();
+      grokVoiceRef.current = null;
+      setVoiceStatus("off");
+    }
+    await transcriptWriteRef.current;
+    setHistory(prev => [...prev, { role: "user", content: answer }]);
+    setDraft(""); setBusy(true); setError("");
     try {
       const data = await callApi({ action: "answer", candidateName, role, resume, jobDescription, mode, sessionId, history, answer }) as InterviewReply;
-      const next = [...updated, { role: "assistant" as const, content: data.message }];
-      setHistory(next);
+      setHistory(prev => [...prev, { role: "assistant", content: data.message }]);
       if (sessionId) await fetch(`/api/sessions/${sessionId}`, { method: "PUT", headers: { "Content-Type": "application/json", ...(inviteToken ? { "x-interview-invite": inviteToken } : {}) }, body: JSON.stringify({ durationSeconds: seconds }) });
       speak(data.message);
-      if (data.done || data.timeLimitReached) await finishInterview(next);
+      if (data.done || data.timeLimitReached) await finishInterview();
     } catch (e) { setError(e instanceof Error ? e.message : "Could not submit answer."); }
     finally { setBusy(false); }
   };
@@ -284,6 +302,11 @@ export default function Home() {
     finishStartedRef.current = true;
     setBusy(true); setError("");
     try {
+      // Stop the realtime connection and flush finalized transcript entries before reporting.
+      grokVoiceRef.current?.close();
+      grokVoiceRef.current = null;
+      setVoiceStatus("off");
+      await transcriptWriteRef.current;
       // Save the recording before the report action closes the interview session.
       if (recorderRef.current?.state === "recording") {
         recorderRef.current.stop();
@@ -432,6 +455,61 @@ export default function Home() {
     }
   };
 
+
+  const startGrokVoice = async (targetSessionId: string, openingMessage: string) => {
+    if (!streamRef.current || !targetSessionId) return;
+    const instructions = [
+      "You are MZOBS, a professional, fair and concise AI interviewer conducting a structured 15-minute job interview.",
+      "Ask one question at a time. Listen carefully and adapt follow-up questions to the candidate's actual answers. Do not repeat questions.",
+      "Use resume and job-description context to validate experience, projects, role skills and problem solving. Never invent candidate facts.",
+      "Evaluate only job-related answer content. Never infer competence, honesty, emotion, age, gender, disability, race, personality or identity from voice, accent or appearance.",
+      "Keep each spoken response natural and concise. In the final 90 seconds ask at most one essential clarification and then close politely.",
+      "The opening question has already been spoken. Continue from that point; do not repeat the opening.",
+      "Candidate: " + candidateName + ". Target role: " + role + ".",
+      "Candidate resume (private interview context):\n" + resume.slice(0, 14000),
+      "Job description:\n" + jobDescription.slice(0, 10000),
+      "Opening interviewer message already delivered: " + openingMessage
+    ].join("\n\n");
+    const client = new GrokRealtimeClient({
+      sessionId: targetSessionId,
+      stream: streamRef.current,
+      instructions,
+      initialMessage: openingMessage,
+      callbacks: {
+        onStatus: status => setVoiceStatus(status === "connected" ? "connected" : "off"),
+        onError: message => {
+          setError(message);
+          setVoiceStatus("unavailable");
+        },
+        onTranscript: (speaker, text) => {
+          transcriptWriteRef.current = transcriptWriteRef.current.then(async () => {
+            const response = await fetch("/api/sessions/" + targetSessionId + "/transcript", {
+              method: "POST",
+              credentials: "same-origin",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ role: speaker, content: text })
+            });
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.error || "Could not save the live transcript.");
+            setHistory(previous => [...previous, { role: speaker, content: text }]);
+          }).catch(error => {
+            setError(error instanceof Error ? error.message : "Could not save the live transcript.");
+            setVoiceStatus("unavailable");
+          });
+        }
+      }
+    });
+    grokVoiceRef.current = client;
+    try {
+      await client.connect();
+    } catch (error) {
+      client.close();
+      if (grokVoiceRef.current === client) grokVoiceRef.current = null;
+      setVoiceStatus("unavailable");
+      setError(error instanceof Error ? error.message : "Could not start Grok voice.");
+    }
+  };
+
   const enableCamera = async (targetSessionId = sessionId) => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
@@ -458,6 +536,10 @@ export default function Home() {
   };
 
   const toggleMic = () => {
+    if (voiceStatus === "connected" || voiceStatus === "connecting") {
+      setError("Grok voice is already using the microphone. Stop the AI voice session before using browser speech input.");
+      return;
+    }
     const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!Recognition) { setError("Speech recognition is not supported in this browser. Please type your answer."); return; }
     if (listening) { recognitionRef.current?.stop(); setListening(false); return; }
@@ -521,18 +603,18 @@ export default function Home() {
 
       {phase === "interview" && <section className="interview-layout">
         <div className="interview-main">
-          <div className="session-heading"><div><div className="eyebrow">MZOBS AI INTERVIEWER / SESSION IN PROGRESS</div><h2>{candidateName} <span>· {role}</span></h2></div><div className="timer"><span className="pulse" />{formatTime(seconds)} <small>/ 15:00</small></div></div>
+          <div className="session-heading"><div><div className="eyebrow">MZOBS AI INTERVIEWER / SESSION IN PROGRESS</div><h2>{candidateName} <span>· {role}</span></h2><small>{voiceStatus === "connected" ? "GROK REALTIME VOICE CONNECTED" : voiceStatus === "connecting" ? "CONNECTING AI VOICE…" : voiceStatus === "unavailable" ? "VOICE UNAVAILABLE · TEXT INPUT READY" : "TEXT INTERVIEW MODE"}</small></div><div className="timer"><span className="pulse" />{formatTime(seconds)} <small>/ 15:00</small></div></div>
           <div className="conversation">
             {history.map((m, i) => <div className={m.role === "assistant" ? "message ai-message" : "message user-message"} key={i}><div className="message-avatar">{m.role === "assistant" ? "M" : candidateName.slice(0,1).toUpperCase()}</div><div className="message-body"><small>{m.role === "assistant" ? "MZOBS AI INTERVIEWER" : candidateName.toUpperCase()}</small><p>{m.content}</p></div></div>)}
             {busy && <div className="typing"><span /><span /><span /> AI interviewer is thinking</div>}
             <div ref={transcriptEndRef} />
           </div>
-          <div className="answer-box"><textarea value={draft} onChange={e => setDraft(e.target.value)} placeholder="Type your answer here..." rows={3} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendAnswer(); } }} /><div className="answer-actions"><button className={listening ? "tool-btn active" : "tool-btn"} onClick={toggleMic}>{listening ? "■ Stop voice input" : "🎙 Use voice"}</button><span>Press Enter to send · Shift + Enter for new line</span><button className="send-btn" onClick={() => sendAnswer()} disabled={busy || !draft.trim()}>Send answer ↗</button></div></div>
+          <div className="answer-box"><textarea value={draft} onChange={e => setDraft(e.target.value)} placeholder="Type your answer here..." rows={3} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendAnswer(); } }} /><div className="answer-actions"><button className={listening ? "tool-btn active" : "tool-btn"} onClick={toggleMic} disabled={voiceStatus === "connected" || voiceStatus === "connecting"}>{listening ? "■ Stop voice input" : "🎙 Use voice"}</button><span>Press Enter to send · Shift + Enter for new line</span><button className="send-btn" onClick={() => sendAnswer()} disabled={busy || !draft.trim()}>Send answer ↗</button></div></div>
           {error && <div className="error-box">{error}</div>}
           <div className="session-footer"><span>✳ AI-generated questions · Job-related evaluation only</span><button onClick={() => finishInterview() } disabled={busy}>End interview & generate report</button></div>
         </div>
         <aside className="side-panel">
-          <div className="side-card"><div className="side-card-head"><b>Candidate camera</b><span className={cameraOn ? "live-tag" : "muted-tag"}>{cameraOn ? "CAMERA ON" : "NOT CONNECTED"}</span></div><div className="video-wrap">{cameraOn ? <video ref={videoRef} autoPlay muted playsInline /> : <div className="camera-placeholder">◉<small>Camera preview</small></div>}</div>{mode === "live" && <div className="video-wrap remote-video-wrap"><video ref={remoteVideoRef} autoPlay playsInline /><small>Employer live video · connects when employer joins</small></div>}<button className="outline-btn" onClick={() => void enableCamera()}>{cameraOn ? "Reconnect camera" : "Enable camera & mic"}</button>{recoverableRecording && !recordingSaved && <div className="privacy-note"><b>Unfinished recording found on this device.</b><p>Your saved video segments can be uploaded to this interview.</p><button className="outline-btn" onClick={() => void recoverSavedRecording()} disabled={uploadingRecording}>Recover saved recording</button></div>}<button className={recording ? "record-btn recording" : "record-btn"} onClick={toggleRecording} disabled={uploadingRecording || recordingSaved || recoverableRecording}>{recording ? "■ Stop & save recording" : recordingSaved ? "✓ Recording saved" : "● Start video recording"}</button>{uploadingRecording && <p className="privacy-note">Saving recording to the interview server…</p>}{recordingSaved && <p className="privacy-note">✓ Recording saved for employer review.</p>}</div>
+          <div className="side-card"><div className="side-card-head"><b>Candidate camera</b><span className={cameraOn ? "live-tag" : "muted-tag"}>{cameraOn ? "CAMERA ON" : "NOT CONNECTED"}</span></div><div className="video-wrap">{cameraOn ? <video ref={videoRef} autoPlay muted playsInline /> : <div className="camera-placeholder">◉<small>Camera preview</small></div>}</div>{mode === "live" && <div className="video-wrap remote-video-wrap"><video ref={remoteVideoRef} autoPlay playsInline /><small>Employer live video · connects when employer joins</small></div>}<button className="outline-btn" onClick={() => void enableCamera()} disabled={voiceStatus === "connected" || voiceStatus === "connecting"}>{cameraOn ? "Reconnect camera" : "Enable camera & mic"}</button>{recoverableRecording && !recordingSaved && <div className="privacy-note"><b>Unfinished recording found on this device.</b><p>Your saved video segments can be uploaded to this interview.</p><button className="outline-btn" onClick={() => void recoverSavedRecording()} disabled={uploadingRecording}>Recover saved recording</button></div>}<button className={recording ? "record-btn recording" : "record-btn"} onClick={toggleRecording} disabled={uploadingRecording || recordingSaved || recoverableRecording}>{recording ? "■ Stop & save recording" : recordingSaved ? "✓ Recording saved" : "● Start video recording"}</button>{uploadingRecording && <p className="privacy-note">Saving recording to the interview server…</p>}{recordingSaved && <p className="privacy-note">✓ Recording saved for employer review.</p>}</div>
           <div className="side-card"><b>Interview structure</b><div className="timeline"><div className="timeline-item done"><i />Introduction & background<small>Getting to know the candidate</small></div><div className="timeline-item current"><i />Resume & project deep dive<small>Validating experience and ownership</small></div><div className="timeline-item"><i />Technical & problem solving<small>Role-specific knowledge</small></div><div className="timeline-item"><i />Wrap-up<small>Candidate questions and closing</small></div></div></div>
           <div className="fairness-note"><b>Fair evaluation</b><p>Assessment is based on answer content and job-related evidence—not facial appearance, accent or voice characteristics.</p></div>
         </aside>
