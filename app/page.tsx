@@ -132,7 +132,7 @@ export default function Home() {
           role: message.role === "assistant" ? "assistant" : "user",
           content: message.content
         })));
-        if (interview.startedAt) {
+        if (interview.startedAt && interview.status !== "completed") {
           const elapsed = Math.max(0, Math.floor((Date.now() - new Date(interview.startedAt).getTime()) / 1000));
           setSeconds(Math.min(900, elapsed));
           setPhase("interview");
