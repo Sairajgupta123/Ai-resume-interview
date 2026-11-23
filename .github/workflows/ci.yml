@@ -1,3 +1,4 @@
+# Public repositories can use standard GitHub-hosted runners without consuming paid minutes.
 name: CI
 
 on:
