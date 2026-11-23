@@ -1,16 +1,17 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { isEmployerAuthenticated } from "@/lib/auth";
+import { getEmployerOrganizationAccess } from "@/lib/auth";
 import { approveVerifiedDeletionRequest } from "@/lib/deletion-approval-service.mjs";
 
 export const runtime = "nodejs";
 type Context = { params: Promise<{ id: string }> };
 
 export async function POST(_request: Request, context: Context) {
-  if (!(await isEmployerAuthenticated())) return NextResponse.json({ error: "Unauthorized." }, { status: 401, headers: { "Cache-Control": "no-store" } });
+  const access = await getEmployerOrganizationAccess("privacy:approve_deletion");
+  if (!access) return NextResponse.json({ error: "Forbidden." }, { status: 403, headers: { "Cache-Control": "no-store" } });
   const { id } = await context.params;
   try {
-    const deletion = await db.privacyDeletionRequest.findUnique({ where: { id } });
+    const deletion = await db.privacyDeletionRequest.findFirst({ where: { id, interview: { organizationId: access.organizationId } } });
     if (!deletion) return NextResponse.json({ error: "Deletion request not found." }, { status: 404 });
     if (deletion.status !== "verified_pending_approval" || !deletion.verifiedAt) {
       return NextResponse.json({ error: "Candidate verification must be completed before employer approval." }, { status: 409 });
