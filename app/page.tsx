@@ -163,7 +163,13 @@ export default function Home() {
         let recoveryAttempts = 0;
         let recoveryInProgress = false;
         peer.oniceconnectionstatechange = () => {
-          if (stopped || !peer || peer.iceConnectionState !== "failed" || recoveryInProgress) return;
+          if (stopped || !peer) return;
+          if (peer.iceConnectionState === "connected" || peer.iceConnectionState === "completed") {
+            recoveryAttempts = 0;
+            setError(current => current.startsWith("Live video connection interrupted") ? "" : current);
+            return;
+          }
+          if (peer.iceConnectionState !== "failed" || recoveryInProgress) return;
           if (recoveryAttempts >= 2) {
             setError("Live video could not recover after two network retries. Check your connection and ask the employer to reconnect.");
             return;
@@ -180,7 +186,7 @@ export default function Home() {
                 body: JSON.stringify({ kind: "offer", payload: JSON.stringify(peer!.localDescription) })
               });
               if (!restartResponse.ok) throw new Error("The live video reconnect request was rejected.");
-              setError("");
+              setError(current => current.startsWith("Live video") ? "" : current);
             } catch (error) {
               if (!stopped) setError(error instanceof Error ? error.message : "Could not restart live video.");
             } finally {
