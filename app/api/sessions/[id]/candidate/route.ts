@@ -54,15 +54,53 @@ async function candidateResponse(id: string, token: string | null, exchange = fa
   return response;
 }
 
-// Exchange the one-time link token in the request body, not the URL, for an HttpOnly cookie.
+// Exchange the one-time link token in a small request body, never in the URL.
 export async function POST(request: NextRequest, context: Context) {
   const { id } = await context.params;
+  const headers = { "Cache-Control": "private, no-store, max-age=0" };
+  if (!(request.headers.get("content-type") || "").toLowerCase().includes("application/json")) {
+    return NextResponse.json({ error: "A JSON invitation token is required." }, { status: 415, headers });
+  }
+  const declaredLength = Number(request.headers.get("content-length") || 0);
+  if (!Number.isSafeInteger(declaredLength) || declaredLength < 0 || declaredLength > 4_096) {
+    return NextResponse.json({ error: "Invitation request is too large." }, { status: 413, headers });
+  }
+  const reader = request.body?.getReader();
+  if (!reader) return NextResponse.json({ error: "Invitation token is required." }, { status: 400, headers });
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
   try {
-    const body = await request.json();
-    const token = typeof body.token === "string" ? body.token : null;
+    while (true) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      totalBytes += chunk.value.byteLength;
+      if (totalBytes > 4_096) {
+        await reader.cancel();
+        return NextResponse.json({ error: "Invitation request is too large." }, { status: 413, headers });
+      }
+      chunks.push(chunk.value);
+    }
+  } catch {
+    return NextResponse.json({ error: "Could not read invitation request." }, { status: 400, headers });
+  }
+  const bytes = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  try {
+    const body: unknown = JSON.parse(new TextDecoder().decode(bytes));
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return NextResponse.json({ error: "Invalid invitation request." }, { status: 400, headers });
+    }
+    const token = "token" in body && typeof body.token === "string" ? body.token : null;
+    if (!token || token.length < 32 || token.length > 256) {
+      return NextResponse.json({ error: "Invalid or expired invitation token." }, { status: 401, headers });
+    }
     return candidateResponse(id, token, true);
   } catch {
-    return NextResponse.json({ error: "Invalid invitation request." }, { status: 400, headers: { "Cache-Control": "private, no-store" } });
+    return NextResponse.json({ error: "Invalid invitation request." }, { status: 400, headers });
   }
 }
 
