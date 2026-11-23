@@ -131,8 +131,17 @@ export default function Dashboard() {
   const load = async () => {
     const r = await fetch("/api/sessions", { cache: "no-store" });
     if (r.status === 401) { setAuthenticated(false); return; }
-    const data = await r.json();
-    setItems(data.interviews || []);
+    const data: unknown = await r.json();
+    if (!r.ok) {
+      const message = data && typeof data === "object" && "error" in data && typeof data.error === "string"
+        ? data.error
+        : "Could not load employer interviews.";
+      throw new Error(message);
+    }
+    if (!data || typeof data !== "object" || !("interviews" in data) || !Array.isArray(data.interviews)) {
+      throw new Error("The employer interview list response was invalid. Refresh and try again.");
+    }
+    setItems(data.interviews as Item[]);
     setAuthenticated(true);
     const fetchPanel = async (url: string, fallback: string) => {
       const response = await fetch(url, { cache: "no-store" });
@@ -242,7 +251,11 @@ export default function Dashboard() {
         decisionAt: "decisionAt" in data && typeof data.decisionAt === "string" ? data.decisionAt : selected.decisionAt,
         decisionHistory: data.decisionHistory as Detail["decisionHistory"]
       });
-      await load();
+      try {
+        await load();
+      } catch {
+        setError("Decision saved, but the dashboard list could not refresh. Refresh the page to see the latest data.");
+      }
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : "Could not save decision.");
     } finally {
