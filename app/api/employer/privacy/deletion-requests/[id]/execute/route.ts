@@ -16,8 +16,10 @@ export async function POST(_request: Request, context: Context) {
   }
   const { id } = await context.params;
   try {
-    const requestRecord = await db.privacyDeletionRequest.findFirst({ where: { id, interview: { organizationId: access.organizationId } } });
+    const requestRecord = await db.privacyDeletionRequest.findUnique({ where: { id } });
     if (!requestRecord) return NextResponse.json({ error: "Deletion request not found." }, { status: 404 });
+    const ownedInterview = await db.interview.findFirst({ where: { id: requestRecord.interviewId, organizationId: access.organizationId }, select: { id: true } });
+    if (!ownedInterview) return NextResponse.json({ error: "Deletion request not found." }, { status: 404 });
     if (!canClaimDeletionExecution(requestRecord)) {
       return NextResponse.json({ error: "Candidate verification and employer approval are required, or another deletion worker currently holds the execution lease." }, { status: 409, headers: { "Cache-Control": "no-store" } });
     }
@@ -28,7 +30,7 @@ export async function POST(_request: Request, context: Context) {
     const claim = await db.privacyDeletionRequest.updateMany({
       where: {
         id,
-        interview: { organizationId: access.organizationId },
+        interviewId: requestRecord.interviewId,
         // Keep candidate verification as an atomic database precondition, not only a pre-read check.
         verifiedAt: { not: null },
         OR: [
