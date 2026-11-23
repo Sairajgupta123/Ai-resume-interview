@@ -31,7 +31,7 @@ test("recruiters can manage interview workflow but cannot administer membership 
   for (const permission of ["interview:create", "interview:read", "interview:decision", "interview:export", "audit:read"]) {
     assert.equal(hasEmployerPermission("recruiter", permission), true);
   }
-  for (const permission of ["organization:manage_members", "privacy:approve_deletion", "privacy:execute_deletion"]) {
+  for (const permission of ["organization:manage_members", "privacy:manage_requests", "privacy:approve_deletion", "privacy:execute_deletion"]) {
     assert.equal(hasEmployerPermission("recruiter", permission), false);
   }
 });
@@ -39,7 +39,7 @@ test("recruiters can manage interview workflow but cannot administer membership 
 test("reviewers are read-only and cannot create, decide, export, or execute privacy actions", () => {
   assert.equal(hasEmployerPermission("reviewer", "interview:read"), true);
   assert.equal(hasEmployerPermission("reviewer", "audit:read"), true);
-  for (const permission of ["interview:create", "interview:decision", "interview:export", "organization:manage_members", "privacy:approve_deletion", "privacy:execute_deletion"]) {
+  for (const permission of ["interview:create", "interview:decision", "interview:export", "organization:manage_members", "privacy:manage_requests", "privacy:approve_deletion", "privacy:execute_deletion"]) {
     assert.equal(hasEmployerPermission("reviewer", permission), false);
   }
 });
