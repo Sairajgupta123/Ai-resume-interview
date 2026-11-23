@@ -11,8 +11,9 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401, headers: { "Cache-Control": "no-store" } });
   }
   try {
+    const ownedInterviews = await db.interview.findMany({ where: { organizationId: access.organizationId }, select: { id: true } });
     const requests = await db.privacyDeletionRequest.findMany({
-      where: { interview: { organizationId: access.organizationId } },
+      where: { interviewId: { in: ownedInterviews.map(interview => interview.id) } },
       take: 100,
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       select: {
