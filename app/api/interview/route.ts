@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { candidateInvitationCookieName, getCandidateInvitationToken, hasValidCandidateInvitation } from "@/lib/invitation";
 import { elapsedInterviewSeconds, INTERVIEW_LIMIT_SECONDS, isVerifiableEvidenceQuote, restoreChronologicalOrder } from "@/lib/interview-policy.mjs";
 import { calculateEvidenceCoverage, deriveRecommendation, hasDuplicateSkills, isRatingEvidenceConsistent } from "@/lib/evaluation-policy.mjs";
+import { isRestorableInterviewReport } from "@/lib/report-recovery-policy.mjs";
 import { validateInterviewerTurn } from "@/lib/interviewer-turn-policy.mjs";
 import { buildAdaptiveGuidance } from "@/lib/adaptive-interview-policy.mjs";
 import { buildCoverageGuidance, buildSkillCoverage, extractTargetSkills } from "@/lib/skill-coverage-policy.mjs";
@@ -268,12 +269,12 @@ export async function POST(request: NextRequest) {
         }
         try {
           const savedReport: unknown = JSON.parse(completed.reportJson);
-          if (!savedReport || typeof savedReport !== "object" || Array.isArray(savedReport)) throw new Error("Invalid saved report");
+          if (!isRestorableInterviewReport(savedReport)) throw new Error("Invalid saved report");
           return attachCandidateCookie(NextResponse.json(savedReport, {
             headers: { "Cache-Control": "private, no-store, max-age=0" }
           }), request, body.sessionId, session.inviteExpiresAt);
         } catch {
-          return NextResponse.json({ error: "The saved interview report could not be restored. Contact the hiring team." }, { status: 500 });
+          return NextResponse.json({ error: "The saved interview report could not be restored. Contact the hiring team." }, { status: 500, headers: { "Cache-Control": "private, no-store, max-age=0" } });
         }
       }
 
