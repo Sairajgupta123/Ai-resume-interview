@@ -7,6 +7,7 @@ import {
 } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { verifyEmployerPassword } from "@/lib/employer-password.mjs";
+import { normalizeEmployerRole } from "@/lib/employer-access-policy.mjs";
 import { clearLoginFailures, loginRateLimit, recordFailedLogin } from "@/lib/login-rate-limit";
 
 export async function POST(request: NextRequest) {
@@ -39,13 +40,13 @@ export async function POST(request: NextRequest) {
           passwordHash: true,
           sessionVersion: true,
           disabledAt: true,
-          memberships: { select: { id: true } }
+          memberships: { select: { role: true } }
         }
       });
       const validPassword = user
         ? await verifyEmployerPassword(password, user.passwordHash)
         : false;
-      if (!user || !validPassword || user.disabledAt || user.memberships.length === 0) {
+      if (!user || !validPassword || user.disabledAt || !user.memberships.some((membership) => normalizeEmployerRole(membership.role) !== null)) {
         await recordFailedLogin(limit.key);
         return NextResponse.json({ error: "Invalid username or password." }, {
           status: 401,
