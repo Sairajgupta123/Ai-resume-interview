@@ -107,6 +107,8 @@ export default function Dashboard() {
                 if (peer!.remoteDescription) await peer!.addIceCandidate(candidate).catch(() => {});
                 else if (pendingIce.length < 128) pendingIce.push(candidate);
               } else if (signal.kind === "hangup") {
+                stopped = true;
+                if (timer !== undefined) window.clearInterval(timer);
                 setLiveCallState("Candidate ended the call.");
                 peer!.close();
                 localStream?.getTracks().forEach(track => track.stop());
