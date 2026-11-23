@@ -103,7 +103,7 @@ export default function Dashboard() {
               } else if (signal.kind === "ice") {
                 const candidate = JSON.parse(signal.payload) as RTCIceCandidateInit;
                 if (peer!.remoteDescription) await peer!.addIceCandidate(candidate).catch(() => {});
-                else pendingIce.push(candidate);
+                else if (pendingIce.length < 128) pendingIce.push(candidate);
               } else if (signal.kind === "hangup") {
                 setLiveCallState("Candidate ended the call.");
                 peer!.close();
