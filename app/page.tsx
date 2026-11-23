@@ -160,6 +160,34 @@ export default function Home() {
         if (stopped) return;
         peer = new RTCPeerConnection({ iceServers });
         peerConnectionRef.current = peer;
+        let recoveryAttempts = 0;
+        let recoveryInProgress = false;
+        peer.oniceconnectionstatechange = () => {
+          if (stopped || !peer || peer.iceConnectionState !== "failed" || recoveryInProgress) return;
+          if (recoveryAttempts >= 2) {
+            setError("Live video could not recover after two network retries. Check your connection and ask the employer to reconnect.");
+            return;
+          }
+          recoveryAttempts += 1;
+          recoveryInProgress = true;
+          setError("Live video connection interrupted. Trying to reconnect…");
+          void (async () => {
+            try {
+              const restartOffer = await peer!.createOffer({ iceRestart: true });
+              await peer!.setLocalDescription(restartOffer);
+              const restartResponse = await fetch(`/api/sessions/${sessionId}/signals`, {
+                method: "POST", headers, credentials: "same-origin",
+                body: JSON.stringify({ kind: "offer", payload: JSON.stringify(peer!.localDescription) })
+              });
+              if (!restartResponse.ok) throw new Error("The live video reconnect request was rejected.");
+              setError("");
+            } catch (error) {
+              if (!stopped) setError(error instanceof Error ? error.message : "Could not restart live video.");
+            } finally {
+              recoveryInProgress = false;
+            }
+          })();
+        };
         peer.addEventListener("track", event => {
           if (remoteVideoRef.current) remoteVideoRef.current.srcObject = event.streams[0];
         });
