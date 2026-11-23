@@ -39,6 +39,7 @@ model Interview {
   decisionHistory EmployerDecisionHistory[]
   signals         InterviewSignal[]
   recordingAccessEvents RecordingAccessEvent[]
+  @@index([organizationId, createdAt])
   @@index([createdAt])
   @@index([candidateName])
 }
