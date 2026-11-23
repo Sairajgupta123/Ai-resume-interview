@@ -126,7 +126,7 @@ export class GrokRealtimeClient {
       };
       socket.addEventListener("message", onMessage);
     });
-    this.socket.send(JSON.stringify({
+    socket.send(JSON.stringify({
       type: "session.update",
       session: {
         instructions: this.instructions,
@@ -157,28 +157,30 @@ export class GrokRealtimeClient {
   }
 
   private startAudioGraph() {
-    if (!this.audioContext) throw new Error("Audio output is not initialized.");
+    const audioContext = this.audioContext;
+    if (!audioContext) throw new Error("Audio output is not initialized.");
     const audioTrack = this.stream.getAudioTracks()[0];
     if (!audioTrack || audioTrack.readyState !== "live") {
       throw new Error("A live microphone track is required for AI voice.");
     }
-    const source = this.audioContext.createMediaStreamSource(new MediaStream([audioTrack]));
-    const processor = this.audioContext.createScriptProcessor(4096, 1, 1);
-    const silentGain = this.audioContext.createGain();
+    const source = audioContext.createMediaStreamSource(new MediaStream([audioTrack]));
+    const processor = audioContext.createScriptProcessor(4096, 1, 1);
+    const silentGain = audioContext.createGain();
     silentGain.gain.value = 0;
     processor.onaudioprocess = event => {
-      if (this.closed || this.socket?.readyState !== WebSocket.OPEN) return;
+      const socket = this.socket;
+      if (this.closed || !socket || socket.readyState !== WebSocket.OPEN) return;
       const pcm = resampleFloat32ToPcm16(
         event.inputBuffer.getChannelData(0),
-        this.audioContext!.sampleRate,
+        audioContext.sampleRate,
         SAMPLE_RATE
       );
       if (pcm.length === 0) return;
-      this.socket.send(JSON.stringify({ type: "input_audio_buffer.append", audio: pcm16ToBase64(pcm) }));
+      socket.send(JSON.stringify({ type: "input_audio_buffer.append", audio: pcm16ToBase64(pcm) }));
     };
     source.connect(processor);
     processor.connect(silentGain);
-    silentGain.connect(this.audioContext.destination);
+    silentGain.connect(audioContext.destination);
     this.inputSource = source;
     this.processor = processor;
     this.silentGain = silentGain;
@@ -220,15 +222,16 @@ export class GrokRealtimeClient {
   }
 
   private queueAudio(base64: string) {
-    if (!this.audioContext) return;
+    const audioContext = this.audioContext;
+    if (!audioContext) return;
     const samples = base64Pcm16ToFloat32(base64);
     if (samples.length === 0) return;
-    const buffer = this.audioContext.createBuffer(1, samples.length, SAMPLE_RATE);
+    const buffer = audioContext.createBuffer(1, samples.length, SAMPLE_RATE);
     buffer.copyToChannel(samples, 0);
-    const source = this.audioContext.createBufferSource();
+    const source = audioContext.createBufferSource();
     source.buffer = buffer;
-    source.connect(this.audioContext.destination);
-    const startAt = Math.max(this.audioContext.currentTime + 0.02, this.playbackCursor);
+    source.connect(audioContext.destination);
+    const startAt = Math.max(audioContext.currentTime + 0.02, this.playbackCursor);
     this.playbackCursor = startAt + buffer.duration;
     this.playbackSources.add(source);
     source.onended = () => this.playbackSources.delete(source);
