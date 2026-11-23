@@ -80,7 +80,7 @@ test("treats oversized or malformed skill evidence as insufficient evidence", ()
     candidate("a", "A", "Engineer", [{ skill: "SQL", rating: "Strong", evidence: "x".repeat(1201) }]),
     candidate("b", "B", "Engineer", [{ skill: "SQL", rating: "Good", evidence: "I used SQL queries" }])
   ]);
-  assert.equal(result.skills[0].candidates[0].rating, "Strong");
+  assert.equal(result.skills[0].candidates[0].rating, "Insufficient evidence");
   assert.equal(result.skills[0].candidates[0].evidence, "Insufficient evidence");
   assert.equal(result.candidates[0].evidenceSkillCount, 0);
 });
