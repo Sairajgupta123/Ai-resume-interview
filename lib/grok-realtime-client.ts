@@ -102,12 +102,17 @@ export class GrokRealtimeClient {
         instructions: this.instructions,
         voice: "eve",
         turn_detection: { type: "server_vad" },
-        input_audio_format: "pcm16",
-        output_audio_format: "pcm16",
-        input_audio_transcription: { model: "grok-2-audio" }
+        audio: {
+          input: {
+            format: { type: "audio/pcm", rate: SAMPLE_RATE },
+            transcription: { model: "grok-transcribe", language_hint: "en" }
+          },
+          output: { format: { type: "audio/pcm", rate: SAMPLE_RATE } }
+        }
       }
     }));
     this.startAudioGraph();
+    socket.send(JSON.stringify({ type: "response.create" }));
     this.callbacks.onStatus?.("connected");
   }
 
