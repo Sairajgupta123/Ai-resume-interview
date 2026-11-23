@@ -57,7 +57,7 @@ test("CSV cells escape quotes and protect formula-like text", () => {
   assert.equal(safeCsvCell('A "quote"'), '"A ""quote"""');
   assert.equal(safeCsvCell('=HYPERLINK("https://example.com")'), '"\'=HYPERLINK(""https://example.com"")"');
   assert.equal(safeCsvCell("  +SUM(1,2)"), '"\'  +SUM(1,2)"');
-  assert.equal(safeCsvCell("\t@command"), '"\'\\t@command"');
+  assert.equal(safeCsvCell("\t@command"), '"\'\t@command"');
 });
 
 test("CSV cells preserve safe text and numeric values", () => {
