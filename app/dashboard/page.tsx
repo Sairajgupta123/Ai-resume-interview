@@ -85,8 +85,18 @@ export default function Dashboard() {
         };
         peer.onconnectionstatechange = () => {
           if (peer?.connectionState === "connecting") setLiveCallState("Connecting to candidate…");
-          if (peer?.connectionState === "failed") setLiveCallState("Connection failed. Check TURN server configuration.");
-          if (peer?.connectionState === "disconnected") setLiveCallState("Candidate connection interrupted.");
+          if (peer?.connectionState === "connected") setLiveCallState("Connected · live video and audio");
+          if (peer?.connectionState === "failed") setLiveCallState("Connection failed. Waiting for the candidate to restart live video…");
+          if (peer?.connectionState === "disconnected") setLiveCallState("Candidate connection interrupted. Waiting for automatic recovery…");
+        };
+        peer.oniceconnectionstatechange = () => {
+          if (peer?.iceConnectionState === "connected" || peer?.iceConnectionState === "completed") {
+            setLiveCallState("Connected · live video and audio");
+          } else if (peer?.iceConnectionState === "failed") {
+            setLiveCallState("Network path failed. Waiting for the candidate’s ICE restart…");
+          } else if (peer?.iceConnectionState === "disconnected") {
+            setLiveCallState("Network interrupted. Waiting for automatic recovery…");
+          }
         };
         peer.onicecandidate = event => {
           if (event.candidate && !stopped) {
