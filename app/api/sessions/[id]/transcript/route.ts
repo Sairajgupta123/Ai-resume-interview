@@ -107,8 +107,14 @@ export async function POST(request: NextRequest, context: Context) {
       }
       const messageCount = await tx.interviewMessage.count({ where: { interviewId: id } });
       if (messageCount >= 200) throw new Error("TRANSCRIPT_LIMIT_REACHED");
+      const latestMessage = await tx.interviewMessage.findFirst({
+        where: { interviewId: id },
+        orderBy: { createdAt: "desc" },
+        select: { createdAt: true }
+      });
+      const createdAt = new Date(Math.max(Date.now(), (latestMessage?.createdAt.getTime() || 0) + 1));
       await tx.interviewMessage.create({
-        data: { interviewId: id, role: body.role as string, content }
+        data: { interviewId: id, role: body.role as string, content, createdAt }
       });
     });
 
