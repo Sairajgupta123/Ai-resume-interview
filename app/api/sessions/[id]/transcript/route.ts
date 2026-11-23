@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getCandidateInvitationToken, hasValidCandidateInvitation } from "@/lib/invitation";
 import { elapsedInterviewSeconds, INTERVIEW_LIMIT_SECONDS } from "@/lib/interview-policy.mjs";
+import { isTranscriptRetryCompatible, isNextTranscriptRole } from "@/lib/transcript-policy.mjs";
 
 export const runtime = "nodejs";
 
@@ -15,7 +16,7 @@ export async function POST(request: NextRequest, context: Context) {
   try {
     const token = getCandidateInvitationToken(request, id);
     if (!(await hasValidCandidateInvitation(id, token))) {
-      return NextResponse.json({ error: "Unauthorized interview session." }, { status: 401 });
+      return NextResponse.json({ error: "Unauthorized interview session." }, { status: 401, headers: { "Cache-Control": "private, no-store, max-age=0" } });
     }
 
     const contentType = request.headers.get("content-type") || "";
@@ -113,19 +114,26 @@ export async function POST(request: NextRequest, context: Context) {
       }
       const existing = await tx.interviewMessage.findUnique({
         where: { clientMessageId: body.clientMessageId as string },
-        select: { interviewId: true }
+        select: { interviewId: true, role: true, content: true }
       });
       if (existing) {
-        if (existing.interviewId !== id) throw new Error("TRANSCRIPT_ID_CONFLICT");
+        if (!isTranscriptRetryCompatible(existing, {
+          interviewId: id,
+          role: body.role,
+          content
+        })) throw new Error("TRANSCRIPT_ID_CONFLICT");
         return;
       }
-      const messageCount = await tx.interviewMessage.count({ where: { interviewId: id } });
-      if (messageCount >= 200) throw new Error("TRANSCRIPT_LIMIT_REACHED");
       const latestMessage = await tx.interviewMessage.findFirst({
         where: { interviewId: id },
         orderBy: { createdAt: "desc" },
-        select: { createdAt: true }
+        select: { role: true, createdAt: true }
       });
+      if (latestMessage && !isNextTranscriptRole(latestMessage.role, body.role)) {
+        throw new Error("TRANSCRIPT_ROLE_ORDER");
+      }
+      const messageCount = await tx.interviewMessage.count({ where: { interviewId: id } });
+      if (messageCount >= 200) throw new Error("TRANSCRIPT_LIMIT_REACHED");
       const createdAt = new Date(Math.max(Date.now(), (latestMessage?.createdAt.getTime() || 0) + 1));
       await tx.interviewMessage.create({
         data: { interviewId: id, role: body.role as string, content, clientMessageId: body.clientMessageId as string, createdAt }
@@ -137,14 +145,17 @@ export async function POST(request: NextRequest, context: Context) {
     });
   } catch (error) {
     if (error instanceof Error && error.message === "INTERVIEW_NOT_ACTIVE") {
-      return NextResponse.json({ error: "The interview is no longer active." }, { status: 409 });
+      return NextResponse.json({ error: "The interview is no longer active." }, { status: 409, headers: { "Cache-Control": "private, no-store, max-age=0" } });
     }
     if (error instanceof Error && error.message === "TRANSCRIPT_LIMIT_REACHED") {
-      return NextResponse.json({ error: "The transcript has reached its message limit." }, { status: 409 });
+      return NextResponse.json({ error: "The transcript has reached its message limit." }, { status: 409, headers: { "Cache-Control": "private, no-store, max-age=0" } });
+    }
+    if (error instanceof Error && error.message === "TRANSCRIPT_ROLE_ORDER") {
+      return NextResponse.json({ error: "Transcript entries must alternate between candidate and interviewer turns." }, { status: 409, headers: { "Cache-Control": "private, no-store, max-age=0" } });
     }
     if (error instanceof Error && error.message === "TRANSCRIPT_ID_CONFLICT") {
-      return NextResponse.json({ error: "Transcript message ID conflict." }, { status: 409 });
+      return NextResponse.json({ error: "Transcript message ID conflict." }, { status: 409, headers: { "Cache-Control": "private, no-store, max-age=0" } });
     }
-    return NextResponse.json({ error: "Could not save the transcript entry. Please retry." }, { status: 500 });
+    return NextResponse.json({ error: "Could not save the transcript entry. Please retry." }, { status: 500, headers: { "Cache-Control": "private, no-store, max-age=0" } });
   }
 }
