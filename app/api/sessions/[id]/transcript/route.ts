@@ -29,7 +29,11 @@ export async function POST(request: NextRequest, context: Context) {
     }
     let body: { role?: unknown; content?: unknown };
     try {
-      body = JSON.parse(rawBody) as { role?: unknown; content?: unknown };
+      const parsed: unknown = JSON.parse(rawBody);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        return NextResponse.json({ error: "Transcript payload must be an object." }, { status: 400 });
+      }
+      body = parsed as { role?: unknown; content?: unknown };
     } catch {
       return NextResponse.json({ error: "Invalid transcript JSON." }, { status: 400 });
     }
