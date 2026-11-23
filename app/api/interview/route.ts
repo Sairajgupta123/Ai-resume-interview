@@ -4,6 +4,7 @@ import { candidateInvitationCookieName, getCandidateInvitationToken, hasValidCan
 import { elapsedInterviewSeconds, INTERVIEW_LIMIT_SECONDS, isVerifiableEvidenceQuote, restoreChronologicalOrder } from "@/lib/interview-policy.mjs";
 import { calculateEvidenceCoverage, deriveRecommendation, hasDuplicateSkills, isRatingEvidenceConsistent } from "@/lib/evaluation-policy.mjs";
 import { isRestorableInterviewReport } from "@/lib/report-recovery-policy.mjs";
+import { extractGrokAssistantText } from "@/lib/grok-response-policy.mjs";
 import { validateInterviewerTurn } from "@/lib/interviewer-turn-policy.mjs";
 import { buildAdaptiveGuidance } from "@/lib/adaptive-interview-policy.mjs";
 import { buildCoverageGuidance, buildSkillCoverage, extractTargetSkills } from "@/lib/skill-coverage-policy.mjs";
@@ -132,16 +133,25 @@ async function askGrok(messages: { role: "system" | "user" | "assistant"; conten
     const detail = await response.text();
     throw new Error(`Grok API error (${response.status}): ${detail.slice(0, 500)}`);
   }
-  const data = await response.json();
-  return String(data.choices?.[0]?.message?.content || "");
+  let data: unknown;
+  try {
+    data = await response.json();
+  } catch {
+    throw new Error("Grok API error (invalid response): provider returned malformed JSON.");
+  }
+  return extractGrokAssistantText(data);
 }
 
 function parseJson(text: string) {
   const cleaned = text.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
   const first = cleaned.indexOf("{");
   const last = cleaned.lastIndexOf("}");
-  if (first < 0 || last < first) throw new Error("AI returned an unexpected response. Please try again.");
-  return JSON.parse(cleaned.slice(first, last + 1));
+  if (first < 0 || last < first) throw new Error("AI returned an unexpected response. Please retry.");
+  try {
+    return JSON.parse(cleaned.slice(first, last + 1));
+  } catch {
+    throw new Error("AI returned malformed JSON. Please retry.");
+  }
 }
 
 function boundedText(value: unknown, field: string, maxLength: number) {
