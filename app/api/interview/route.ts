@@ -598,7 +598,7 @@ export async function POST(request: NextRequest) {
         const transcript = boundedTranscript.transcript;
         const content = await askGrok([
           { role: "system", content: SYSTEM },
-          { role: "user", content: `Generate the employer-facing evidence-based interview report from this saved server-side transcript. Do not infer anything from video or voice appearance.\n${context}\nTranscript (complete messages only; ${boundedTranscript.omittedMessages} older messages omitted due to the report context limit):\n${transcript}\nReturn report JSON only.` }
+          { role: "user", content: `Generate the employer-facing evidence-based interview report from this saved server-side transcript. Do not infer anything from video or voice appearance.\n${context}\nTranscript (complete messages only; ${boundedTranscript.omittedMessages} messages omitted due to the report context limit):\n${transcript}\nReturn report JSON only.` }
         ]);
         const rawReport = parseJson(content);
         // Evidence is validated against exactly the candidate answers the model saw.
