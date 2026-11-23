@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { isEmployerAuthenticated } from "@/lib/auth";
+import { getEmployerOrganizationAccess, getEmployerSession } from "@/lib/auth";
 
 type Context = { params: Promise<{ id: string }> };
 
@@ -11,11 +11,16 @@ function csvCell(value: unknown) {
 }
 
 export async function GET(_request: Request, context: Context) {
-  if (!(await isEmployerAuthenticated())) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+  const session = await getEmployerSession();
+  if (!session) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+  const access = session.kind === "user"
+    ? await getEmployerOrganizationAccess("interview:export")
+    : null;
+  if (session.kind === "user" && !access) return NextResponse.json({ error: "An active single-organization membership with interview export permission is required." }, { status: 403 });
   const { id } = await context.params;
   try {
     const interview = await db.interview.findUnique({
-      where: { id },
+      where: { id, ...(access ? { organizationId: access.organizationId } : {}) },
       include: {
         messages: { orderBy: { createdAt: "asc" } },
         decisionHistory: { orderBy: { createdAt: "asc" } }
