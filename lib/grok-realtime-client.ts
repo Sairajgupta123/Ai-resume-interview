@@ -87,7 +87,6 @@ export class GrokRealtimeClient {
           }
         } catch { /* ignore non-JSON events */ }
       };
-      void sessionCreated.catch(() => undefined);
       socket.addEventListener("message", onMessage);
       socket.addEventListener("close", () => {
         window.clearTimeout(timeout);
@@ -95,6 +94,8 @@ export class GrokRealtimeClient {
         reject(new Error("AI voice connection closed during initialization."));
       }, { once: true });
     });
+    // Attach after initialization; referencing this promise in its executor hits the temporal dead zone.
+    void sessionCreated.catch(() => undefined);
 
     try {
       await new Promise<void>((resolve, reject) => {
@@ -136,22 +137,33 @@ export class GrokRealtimeClient {
     this.audioContext = new AudioContext();
     await this.audioContext.resume();
     const sessionReady = new Promise<void>((resolve, reject) => {
-      const timeout = window.setTimeout(() => reject(new Error("AI voice session setup timed out.")), 10_000);
+      const cleanup = () => {
+        window.clearTimeout(timeout);
+        socket.removeEventListener("message", onMessage);
+        socket.removeEventListener("close", onClose);
+      };
+      const timeout = window.setTimeout(() => {
+        cleanup();
+        reject(new Error("AI voice session setup timed out."));
+      }, 10_000);
+      const onClose = () => {
+        cleanup();
+        reject(new Error("AI voice connection closed during session setup."));
+      };
       const onMessage = (message: MessageEvent) => {
         try {
           const payload = JSON.parse(String(message.data)) as RealtimeEvent;
           if (payload.type === "session.updated") {
-            window.clearTimeout(timeout);
-            socket.removeEventListener("message", onMessage);
+            cleanup();
             resolve();
           } else if (payload.type === "error") {
-            window.clearTimeout(timeout);
-            socket.removeEventListener("message", onMessage);
+            cleanup();
             reject(new Error(payload.error?.message || "AI voice session setup failed."));
           }
         } catch { /* ignore non-JSON events */ }
       };
       socket.addEventListener("message", onMessage);
+      socket.addEventListener("close", onClose, { once: true });
     });
     socket.send(JSON.stringify({
       type: "session.update",
