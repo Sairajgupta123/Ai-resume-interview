@@ -134,29 +134,45 @@ export default function Dashboard() {
     const data = await r.json();
     setItems(data.interviews || []);
     setAuthenticated(true);
-    try {
-      const analyticsResponse = await fetch("/api/employer/analytics", { cache: "no-store" });
-      const analyticsData = await analyticsResponse.json();
-      if (!analyticsResponse.ok) throw new Error(analyticsData.error || "Analytics unavailable.");
-      setAnalytics(analyticsData.analytics);
+    const fetchPanel = async (url: string, fallback: string) => {
+      const response = await fetch(url, { cache: "no-store" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || fallback);
+      return data;
+    };
+    const [analyticsResult, auditResult, retentionResult, deletionQueueResult] = await Promise.allSettled([
+      fetchPanel("/api/employer/analytics", "Analytics unavailable."),
+      fetchPanel("/api/employer/audit", "Audit history unavailable."),
+      fetchPanel("/api/employer/privacy/retention", "Retention preview unavailable."),
+      fetchPanel("/api/employer/privacy/deletion-requests", "Deletion queue unavailable.")
+    ]);
+
+    if (analyticsResult.status === "fulfilled") {
+      setAnalytics(analyticsResult.value.analytics);
       setAnalyticsError("");
-      const auditResponse = await fetch("/api/employer/audit", { cache: "no-store" });
-      const auditData = await auditResponse.json();
-      if (!auditResponse.ok) throw new Error(auditData.error || "Audit history unavailable.");
-      setAuditEvents(auditData.events || []);
+    } else {
+      setAnalyticsError(analyticsResult.reason instanceof Error ? analyticsResult.reason.message : "Analytics unavailable.");
+    }
+
+    if (auditResult.status === "fulfilled") {
+      setAuditEvents(auditResult.value.events || []);
       setAuditError("");
-      const retentionResponse = await fetch("/api/employer/privacy/retention", { cache: "no-store" });
-      const retentionData = await retentionResponse.json();
-      if (!retentionResponse.ok) throw new Error(retentionData.error || "Retention preview unavailable.");
-      setRetentionPreview(retentionData.preview);
+    } else {
+      setAuditError(auditResult.reason instanceof Error ? auditResult.reason.message : "Audit history unavailable.");
+    }
+
+    if (retentionResult.status === "fulfilled") {
+      setRetentionPreview(retentionResult.value.preview);
       setRetentionError("");
-      const deletionQueueResponse = await fetch("/api/employer/privacy/deletion-requests", { cache: "no-store" });
-      const deletionQueueData = await deletionQueueResponse.json();
-      if (!deletionQueueResponse.ok) throw new Error(deletionQueueData.error || "Deletion queue unavailable.");
-      setDeletionRequests(deletionQueueData.requests || []);
+    } else {
+      setRetentionError(retentionResult.reason instanceof Error ? retentionResult.reason.message : "Retention preview unavailable.");
+    }
+
+    if (deletionQueueResult.status === "fulfilled") {
+      setDeletionRequests(deletionQueueResult.value.requests || []);
       setDeletionQueueError("");
-    } catch (analyticsFailure) {
-      setAnalyticsError(analyticsFailure instanceof Error ? analyticsFailure.message : "Analytics unavailable.");
+    } else {
+      setDeletionQueueError(deletionQueueResult.reason instanceof Error ? deletionQueueResult.reason.message : "Deletion queue unavailable.");
     }
   };
 
