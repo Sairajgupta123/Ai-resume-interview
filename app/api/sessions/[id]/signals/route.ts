@@ -94,11 +94,11 @@ export async function POST(request: NextRequest, context: Context) {
       return NextResponse.json({ error: "Invalid signalling message." }, { status: 400, headers });
     }
     const interview = await db.interview.findUnique({ where: { id }, select: { mode: true, status: true, startedAt: true, consentAcceptedAt: true } });
-    if (!interview) return NextResponse.json({ error: "Interview not found." }, { status: 404 });
+    if (!interview) return NextResponse.json({ error: "Interview not found." }, { status: 404, headers });
     if (interview.mode !== "live") return NextResponse.json({ error: "Live video is only enabled for live interviews." }, { status: 409, headers });
     if (interview.status === "completed") return NextResponse.json({ error: "This interview has ended." }, { status: 409, headers });
     if (sender === "candidate" && (!interview.startedAt || !interview.consentAcceptedAt || interview.status !== "in_progress")) {
-      return NextResponse.json({ error: "The live interview has not been started with candidate consent." }, { status: 409 });
+      return NextResponse.json({ error: "The live interview has not been started with candidate consent." }, { status: 409, headers });
     }
     // The employer's ICE candidates may be generated while waiting for the candidate's
     // offer. Persist only ICE in that pre-join state; candidate media remains consent-gated.
