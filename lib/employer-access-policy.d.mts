@@ -21,3 +21,8 @@ export type EmployerPermission =
   | "privacy:execute_deletion";
 export function normalizeEmployerRole(role: unknown): EmployerRole | null;
 export function hasEmployerPermission(role: unknown, permission: unknown): boolean;
+
+export function resolveEmployerMembershipAccess(
+  memberships: Array<{ organizationId: string; role: string }> | null | undefined,
+  permission: string
+): { organizationId: string; role: string } | null;
