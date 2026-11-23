@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { buildCsv } from "@/lib/csv-export.mjs";
 import RecordingPlayer from "./recording-player";
+import { isRestorableInterviewReport } from "@/lib/report-recovery-policy.mjs";
 
 type Item = { id: string; candidateName: string; role: string; mode: string; status: string; overallScore: number | null; recommendation: string | null; employerDecision: string | null; durationSeconds: number; createdAt: string };
 type Detail = Item & { candidateEmail?: string | null; resumeText: string; jobDescription: string; recordingPath: string | null; reportJson: string | null; employerNotes: string | null; decisionAt: string | null; decisionHistory: { id: string; decision: string; notes: string | null; createdAt: string }[]; messages: { role: string; content: string }[] };
@@ -500,8 +501,8 @@ export default function Dashboard() {
 function ReportView({json}:{json:string}) {
   let parsed: unknown;
   try { parsed = JSON.parse(json); } catch { return <p>Report data could not be read.</p>; }
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    return <p>Report data is incomplete or has an unsupported format.</p>;
+  if (!isRestorableInterviewReport(parsed)) {
+    return <p>Report data failed validation and cannot be displayed as a verified assessment. Please retry report recovery or contact the administrator.</p>;
   }
   const report = parsed as Record<string, unknown>;
   const text = (value: unknown, fallback = "—") => typeof value === "string" && value.trim() ? value : fallback;
