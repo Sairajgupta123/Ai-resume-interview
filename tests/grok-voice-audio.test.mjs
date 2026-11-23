@@ -46,3 +46,11 @@ test("rejects malformed PCM16 base64 payloads", () => {
 test("rejects non-PCM16 values for base64 encoding", () => {
   assert.throws(() => pcm16ToBase64(new Uint8Array([0, 1])), TypeError);
 });
+
+test("rejects non-Float32 audio input", () => {
+  assert.throws(() => resampleFloat32ToPcm16([0, 1], 24000), TypeError);
+});
+
+test("validates sample rates even when the input is empty", () => {
+  assert.throws(() => resampleFloat32ToPcm16(new Float32Array(0), 0), RangeError);
+});
