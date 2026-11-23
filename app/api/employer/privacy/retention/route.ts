@@ -1,16 +1,18 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { isEmployerAuthenticated } from "@/lib/auth";
+import { getEmployerOrganizationAccess } from "@/lib/auth";
 import { buildRetentionPreview } from "@/lib/retention-policy.mjs";
 
 export const runtime = "nodejs";
 
 export async function GET() {
-  if (!(await isEmployerAuthenticated())) {
+  const access = await getEmployerOrganizationAccess("privacy:manage_requests");
+  if (!access) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401, headers: { "Cache-Control": "no-store" } });
   }
   try {
     const records = await db.interview.findMany({
+      where: { organizationId: access.organizationId },
       select: {
         status: true,
         createdAt: true,
