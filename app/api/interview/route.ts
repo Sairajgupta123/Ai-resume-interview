@@ -436,7 +436,7 @@ export async function POST(request: NextRequest) {
         const history = body.sessionId
           ? await db.interviewMessage.findMany({
               where: { interviewId: body.sessionId },
-              orderBy: { createdAt: "asc" }, take: 100,
+              orderBy: { createdAt: "asc" }, take: 200,
               select: { role: true, content: true }
             })
           : (body.history || []).slice(-40);
