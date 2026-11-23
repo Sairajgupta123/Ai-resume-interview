@@ -2,11 +2,22 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { buildCandidateComparison } from "../lib/candidate-comparison-policy.mjs";
 
-const candidate = (id, name, role, skills, score = 80) => ({
-  id, candidateName: name, role, overallScore: score, recommendation: "Strong match",
+const candidate = (id, name, role, skills, score = 80) => {
+  const coverage = skills.length
+    ? Math.round((skills.filter(item => item?.evidence !== "Insufficient evidence" && typeof item?.evidence === "string" && item.evidence.trim().length >= 8).length / skills.length) * 100)
+    : 0;
+  const recommendation = coverage < 50
+    ? "Needs review"
+    : score >= 80 && coverage >= 75
+      ? "Strong match"
+      : score >= 60
+        ? "Consider"
+        : "Needs review";
+  return {
+  id, candidateName: name, role, overallScore: score, recommendation,
   reportJson: JSON.stringify({
     overallScore: score,
-    recommendation: "Strong match",
+    recommendation,
     summary: "Demonstrated job-related technical knowledge.",
     strengths: [],
     improvementAreas: [],
@@ -14,7 +25,8 @@ const candidate = (id, name, role, skills, score = 80) => ({
     questionFeedback: [],
     disclaimer: "AI assessment is advisory and requires human review."
   })
-});
+  };
+};
 
 test("compares skill evidence across candidates without choosing a winner", () => {
   const result = buildCandidateComparison([
