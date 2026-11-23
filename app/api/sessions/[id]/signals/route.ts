@@ -56,19 +56,20 @@ async function access(request: NextRequest, id: string) {
 
 export async function GET(request: NextRequest, context: Context) {
   const { id } = await context.params;
+  const headers = { "Cache-Control": "private, no-store, max-age=0" };
   const sender = await access(request, id);
-  if (!sender) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+  if (!sender) return NextResponse.json({ error: "Unauthorized." }, { status: 401, headers });
   const interview = await db.interview.findUnique({ where: { id }, select: { status: true, mode: true, startedAt: true, consentAcceptedAt: true } });
   if (!interview) return NextResponse.json({ error: "Interview not found." }, { status: 404, headers });
-  if (interview.mode !== "live") return NextResponse.json({ signals: [] });
-  if (interview.status === "completed") return NextResponse.json({ signals: [] });
+  if (interview.mode !== "live") return NextResponse.json({ signals: [] }, { headers });
+  if (interview.status === "completed") return NextResponse.json({ signals: [] }, { headers });
   if (sender === "candidate" && (!interview.startedAt || !interview.consentAcceptedAt || interview.status !== "in_progress")) {
     return NextResponse.json({ error: "The live interview has not been started with candidate consent." }, { status: 409, headers });
   }
   const rawSince = request.nextUrl.searchParams.get("since");
   const afterId = request.nextUrl.searchParams.get("afterId") || "";
   const since = rawSince ? new Date(rawSince) : new Date(0);
-  if (Number.isNaN(since.getTime()) || afterId.length > 64) return NextResponse.json({ error: "Invalid cursor." }, { status: 400 });
+  if (Number.isNaN(since.getTime()) || afterId.length > 64) return NextResponse.json({ error: "Invalid cursor." }, { status: 400, headers });
   const signals = await db.interviewSignal.findMany({
     where: {
       interviewId: id,
@@ -79,12 +80,8 @@ export async function GET(request: NextRequest, context: Context) {
     take: 50,
     select: { id: true, kind: true, payload: true, createdAt: true }
   });
-  return NextResponse.json(
-    { signals },
-    { headers: { "Cache-Control": "private, no-store, max-age=0" } }
-  );
+  return NextResponse.json({ signals }, { headers });
 }
-
 export async function POST(request: NextRequest, context: Context) {
   const { id } = await context.params;
   const headers = { "Cache-Control": "private, no-store, max-age=0" };
