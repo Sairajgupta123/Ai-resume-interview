@@ -57,9 +57,10 @@ model InterviewMessage {
   id          String    @id @default(cuid())
   interviewId String
   role        String
-  content     String
-  createdAt   DateTime  @default(now())
-  interview   Interview @relation(fields: [interviewId], references: [id], onDelete: Cascade)
+  content         String
+  clientMessageId String?   @unique
+  createdAt       DateTime  @default(now())
+  interview       Interview @relation(fields: [interviewId], references: [id], onDelete: Cascade)
   @@index([interviewId, createdAt])
 }
 
