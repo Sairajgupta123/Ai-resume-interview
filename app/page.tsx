@@ -684,7 +684,6 @@ export default function Home() {
       }
     } catch {
       acquiredStream?.getTracks().forEach(track => track.stop());
-      if (streamRef.current === acquiredStream) streamRef.current = null;
       setError("Camera/microphone permission was not granted. You can still answer by typing.");
     } finally {
       cameraRequestRef.current = false;
