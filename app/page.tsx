@@ -614,22 +614,32 @@ export default function Home() {
           pendingTranscriptRef.current.push(pendingEntry);
           transcriptWriteRef.current = transcriptWriteRef.current.then(async () => {
             let lastError: Error | null = null;
-            for (let attempt = 0; attempt < 2; attempt += 1) {
+            // Keep the same clientMessageId for every retry: the API uses it to
+            // make a timed-out request safe to replay without duplicating a message.
+            for (let attempt = 0; attempt < 4; attempt += 1) {
               try {
                 const response = await fetch("/api/sessions/" + targetSessionId + "/transcript", {
                   method: "POST",
                   credentials: "same-origin",
+                  cache: "no-store",
                   headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify(pendingEntry)
+                  body: JSON.stringify(pendingEntry),
+                  signal: AbortSignal.timeout(10_000)
                 });
-                const result = await response.json();
-                if (!response.ok) throw new Error(result.error || "Could not save the live transcript.");
+                const result = await response.json().catch(() => ({}));
+                if (!response.ok) {
+                  const message = typeof result.error === "string" ? result.error : "Could not save the live transcript.";
+                  const retryable = response.status === 408 || response.status === 429 || response.status >= 500;
+                  if (!retryable) throw Object.assign(new Error(message), { retryable: false });
+                  throw Object.assign(new Error(message), { retryable: true });
+                }
                 pendingTranscriptRef.current = pendingTranscriptRef.current.filter(entry => entry.clientMessageId !== pendingEntry.clientMessageId);
                 setHistory(previous => [...previous, { role: speaker, content: text }]);
                 return;
               } catch (error) {
                 lastError = error instanceof Error ? error : new Error("Could not save the live transcript.");
-                if (attempt === 0) await new Promise(resolve => window.setTimeout(resolve, 500));
+                if (error && typeof error === "object" && "retryable" in error && error.retryable === false) break;
+                if (attempt < 3) await new Promise(resolve => window.setTimeout(resolve, 500 * (2 ** attempt)));
               }
             }
             throw lastError || new Error("Could not save the live transcript.");
