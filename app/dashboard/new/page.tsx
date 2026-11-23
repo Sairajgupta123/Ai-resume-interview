@@ -10,6 +10,7 @@ export default function NewInterview() {
   const [jobDescription,setJobDescription]=useState("");
   const [mode,setMode]=useState("live");
   const [inviteUrl,setInviteUrl]=useState("");
+  const [copied,setCopied]=useState(false);
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState("");
 
@@ -17,10 +18,15 @@ export default function NewInterview() {
     e.preventDefault();setBusy(true);setError("");setInviteUrl("");
     try {
       const response=await fetch("/api/employer/sessions",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({candidateName,candidateEmail,role,resume,jobDescription,mode})});
-      const data=await response.json();if(!response.ok)throw new Error(data.error||"Could not create interview.");
-      const invitation=await fetch(`/api/sessions/${data.id}/invite`,{method:"POST"});
-      const link=await invitation.json();if(!invitation.ok)throw new Error(link.error||"Could not create invitation link.");
-      setInviteUrl(link.inviteUrl);
+      const data:unknown=await response.json();
+      if(!response.ok) {
+        const message=data&&typeof data==="object"&&"error" in data&&typeof data.error==="string"?data.error:"Could not create interview.";
+        throw new Error(message);
+      }
+      if(!data||typeof data!=="object"||!("id" in data)||typeof data.id!=="string"||!("inviteUrl" in data)||typeof data.inviteUrl!=="string") {
+        throw new Error("The interview was created, but the invitation link could not be confirmed. Refresh the dashboard before retrying.");
+      }
+      setInviteUrl(data.inviteUrl);
     } catch(e){setError(e instanceof Error?e.message:"Something went wrong.");}
     finally{setBusy(false);}
   };
@@ -38,7 +44,7 @@ export default function NewInterview() {
         {error&&<p className="error-box wide">{error}</p>}
         <button className="primary-btn wide" disabled={busy}>{busy?"Creating invitation…":"Create interview invitation ↗"}</button>
       </form>
-      {inviteUrl&&<div className="invite-result"><b>Invitation link created</b><p>Copy this private link and send it to the candidate. The candidate email is recorded for your reference; this app does not send email automatically.</p><input readOnly value={inviteUrl}/><button className="primary-btn" onClick={()=>navigator.clipboard.writeText(inviteUrl)}>Copy invitation link</button></div>}
+      {inviteUrl&&<div className="invite-result"><b>Invitation link created</b><p>Copy this private link and send it to the candidate. The candidate email is recorded for your reference; this app does not send email automatically.</p><input readOnly value={inviteUrl}/><button className="primary-btn" onClick={async()=>{try{await navigator.clipboard.writeText(inviteUrl);setCopied(true);}catch{setError("Could not copy automatically. Select and copy the invitation link manually.");}}}>{copied?"Link copied ✓":"Copy invitation link"}</button></div>}
     </section>
   </main>;
 }
