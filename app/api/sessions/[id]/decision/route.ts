@@ -62,16 +62,35 @@ export async function POST(request: NextRequest, context: Context) {
     if (notes.length > 3000) {
       return NextResponse.json({ error: "Decision notes must be 3,000 characters or fewer." }, { status: 413 });
     }
-    const interview = await db.interview.findUnique({ where: { id }, select: { id: true } });
+    const interview = await db.interview.findUnique({
+      where: { id },
+      select: { id: true, status: true }
+    });
     if (!interview) return NextResponse.json({ error: "Interview not found." }, { status: 404 });
-    const [, updated] = await db.$transaction([
-      db.employerDecisionHistory.create({ data: { interviewId: id, decision, notes: notes || null } }),
-      db.interview.update({ where: { id }, data: {
-        employerDecision: decision,
-        employerNotes: notes || null,
-        decisionAt: new Date()
-      }, select: { employerDecision: true, employerNotes: true, decisionAt: true } })
-    ]);
+    if (interview.status !== "completed") {
+      return NextResponse.json({ error: "Employer decisions can be recorded only after an interview is completed." }, { status: 409 });
+    }
+    const updated = await db.$transaction(async tx => {
+      // Re-check status inside the transaction to prevent a stale dashboard
+      // from recording a hiring decision while the interview is still running.
+      const eligible = await tx.interview.findFirst({
+        where: { id, status: "completed" },
+        select: { id: true }
+      });
+      if (!eligible) throw new Error("INTERVIEW_NOT_COMPLETED");
+      await tx.employerDecisionHistory.create({
+        data: { interviewId: id, decision, notes: notes || null }
+      });
+      return tx.interview.update({
+        where: { id },
+        data: {
+          employerDecision: decision,
+          employerNotes: notes || null,
+          decisionAt: new Date()
+        },
+        select: { employerDecision: true, employerNotes: true, decisionAt: true }
+      });
+    });
     const decisionHistory = await db.employerDecisionHistory.findMany({
       where: { interviewId: id },
       orderBy: { createdAt: "desc" },
@@ -85,7 +104,10 @@ export async function POST(request: NextRequest, context: Context) {
       decisionAt: updated.decisionAt,
       decisionHistory
     });
-  } catch {
+  } catch (error) {
+    if (error instanceof Error && error.message === "INTERVIEW_NOT_COMPLETED") {
+      return NextResponse.json({ error: "Employer decisions can be recorded only after an interview is completed." }, { status: 409 });
+    }
     return NextResponse.json({ error: "Could not save employer decision." }, { status: 500 });
   }
 }
