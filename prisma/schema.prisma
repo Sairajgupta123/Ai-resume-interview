@@ -8,7 +8,7 @@ datasource db {
 }
 
 model Interview {
-  id              String   @id @default(cuid())
+  // Nullable during the staged legacy-data backfill; employer APIs must not infer ownership from null.\n  organizationId  String?\n  organization    EmployerOrganization? @relation(fields: [organizationId], references: [id], onDelete: Restrict)\n  id              String   @id @default(cuid())
   candidateName   String
   role            String
   mode            String   @default("live")
@@ -41,6 +41,44 @@ model Interview {
   recordingAccessEvents RecordingAccessEvent[]
   @@index([createdAt])
   @@index([candidateName])
+}
+
+
+model EmployerUser {
+  id           String   @id @default(cuid())
+  username     String   @unique
+  passwordHash String
+  displayName  String?
+  disabledAt   DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  memberships  EmployerMembership[]
+
+  @@index([disabledAt])
+}
+
+model EmployerOrganization {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  memberships EmployerMembership[]
+  interviews  Interview[]
+}
+
+model EmployerMembership {
+  id             String   @id @default(cuid())
+  userId         String
+  organizationId String
+  role           String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  user           EmployerUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization   EmployerOrganization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, organizationId])
+  @@index([organizationId, role])
 }
 
 model RecordingAccessEvent {
