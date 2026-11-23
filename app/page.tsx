@@ -315,7 +315,7 @@ export default function Home() {
     });
     setDraft(""); setBusy(true); setError("");
     try {
-      const data = await callApi({ action: "answer", candidateName, role, resume, jobDescription, mode, sessionId, history, answer, requestId }) as InterviewReply;
+      const data = await callApi({ action: "answer", sessionId, answer, requestId }) as InterviewReply;
       pendingAnswerRef.current = null;
       setHistory(prev => [...prev, { role: "assistant", content: data.message }]);
       if (sessionId) await fetch(`/api/sessions/${sessionId}`, { method: "PUT", headers: { "Content-Type": "application/json", ...(inviteToken ? { "x-interview-invite": inviteToken } : {}) }, body: JSON.stringify({ durationSeconds: seconds }) });
@@ -328,7 +328,7 @@ export default function Home() {
     finally { setBusy(false); }
   };
 
-    const finishInterview = async (transcript = history) => {
+    const finishInterview = async () => {
     if (finishStartedRef.current) return;
     finishStartedRef.current = true;
     setBusy(true); setError("");
@@ -385,7 +385,7 @@ export default function Home() {
           throw new Error("Your recording is still saved on this device but has not uploaded. Recover it from the camera panel, then end the interview again.");
         }
       }
-      const data = await callApi({ action: "report", candidateName, role, resume, jobDescription, history: transcript, sessionId }) as Report;
+      const data = await callApi({ action: "report", sessionId }) as Report;
       // The report endpoint records authoritative duration and completes the session atomically.
       // Do not call the general session update endpoint after completion.
       if (!recordingSavedOk && cameraOn) setError("Interview report is ready, but the video recording could not be uploaded. Please check server storage.");
