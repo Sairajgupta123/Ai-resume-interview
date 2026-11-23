@@ -445,7 +445,32 @@ export default function Dashboard() {
 }
 
 function ReportView({json}:{json:string}) {
-  let report: any = {};
-  try { report = JSON.parse(json); } catch { return <p>Report data could not be read.</p>; }
-  return <div className="drawer-report"><div className="drawer-score"><strong>{report.overallScore ?? "—"}</strong><span>/100 · {report.recommendation || "Needs review"}</span></div><p>{report.summary}</p><h3>Strengths</h3><ul>{(report.strengths||[]).map((x:string,i:number)=><li key={i}>{x}</li>)}</ul><h3>Development areas</h3><ul>{(report.improvementAreas||[]).map((x:string,i:number)=><li key={i}>{x}</li>)}</ul><h3>Skill assessment</h3>{(report.skills||[]).map((x:any,i:number)=><div className="drawer-skill" key={i}><b>{x.skill}</b><span>{x.rating}</span><p>{x.evidence}</p></div>)}<h3>Question-by-question evidence</h3>{(report.questionFeedback||[]).map((x:any,i:number)=><div className="drawer-skill" key={i}><b>Q{i+1}. {x.question}</b><p>{x.assessment}</p><small>Evidence: {x.evidence}</small></div>)}</div>;
+  let parsed: unknown;
+  try { parsed = JSON.parse(json); } catch { return <p>Report data could not be read.</p>; }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return <p>Report data is incomplete or has an unsupported format.</p>;
+  }
+  const report = parsed as Record<string, unknown>;
+  const text = (value: unknown, fallback = "—") => typeof value === "string" && value.trim() ? value : fallback;
+  const list = (value: unknown) => Array.isArray(value) ? value : [];
+  const strengths = list(report.strengths).filter((value): value is string => typeof value === "string" && Boolean(value.trim()));
+  const improvementAreas = list(report.improvementAreas).filter((value): value is string => typeof value === "string" && Boolean(value.trim()));
+  const skills = list(report.skills).filter((value): value is Record<string, unknown> => Boolean(value) && typeof value === "object" && !Array.isArray(value));
+  const questionFeedback = list(report.questionFeedback).filter((value): value is Record<string, unknown> => Boolean(value) && typeof value === "object" && !Array.isArray(value));
+  const score = Number.isInteger(report.overallScore) && Number(report.overallScore) >= 0 && Number(report.overallScore) <= 100
+    ? Number(report.overallScore)
+    : "—";
+  return <div className="drawer-report">
+    <div className="drawer-score"><strong>{score}</strong><span>/100 · {text(report.recommendation, "Needs review")}</span></div>
+    <p>{text(report.summary, "No report summary is available.")}</p>
+    <h3>Strengths</h3>
+    {strengths.length ? <ul>{strengths.map((item,i)=><li key={i}>{item}</li>)}</ul> : <p>No strengths were recorded.</p>}
+    <h3>Development areas</h3>
+    {improvementAreas.length ? <ul>{improvementAreas.map((item,i)=><li key={i}>{item}</li>)}</ul> : <p>No development areas were recorded.</p>}
+    <h3>Skill assessment</h3>
+    {skills.length ? skills.map((item,i)=><div className="drawer-skill" key={i}><b>{text(item.skill, "Unnamed skill")}</b><span>{text(item.rating, "Insufficient evidence")}</span><p>{text(item.evidence, "Insufficient evidence")}</p></div>) : <p>No skill assessments were recorded.</p>}
+    <h3>Question-by-question evidence</h3>
+    {questionFeedback.length ? questionFeedback.map((item,i)=><div className="drawer-skill" key={i}><b>Q{i+1}. {text(item.question, "Question unavailable")}</b><p>{text(item.assessment, "No assessment was recorded.")}</p><small>Evidence: {text(item.evidence, "Insufficient evidence")}</small></div>) : <p>No question-level feedback was recorded.</p>}
+    {report.disclaimer && <p className="drawer-sub">{text(report.disclaimer)}</p>}
+  </div>;
 }
