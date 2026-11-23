@@ -367,17 +367,32 @@ export default function Home() {
       const extension = cached.mimeType.includes("mp4") ? "mp4" : "webm";
       const form = new FormData();
       form.append("recording", blob, `mzobs-recovered-${Date.now()}.${extension}`);
-      const response = await fetch(`/api/sessions/${sessionId}/recording`, {
-        method: "POST",
-        credentials: "same-origin",
-        body: form
-      });
+      const uploadController = new AbortController();
+      const uploadTimeout = window.setTimeout(() => uploadController.abort(), 45_000);
+      let response: Response;
+      try {
+        response = await fetch(`/api/sessions/${sessionId}/recording`, {
+          method: "POST",
+          credentials: "same-origin",
+          body: form,
+          signal: uploadController.signal
+        });
+      } catch (uploadError) {
+        if (uploadController.signal.aborted) {
+          throw new Error("Recording recovery timed out after 45 seconds. Your local recording segments have been kept; you can retry.");
+        }
+        throw uploadError;
+      } finally {
+        window.clearTimeout(uploadTimeout);
+      }
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Could not recover the saved recording.");
-      await clearCachedRecording(sessionId);
-      setRecoverableRecording(false);
-      setRecordingSaved(true);
       recordingSavedRef.current = true;
+      setRecordingSaved(true);
+      setRecoverableRecording(false);
+      // Server confirmation is authoritative. A local cleanup failure must not
+      // turn a successfully uploaded recording into a failed recovery.
+      await clearCachedRecording(sessionId).catch(() => {});
     } catch (error) {
       setError(error instanceof Error ? error.message : "Could not recover the saved recording.");
     } finally {
