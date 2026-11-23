@@ -246,9 +246,6 @@ export async function POST(request: NextRequest) {
         startLockAt = lockAt;
       } else {
         if (!startedAt) return NextResponse.json({ error: "The interview has not been started." }, { status: 409 });
-        if (body.action === "answer" && elapsedInterviewSeconds(startedAt) >= INTERVIEW_LIMIT_SECONDS) {
-          return NextResponse.json({ error: "The 15-minute interview time limit has been reached. Generate your report to finish." }, { status: 409 });
-        }
       }
     }
 
@@ -287,6 +284,9 @@ export async function POST(request: NextRequest) {
           timeLimitReached: !!startedAt && elapsedInterviewSeconds(startedAt) >= INTERVIEW_LIMIT_SECONDS
         });
         return attachCandidateCookie(response, request, body.sessionId!, invitationExpiresAt);
+      }
+      if (startedAt && elapsedInterviewSeconds(startedAt) >= INTERVIEW_LIMIT_SECONDS) {
+        return NextResponse.json({ error: "The 15-minute interview time limit has been reached. Generate your report to finish." }, { status: 409 });
       }
     }
 
