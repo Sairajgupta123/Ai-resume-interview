@@ -28,6 +28,53 @@ const GROK_TIMEOUT_MS = 45_000;
 const OPERATION_LOCK_STALE_MS = 90_000;
 
 type Message = { role: "assistant" | "user"; content: string };
+async function readBoundedJson(request: NextRequest, maxBytes: number): Promise<{ value: unknown } | { error: string; status: number }> {
+  if (!(request.headers.get("content-type") || "").toLowerCase().includes("application/json")) {
+    return { error: "A JSON request body is required.", status: 415 };
+  }
+  const declaredLength = request.headers.get("content-length");
+  if (declaredLength !== null) {
+    const parsedLength = Number(declaredLength);
+    if (!Number.isSafeInteger(parsedLength) || parsedLength < 0) {
+      return { error: "Invalid request content length.", status: 400 };
+    }
+    if (parsedLength > maxBytes) return { error: "Interview request is too large.", status: 413 };
+  }
+  const reader = request.body?.getReader();
+  if (!reader) return { error: "A request body is required.", status: 400 };
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+  try {
+    while (true) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      totalBytes += chunk.value.byteLength;
+      if (totalBytes > maxBytes) {
+        await reader.cancel().catch(() => undefined);
+        return { error: "Interview request is too large.", status: 413 };
+      }
+      chunks.push(chunk.value);
+    }
+  } catch {
+    return { error: "Could not read interview request.", status: 400 };
+  }
+  const bytes = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  try {
+    const value: unknown = JSON.parse(new TextDecoder().decode(bytes));
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return { error: "Interview request must be a JSON object.", status: 400 };
+    }
+    return { value };
+  } catch {
+    return { error: "Invalid JSON request body.", status: 400 };
+  }
+}
+
 type Payload = {
   action: "start" | "answer" | "report";
   candidateName?: string;
@@ -172,7 +219,13 @@ function validateReport(raw: any, candidateAnswers: string[]) {
 
 export async function POST(request: NextRequest) {
   try {
-    const body = (await request.json()) as Payload;
+    // Start requests include resume and job-description text; 40 KB is ample
+    // for the validated fields while preventing unbounded JSON buffering.
+    const parsedRequest = await readBoundedJson(request, 40 * 1024);
+    if ("error" in parsedRequest) {
+      return NextResponse.json({ error: parsedRequest.error }, { status: parsedRequest.status });
+    }
+    const body = parsedRequest.value as Payload;
     if (!["start", "answer", "report"].includes(body.action)) {
       return NextResponse.json({ error: "Unsupported interview action." }, { status: 400 });
     }
