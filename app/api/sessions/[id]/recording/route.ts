@@ -225,7 +225,7 @@ export async function GET(request: NextRequest, context: Context) {
       "Content-Type": contentType,
       "Accept-Ranges": "bytes",
       "Content-Disposition": "inline; filename=\"" + filename + "\"",
-      "Cache-Control": "private, no-store",
+      "Cache-Control": "private, no-store, max-age=0", Pragma: "no-cache",
       "X-Content-Type-Options": "nosniff"
     };
 
@@ -261,15 +261,15 @@ export async function GET(request: NextRequest, context: Context) {
       error: remote
         ? "Private recording storage is temporarily unavailable."
         : "Recording file is missing from server storage."
-    }, { status: remote ? 502 : 404, headers: { "Cache-Control": "no-store" } });
+    }, { status: remote ? 502 : 404, headers: { "Cache-Control": "private, no-store, max-age=0", Pragma: "no-cache" } });
   }
 }
 
 export async function HEAD(_request: NextRequest, context: Context) {
-  if (!(await isEmployerAuthenticated())) return new NextResponse(null, { status: 401, headers: { "Cache-Control": "no-store" } });
+  if (!(await isEmployerAuthenticated())) return new NextResponse(null, { status: 401, headers: { "Cache-Control": "private, no-store, max-age=0", Pragma: "no-cache" } });
   const { id } = await context.params;
   const interview = await db.interview.findUnique({ where: { id }, select: { recordingPath: true } });
-  if (!interview?.recordingPath) return new NextResponse(null, { status: 404, headers: { "Cache-Control": "no-store" } });
+  if (!interview?.recordingPath) return new NextResponse(null, { status: 404, headers: { "Cache-Control": "private, no-store, max-age=0", Pragma: "no-cache" } });
   try {
     const storedPath = interview.recordingPath;
     const filename = isRemoteRecordingPath(storedPath)
@@ -284,11 +284,11 @@ export async function HEAD(_request: NextRequest, context: Context) {
         "Content-Length": String(size),
         "Accept-Ranges": "bytes",
         "Content-Disposition": "inline; filename=\"" + filename + "\"",
-        "Cache-Control": "private, no-store",
+        "Cache-Control": "private, no-store, max-age=0", Pragma: "no-cache",
         "X-Content-Type-Options": "nosniff"
       }
     });
   } catch {
-    return new NextResponse(null, { status: isRemoteRecordingPath(interview.recordingPath) ? 502 : 404, headers: { "Cache-Control": "no-store" } });
+    return new NextResponse(null, { status: isRemoteRecordingPath(interview.recordingPath) ? 502 : 404, headers: { "Cache-Control": "private, no-store, max-age=0", Pragma: "no-cache" } });
   }
 }
