@@ -23,7 +23,7 @@ const REALTIME_URL = "wss://api.x.ai/v1/realtime?model=grok-voice-latest";
 const SAMPLE_RATE = 24_000;
 
 const normalizeTranscript = (value: string) =>
-  value.toLowerCase().replace(/[^\\p{L}\\p{N}\\s]/gu, "").replace(/\\s+/g, " ").trim();
+  value.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, "").replace(/\s+/g, " ").trim();
 
 export class GrokRealtimeClient {
   private socket: WebSocket | null = null;
