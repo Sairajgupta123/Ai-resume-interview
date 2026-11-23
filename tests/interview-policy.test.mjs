@@ -55,3 +55,31 @@ test("missing evidence has one explicit accepted sentinel", () => {
   assert.equal(isVerifiableEvidenceQuote("Insufficient evidence", []), true);
   assert.equal(isVerifiableEvidenceQuote("No evidence", []), false);
 });
+
+
+test("recent interview messages fetched newest-first are restored to chronological order", async () => {
+  const { restoreChronologicalOrder } = await import("../lib/interview-policy.mjs");
+  const newestFirst = [
+    { role: "assistant", content: "Question 3" },
+    { role: "user", content: "Answer 2" },
+    { role: "assistant", content: "Question 2" },
+    { role: "user", content: "Answer 1" }
+  ];
+  assert.deepEqual(
+    restoreChronologicalOrder(newestFirst).map(message => message.content),
+    ["Answer 1", "Question 2", "Answer 2", "Question 3"]
+  );
+});
+
+test("chronological restoration does not mutate the database result", async () => {
+  const { restoreChronologicalOrder } = await import("../lib/interview-policy.mjs");
+  const newestFirst = [{ content: "new" }, { content: "old" }];
+  const restored = restoreChronologicalOrder(newestFirst);
+  assert.deepEqual(newestFirst.map(message => message.content), ["new", "old"]);
+  assert.deepEqual(restored.map(message => message.content), ["old", "new"]);
+});
+
+test("chronological restoration safely handles invalid input", async () => {
+  const { restoreChronologicalOrder } = await import("../lib/interview-policy.mjs");
+  assert.deepEqual(restoreChronologicalOrder(null), []);
+});
