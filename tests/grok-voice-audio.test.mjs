@@ -6,7 +6,7 @@ test("resamples 48 kHz input to 24 kHz PCM16", () => {
   const input = new Float32Array([0, 0.5, -0.5, 1, -1, 0]);
   const output = resampleFloat32ToPcm16(input, 48000, 24000);
   assert.equal(output.length, 3);
-  assert.deepEqual([...output], [0, -16384, 0]);
+  assert.deepEqual([...output], [0, -16384, -32768]);
 });
 
 test("converts normalized float samples to signed PCM16 safely", () => {
