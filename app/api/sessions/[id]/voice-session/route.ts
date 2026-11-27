@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getCandidateInvitationToken, hasValidCandidateInvitation } from "@/lib/invitation";
 import { elapsedInterviewSeconds, INTERVIEW_LIMIT_SECONDS } from "@/lib/interview-policy.mjs";
+import { checkVoiceSessionRateLimit, recordVoiceSessionAttempt } from "@/lib/voice-session-rate-limit";
 
 export const runtime = "nodejs";
 
@@ -59,6 +60,18 @@ export async function POST(request: NextRequest, context: Context) {
     ) {
       return privateJson({ error: "A consented, active live interview is required." }, { status: 409 });
     }
+
+    const rateLimit = await checkVoiceSessionRateLimit(request, id);
+    if (rateLimit.limited) {
+      return privateJson(
+        { error: "Too many AI voice connection attempts. Please wait before reconnecting." },
+        { status: 429, headers: { "Retry-After": String(rateLimit.retryAfterSeconds) } }
+      );
+    }
+
+    // Count every provider credential request, including provider failures, to
+    // prevent a valid candidate session from being used to mint credentials in a loop.
+    await recordVoiceSessionAttempt(rateLimit.key);
 
     const apiKey = process.env.XAI_API_KEY;
     if (!apiKey) {
