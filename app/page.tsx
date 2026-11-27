@@ -69,6 +69,7 @@ export default function Home() {
   const pendingAnswerRef = useRef<{ answer: string; requestId: string } | null>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const grokVoiceRef = useRef<GrokRealtimeClient | null>(null);
+  const voiceConnectInProgressRef = useRef(false);
   const transcriptWriteRef = useRef<Promise<void>>(Promise.resolve());
   const transcriptPersistenceFailedRef = useRef(false);
   const pendingTranscriptRef = useRef<Array<{ role: "user" | "assistant"; content: string; clientMessageId: string }>>([]);
@@ -656,7 +657,10 @@ export default function Home() {
 
   const startGrokVoice = async (targetSessionId: string, openingMessage: string, isReconnect = false) => {
     const mediaStream = streamRef.current;
-    if (!mediaStream || !targetSessionId) return;
+    if (!mediaStream || !targetSessionId || voiceConnectInProgressRef.current) return;
+    // A reconnect button or startup callback can fire twice before React has
+    // rendered the connecting state. Keep the lock across transcript recovery.
+    voiceConnectInProgressRef.current = true;
 
     // Never discard transcript entries from a previous voice connection.
     // Retry them with their original IDs before accepting a new live session.
@@ -696,6 +700,7 @@ export default function Home() {
           transcriptPersistenceFailedRef.current = true;
           setError(lastError?.message || "A previous live transcript could not be recovered. Continue by typing after restoring your connection.");
           setVoiceStatus("unavailable");
+          voiceConnectInProgressRef.current = false;
           return;
         }
       }
@@ -799,6 +804,8 @@ export default function Home() {
       if (grokVoiceRef.current === client) grokVoiceRef.current = null;
       setVoiceStatus("unavailable");
       setError(error instanceof Error ? error.message : "Could not start Grok voice.");
+    } finally {
+      voiceConnectInProgressRef.current = false;
     }
   };
 
