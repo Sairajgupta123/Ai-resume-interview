@@ -5,6 +5,7 @@ export type RetentionPreview = {
   totalInterviews: number;
   completedInterviews: number;
   inProgressInterviews: number;
+  invitedInterviews: number;
   eligibleCompletedInterviews: number;
   consentedInterviews: number;
   missingConsentMetadata: number;
@@ -17,6 +18,7 @@ export function buildRetentionPreviewFromCounts(counts: {
   totalInterviews: number;
   completedInterviews: number;
   inProgressInterviews: number;
+  invitedInterviews: number;
   eligibleCompletedInterviews: number;
   consentedInterviews: number;
   missingConsentMetadata: number;
