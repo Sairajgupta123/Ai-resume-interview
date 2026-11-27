@@ -48,10 +48,10 @@ A resume- and job-description-aware interview application powered by xAI Grok.
 git clone https://github.com/Sairajgupta123/Ai-resume-interview.git
 cd Ai-resume-interview
 npm install
-Copy-Item .env.example .env.local
+Copy-Item .env.example .env
 ```
 
-Start the local database with `docker compose up -d postgres`, then open `.env.local` and set:
+Start the local database with `docker compose up -d postgres`, then open `.env` and set:
 - `XAI_API_KEY`: your xAI API key
 - `XAI_MODEL`: a chat model available to your xAI account
 - `EMPLOYER_USERNAME`: dashboard login (default example: admin)
