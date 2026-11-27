@@ -1,8 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { randomUUID } from "node:crypto";
+import { resolve } from "node:path";
 import { test } from "node:test";
 import { createDeletionVerificationToken, hashDeletionVerificationToken } from "../lib/deletion-verification-policy.mjs";
 import { approveVerifiedDeletionRequest } from "../lib/deletion-approval-service.mjs";
@@ -11,19 +10,28 @@ import { DELETION_VERIFICATION_RESEND_COOLDOWN_MS } from "../lib/deletion-verifi
 import { finalizeDeletionExecution, markDeletionExecutionFailed } from "../lib/deletion-execution-service.mjs";
 
 test("privacy deletion transaction removes interview data and retains an anonymized receipt", async () => {
-  const tempDir = await mkdtemp(join(tmpdir(), "ai-interview-deletion-"));
-  const databaseUrl = `file:${join(tempDir, "integration.db").replaceAll("\\", "/")}`;
+  const baseDatabaseUrl = process.env.DATABASE_URL || "";
+  assert.ok(/^postgres(?:ql)?:\/\//i.test(baseDatabaseUrl), "PostgreSQL DATABASE_URL is required for database integration tests");
+  const schemaName = `deletion_test_${randomUUID().replaceAll("-", "")}`;
+  const isolatedUrl = new URL(baseDatabaseUrl);
+  isolatedUrl.searchParams.set("schema", schemaName);
+  const databaseUrl = isolatedUrl.toString();
   const projectRoot = resolve(".");
   let prisma;
+  let admin;
 
   try {
+    const { PrismaClient } = await import("@prisma/client");
+    admin = new PrismaClient({ datasources: { db: { url: baseDatabaseUrl } } });
+    await admin.$connect();
+    await admin.$executeRawUnsafe(`CREATE SCHEMA "${schemaName}"`);
+
     execFileSync(
       process.execPath,
-      [resolve(projectRoot, "node_modules/prisma/build/index.js"), "db", "push", "--schema", "prisma/schema.prisma", "--skip-generate"],
+      [resolve(projectRoot, "node_modules/prisma/build/index.js"), "migrate", "deploy", "--schema", "prisma/schema.prisma"],
       { cwd: projectRoot, env: { ...process.env, DATABASE_URL: databaseUrl }, stdio: "pipe" }
     );
 
-    const { PrismaClient } = await import("@prisma/client");
     prisma = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
     await prisma.$connect();
 
@@ -617,6 +625,9 @@ test("privacy deletion transaction removes interview data and retains an anonymi
     assert.equal(retriedReceipt.lastErrorCode, null);
   } finally {
     if (prisma) await prisma.$disconnect();
-    await rm(tempDir, { recursive: true, force: true });
+    if (admin) {
+      await admin.$executeRawUnsafe(`DROP SCHEMA IF EXISTS "${schemaName}" CASCADE`);
+      await admin.$disconnect();
+    }
   }
 });

@@ -3,14 +3,18 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "prisma db push && next dev",
-    "build": "prisma generate && next build",
+    "dev": "prisma migrate dev && next dev",
+    "build": "node scripts/generate-prisma-clients.cjs && next build",
     "start": "next start",
     "lint": "tsc --noEmit",
-    "db:push": "prisma db push",
     "db:validate": "prisma validate",
-    "postinstall": "prisma generate",
-    "test": "node --test tests/*.test.mjs"
+    "postinstall": "node scripts/generate-prisma-clients.cjs",
+    "test": "node --test tests/*.test.mjs",
+    "db:migrate": "prisma migrate deploy",
+    "db:migrate:dev": "prisma migrate dev",
+    "db:generate": "node scripts/generate-prisma-clients.cjs",
+    "db:validate:sqlite": "prisma validate --schema prisma/schema.sqlite.prisma",
+    "db:import-sqlite": "node scripts/import-sqlite-to-postgres.cjs"
   },
   "dependencies": {
     "next": "15.5.28",

@@ -4,7 +4,7 @@ import { assertProductionConfig, getProductionConfigErrors } from "../lib/server
 
 const validProductionEnv = {
   NODE_ENV: "production",
-  DATABASE_URL: "file:../prod.db",
+  DATABASE_URL: "postgresql://app:secret@localhost:5432/mzobs?schema=public",
   EMPLOYER_USERNAME: "mzobs-owner",
   EMPLOYER_PASSWORD: "a-unique-password-with-strong-length",
   SESSION_SECRET: "a-unique-session-secret-with-more-than-32-characters",
@@ -26,16 +26,10 @@ test("valid production configuration passes", () => {
 });
 
 
-test("production rejects PostgreSQL URLs until the Prisma provider migration is complete", () => {
-  const errors = getProductionConfigErrors({
-    ...validProductionEnv,
-    DATABASE_URL: "postgresql://app:secret@db.example.com:5432/mzobs"
-  });
-  assert.ok(errors.some(error => error.includes("Prisma SQLite")));
-  assert.throws(
-    () => assertProductionConfig({ ...validProductionEnv, DATABASE_URL: "postgresql://app:secret@db.example.com:5432/mzobs" }),
-    /PostgreSQL is not supported/
-  );
+test("production rejects SQLite URLs after the PostgreSQL provider migration", () => {
+  const errors = getProductionConfigErrors({ ...validProductionEnv, DATABASE_URL: "file:../prod.db" });
+  assert.ok(errors.some(error => error.includes("Prisma PostgreSQL")));
+  assert.throws(() => assertProductionConfig({ ...validProductionEnv, DATABASE_URL: "file:../prod.db" }), /DATABASE_URL must use a postgresql/);
 });
 
 test("production startup reports all missing critical configuration together", () => {

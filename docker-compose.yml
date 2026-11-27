@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: mzobs-ai-interview-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: mzobs
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mzobs-local-password}
+      POSTGRES_DB: mzobs
+    ports:
+      - "5432:5432"
+    volumes:
+      - mzobs-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mzobs -d mzobs"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  mzobs-postgres-data:

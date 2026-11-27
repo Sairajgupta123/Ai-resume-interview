@@ -1,7 +1,9 @@
+import { createHash } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getCandidateInvitationToken, hasValidCandidateInvitation } from "@/lib/invitation";
 import { elapsedInterviewSeconds, INTERVIEW_LIMIT_SECONDS } from "@/lib/interview-policy.mjs";
+import { getVoiceSessionRateLimit, VOICE_SESSION_BLOCK_MS, VOICE_SESSION_MAX_MINTS } from "@/lib/voice-session-rate-limit.mjs";
 
 export const runtime = "nodejs";
 
@@ -63,6 +65,49 @@ export async function POST(request: NextRequest, context: Context) {
     const apiKey = process.env.XAI_API_KEY;
     if (!apiKey) {
       return privateJson({ error: "Live AI voice is not configured." }, { status: 503 });
+    }
+
+    // Persist the mint budget in the database so serverless instances share the
+    // same limit. The raw invitation token is never stored in the rate-limit key.
+    const rateLimitKey = createHash("sha256")
+      .update("grok-voice-session\\n" + id + "\\n" + (candidateToken || ""))
+      .digest("hex");
+    const now = new Date();
+    const previousAttempt = await db.loginAttempt.findUnique({ where: { key: rateLimitKey } });
+    const rateLimit = getVoiceSessionRateLimit(previousAttempt, now.getTime());
+    if (rateLimit.limited) {
+      // Preserve an existing block deadline; repeated retries must not extend
+      // the lockout indefinitely.
+      const existingBlock = previousAttempt?.blockedUntil && previousAttempt.blockedUntil.getTime() > now.getTime()
+        ? previousAttempt.blockedUntil
+        : null;
+      const blockedUntil = existingBlock || new Date(now.getTime() + VOICE_SESSION_BLOCK_MS);
+      await db.loginAttempt.upsert({
+        where: { key: rateLimitKey },
+        create: { key: rateLimitKey, attempts: VOICE_SESSION_MAX_MINTS + 1, windowStartedAt: now, blockedUntil },
+        update: { blockedUntil }
+      });
+      return privateJson(
+        { error: "Too many AI voice reconnection attempts. Please wait before trying again." },
+        { status: 429, headers: { "Retry-After": String(Math.max(1, Math.ceil((blockedUntil.getTime() - now.getTime()) / 1000))) } }
+      );
+    }
+
+    await db.loginAttempt.upsert({
+      where: { key: rateLimitKey },
+      create: { key: rateLimitKey, attempts: 1, windowStartedAt: now },
+      update: rateLimit.resetWindow
+        ? { attempts: 1, windowStartedAt: now, blockedUntil: null }
+        : { attempts: { increment: 1 } }
+    });
+    const currentAttempt = await db.loginAttempt.findUnique({ where: { key: rateLimitKey } });
+    if (currentAttempt && currentAttempt.attempts > VOICE_SESSION_MAX_MINTS) {
+      const blockedUntil = new Date(Date.now() + VOICE_SESSION_BLOCK_MS);
+      await db.loginAttempt.update({ where: { key: rateLimitKey }, data: { blockedUntil } });
+      return privateJson(
+        { error: "Too many AI voice reconnection attempts. Please wait before trying again." },
+        { status: 429, headers: { "Retry-After": String(Math.ceil(VOICE_SESSION_BLOCK_MS / 1000)) } }
+      );
     }
 
     const providerResponse = await fetch("https://api.x.ai/v1/realtime/client_secrets", {
