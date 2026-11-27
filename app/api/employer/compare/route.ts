@@ -65,7 +65,12 @@ export async function POST(request: NextRequest) {
     if (interviews.length !== ids.length) {
       return NextResponse.json({ error: "One or more selected interviews are unavailable or incomplete." }, { status: 404, headers });
     }
-    const result = buildCandidateComparison(interviews);
+    // Prisma does not guarantee that findMany preserves the order of the
+    // requested IDs. Restore the employer's selection order so comparison
+    // columns remain aligned with the order in which candidates were selected.
+    const interviewById = new Map(interviews.map(interview => [interview.id, interview]));
+    const orderedInterviews = ids.map(id => interviewById.get(id)!);
+    const result = buildCandidateComparison(orderedInterviews);
     return NextResponse.json({ comparison: result }, { headers });
   } catch (error) {
     const message = error instanceof Error ? error.message : "";
