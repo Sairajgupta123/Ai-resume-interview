@@ -219,11 +219,9 @@ export default function Home() {
             });
           }
         };
-        // Poll from the beginning of the signalling window, not from the
-        // offer timestamp: the employer may have already generated ICE
-        // candidates while preparing its peer connection before this offer
-        // was persisted. The server returns the current answer and bounds
-        // retained signalling history; ICE ufrags filter stale generations.
+        // Anchor the polling cursor to the server timestamp of this offer.
+        // A client clock that is ahead of the server must not skip the employer's
+        // answer or ICE candidates for this negotiation.
         const offer = await peer.createOffer();
         await peer.setLocalDescription(offer);
         const offerResponse = await fetch(`/api/sessions/${sessionId}/signals`, {
@@ -234,8 +232,8 @@ export default function Home() {
         if (typeof savedOffer.createdAt !== "string" || typeof savedOffer.id !== "string") {
           throw new Error("The live video offer could not establish a reliable signalling cursor. Please retry.");
         }
-        cursor = new Date(0).toISOString();
-        cursorId = "";
+        cursor = savedOffer.createdAt;
+        cursorId = savedOffer.id;
         let polling = false;
         const poll = async () => {
           if (stopped || !peer || polling) return;
