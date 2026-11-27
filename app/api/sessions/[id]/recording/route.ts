@@ -6,7 +6,7 @@ import { randomUUID, createHash, createHmac } from "node:crypto";
 import { join } from "node:path";
 import { db } from "@/lib/db";
 import { isEmployerAuthenticated } from "@/lib/auth";
-import { getCandidateInvitationToken, hasValidCandidateInvitation, hasValidCandidateSession } from "@/lib/invitation";
+import { getCandidateInvitationToken, hasValidCandidateSession } from "@/lib/invitation";
 import { MAX_RECORDING_BYTES, inspectRecordingUpload, isSafeRecordingFilename } from "@/lib/recording-policy.mjs";
 import { commitRecordingReplacement } from "@/lib/recording-replacement.mjs";
 import { parseByteRange } from "@/lib/recording-range.mjs";
