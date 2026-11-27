@@ -143,7 +143,8 @@ export async function getCachedRecording(sessionId: string): Promise<CachedRecor
     };
 
     request.onsuccess = () => {
-      rows = (request.result as Array<{ index: number; mimeType: string; blob: Blob }>).sort((a, b) => a.index - b.index);
+      // The pure recovery policy owns sorting and malformed-row validation.
+      rows = request.result as Array<{ index: number; mimeType: string; blob: Blob }>;
     };
     request.onerror = () => fail(request.error || new Error("Could not recover saved recording segments."));
     transaction.oncomplete = () => {
