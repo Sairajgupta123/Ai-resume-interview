@@ -296,6 +296,8 @@ export default function Dashboard() {
 
   const saveDecision = async (decision: "shortlist" | "review" | "reject") => {
     if (!selected || decisionBusy) return;
+    const targetInterviewId = selected.id;
+    const detailRequestId = detailRequestRef.current;
     setDecisionBusy(true); setError("");
     try {
       const response = await fetch(`/api/sessions/${encodeURIComponent(selected.id)}/decision`, {
@@ -314,13 +316,17 @@ export default function Dashboard() {
           !("decisionHistory" in data) || !Array.isArray(data.decisionHistory)) {
         throw new Error("The decision was saved, but its updated history could not be confirmed. Refresh the interview.");
       }
-      setSelected({
-        ...selected,
-        employerDecision: decision,
-        employerNotes: "notes" in data && typeof data.notes === "string" ? data.notes : null,
-        decisionAt: "decisionAt" in data && typeof data.decisionAt === "string" ? data.decisionAt : selected.decisionAt,
-        decisionHistory: data.decisionHistory as Detail["decisionHistory"]
-      });
+      // Do not let a late save response reopen a closed drawer or overwrite
+      // a different candidate selected while this decision was being saved.
+      if (detailRequestRef.current === detailRequestId) {
+        setSelected(current => current?.id === targetInterviewId ? {
+          ...current,
+          employerDecision: decision,
+          employerNotes: "notes" in data && typeof data.notes === "string" ? data.notes : null,
+          decisionAt: "decisionAt" in data && typeof data.decisionAt === "string" ? data.decisionAt : current.decisionAt,
+          decisionHistory: data.decisionHistory as Detail["decisionHistory"]
+        } : current);
+      }
       try {
         await load();
       } catch {
