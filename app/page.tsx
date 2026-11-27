@@ -44,6 +44,7 @@ export default function Home() {
   const [history, setHistory] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
+  const [terminalTurn, setTerminalTurn] = useState(false);
   const [error, setError] = useState("");
   const [report, setReport] = useState<Report | null>(null);
   const [cameraOn, setCameraOn] = useState(false);
@@ -135,10 +136,12 @@ export default function Home() {
         setResume(interview.resumeText);
         setJobDescription(interview.jobDescription);
         setMode(interview.mode === "recorded" ? "recorded" : "live");
-        setHistory((interview.messages || []).map((message: { role: string; content: string }) => ({
-          role: message.role === "assistant" ? "assistant" : "user",
+        const restoredMessages = (interview.messages || []).map((message: { role: string; content: string; isTerminal?: boolean }) => ({
+          role: message.role === "assistant" ? "assistant" as const : "user" as const,
           content: message.content
-        })));
+        }));
+        setHistory(restoredMessages);
+        setTerminalTurn(Boolean([...interview.messages].reverse().find((message: { role: string }) => message.role === "assistant")?.isTerminal));
         if (interview.startedAt && interview.status !== "completed") {
           const elapsed = Math.max(0, Math.floor((Date.now() - new Date(interview.startedAt).getTime()) / 1000));
           setSeconds(Math.min(900, elapsed));
@@ -359,7 +362,7 @@ export default function Home() {
 
   const sendAnswer = async (value = draft) => {
     const answer = value.trim();
-    if (!answer || busy) return;
+    if (!answer || busy || terminalTurn) return;
     if (grokVoiceRef.current) {
       grokVoiceRef.current.close();
       grokVoiceRef.current = null;
@@ -394,6 +397,7 @@ export default function Home() {
       pendingAnswerRef.current = null;
       setHistory(prev => [...prev, { role: "assistant", content: data.message }]);
       speak(data.message);
+      if (data.done) setTerminalTurn(true);
       if (data.done || data.timeLimitReached) await finishInterview();
     } catch (e) {
       setDraft(answer);
@@ -943,7 +947,8 @@ export default function Home() {
             {busy && <div className="typing"><span /><span /><span /> AI interviewer is thinking</div>}
             <div ref={transcriptEndRef} />
           </div>
-          <div className="answer-box"><textarea value={draft} onChange={e => setDraft(e.target.value)} placeholder="Type your answer here..." rows={3} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendAnswer(); } }} /><div className="answer-actions"><button className={listening ? "tool-btn active" : "tool-btn"} onClick={toggleMic} disabled={voiceStatus === "connected" || voiceStatus === "connecting"}>{listening ? "■ Stop voice input" : "🎙 Use voice"}</button><span>Press Enter to send · Shift + Enter for new line</span><button className="send-btn" onClick={() => sendAnswer()} disabled={busy || !draft.trim()}>Send answer ↗</button></div></div>
+          {terminalTurn && <div className="privacy-note"><b>The AI interviewer has closed the interview.</b><p>Your answers are saved. Generate the final report to complete this session.</p></div>}
+          <div className="answer-box"><textarea value={draft} onChange={e => setDraft(e.target.value)} placeholder={terminalTurn ? "Interview closed — generate your report below." : "Type your answer here..."} rows={3} disabled={terminalTurn || busy} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendAnswer(); } }} /><div className="answer-actions"><button className={listening ? "tool-btn active" : "tool-btn"} onClick={toggleMic} disabled={terminalTurn || voiceStatus === "connected" || voiceStatus === "connecting"}>{listening ? "■ Stop voice input" : "🎙 Use voice"}</button><span>{terminalTurn ? "Interview closed" : "Press Enter to send · Shift + Enter for new line"}</span><button className="send-btn" onClick={() => sendAnswer()} disabled={terminalTurn || busy || !draft.trim()}>Send answer ↗</button></div></div>
           {error && <div className="error-box">{error}</div>}
           <div className="session-footer"><span>✳ AI-generated questions · Job-related evaluation only</span><button onClick={() => finishInterview() } disabled={busy}>End interview & generate report</button></div>
         </div>
@@ -965,7 +970,7 @@ export default function Home() {
         <div className="report-card"><h3>Role skill assessment</h3><div className="skill-table">{report.skills.map((s,i)=><div className="skill-row" key={i}><b>{s.skill}</b><span>{s.rating}</span><p>{s.evidence}</p></div>)}</div></div>
         <div className="report-card"><h3>Question-by-question evidence</h3>{report.questionFeedback.map((q,i)=><div className="feedback-row" key={i}><b>Q{i+1}. {q.question}</b><p>{q.assessment}</p><small>Evidence: {q.evidence}</small></div>)}</div>
         <p className="report-disclaimer">{report.disclaimer || "This AI-generated report is decision support, not an automated hiring decision. Review the transcript and evidence before taking action."}</p>
-        <button className="outline-btn back-btn" disabled={!!sessionId && !recordingRecoveryChecked || recoverableRecording || uploadingRecording} onClick={() => { finishStartedRef.current = false; setPhase("setup"); setHistory([]); setReport(null); setSeconds(0); setSessionId(""); setInviteToken(""); setConsent(false); setError(""); setRecording(false); setUploadingRecording(false); setRecordingSaved(false); recordingSavedRef.current = false; recordingUploadInProgressRef.current = false; recorderRef.current = null; recordingCompleteRef.current = null; streamRef.current?.getTracks().forEach(t=>t.stop()); streamRef.current = null; setCameraOn(false); }}>{!!sessionId && !recordingRecoveryChecked ? "Checking saved recording…" : recoverableRecording ? "Recover your saved recording before starting another interview" : uploadingRecording ? "Recording recovery in progress…" : "＋ Create another interview"}</button>
+        <button className="outline-btn back-btn" disabled={!!sessionId && !recordingRecoveryChecked || recoverableRecording || uploadingRecording} onClick={() => { finishStartedRef.current = false; setPhase("setup"); setHistory([]); setReport(null); setTerminalTurn(false); setSeconds(0); setSessionId(""); setInviteToken(""); setConsent(false); setError(""); setRecording(false); setUploadingRecording(false); setRecordingSaved(false); recordingSavedRef.current = false; recordingUploadInProgressRef.current = false; recorderRef.current = null; recordingCompleteRef.current = null; streamRef.current?.getTracks().forEach(t=>t.stop()); streamRef.current = null; setCameraOn(false); }}>{!!sessionId && !recordingRecoveryChecked ? "Checking saved recording…" : recoverableRecording ? "Recover your saved recording before starting another interview" : uploadingRecording ? "Recording recovery in progress…" : "＋ Create another interview"}</button>
       </section>}
       <footer className="global-footer"><span>MZOBS · AI Interview Studio</span><span>Thoughtful technology. Better hiring.</span></footer>
     </main>
