@@ -26,6 +26,11 @@ This checklist is for a staging deployment using the intended browser, xAI accou
 - [ ] An expired or unknown invitation receives a generic authorization failure.
 
 ## Recorded interview
+- [ ] Configure a long random `CRON_SECRET` and verify the recording-cleanup worker rejects missing/incorrect bearer credentials.
+- [ ] Queue an unreferenced synthetic recording object and verify the scheduled worker deletes it and marks its task completed.
+- [ ] Queue a path still referenced by an interview and verify the worker marks the task complete without deleting the referenced object.
+- [ ] Simulate a transient storage failure; verify the task is retried after backoff, an expired lease can be reclaimed, and the 12-attempt ceiling prevents endless retries.
+- [ ] Replace a recording; verify the old-object cleanup task is created in the same database transaction as the new recording reference.
 
 - [ ] Candidate sees and accepts the consent notice before camera/microphone capture begins.
 - [ ] Candidate can deny either permission and receives a recoverable explanation.
