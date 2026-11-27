@@ -3,6 +3,7 @@ import { createHmac } from "node:crypto";
 import { db } from "@/lib/db";
 import { isEmployerAuthenticated } from "@/lib/auth";
 import { getCandidateInvitationToken, hasValidCandidateInvitation } from "@/lib/invitation";
+import { isInterviewTimeLimitReached } from "@/lib/interview-policy.mjs";
 
 export const runtime = "nodejs";
 type Context = { params: Promise<{ id: string }> };
@@ -29,7 +30,8 @@ export async function GET(request: NextRequest, context: Context) {
       select: { mode: true, status: true, startedAt: true, consentAcceptedAt: true }
     });
     if (!interview) return privateJson({ error: "Interview not found." }, 404);
-    if (interview.mode !== "live" || interview.status === "completed") {
+    if (interview.mode !== "live" || interview.status === "completed" ||
+      (interview.startedAt && isInterviewTimeLimitReached(interview.startedAt))) {
       return privateJson({ error: "Live interview is not active." }, 409);
     }
 
