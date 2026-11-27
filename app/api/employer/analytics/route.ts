@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { isEmployerAuthenticated } from "@/lib/auth";
-import { buildEmployerAnalyticsFromAggregates, buildEmployerAnalyticsWeekWindows } from "@/lib/employer-analytics-policy.mjs";
+import { buildEmployerAnalyticsFromAggregates, buildEmployerAnalyticsWeekWindows, summarizeEmployerAnalyticsReports } from "@/lib/employer-analytics-policy.mjs";
 
 export const runtime = "nodejs";
 
@@ -32,7 +32,7 @@ export async function GET() {
 
     // Keep each report read bounded; reportJson can contain large evidence
     // payloads, so never issue one unbounded query for every completed report.
-    const completedReports: Array<{ reportJson: string }> = [];
+    const completedReportSummary = { scoredCount: 0, scoreTotal: 0, scoreBands: [0, 0, 0] };
     let lastReportId: string | null = null;
     while (true) {
       const batch: Array<{ id: string; reportJson: string | null }> = await db.interview.findMany({
@@ -46,8 +46,11 @@ export async function GET() {
         select: { id: true, reportJson: true }
       });
       if (batch.length === 0) break;
-      for (const row of batch) {
-        if (typeof row.reportJson === "string") completedReports.push({ reportJson: row.reportJson });
+      const batchSummary = summarizeEmployerAnalyticsReports(batch);
+      completedReportSummary.scoredCount += batchSummary.scoredCount;
+      completedReportSummary.scoreTotal += batchSummary.scoreTotal;
+      for (let index = 0; index < completedReportSummary.scoreBands.length; index += 1) {
+        completedReportSummary.scoreBands[index] += batchSummary.scoreBands[index] || 0;
       }
       lastReportId = batch[batch.length - 1].id;
       if (batch.length < 100) break;
@@ -56,7 +59,7 @@ export async function GET() {
     const decisionCounts = Object.fromEntries(decisionGroups.map(row => [row.employerDecision ?? "__null__", row._count._all]));
     const roleCounts = roleGroups.map(row => ({ role: row.role, count: row._count._all }));
     const analytics = buildEmployerAnalyticsFromAggregates({
-      statusCounts, decisionCounts, roleCounts, weeklyCounts, completedReports
+      statusCounts, decisionCounts, roleCounts, weeklyCounts, completedReportSummary
     }, now);
     return NextResponse.json({ analytics }, { headers });
   } catch {
