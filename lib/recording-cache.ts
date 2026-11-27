@@ -45,11 +45,17 @@ function openRecordingDatabase(): Promise<IDBDatabase> {
 }
 
 export async function cacheRecordingChunk(sessionId: string, index: number, blob: Blob, mimeType: string) {
-  if (!sessionId || blob.size < 1) return;
-  const database = await openRecordingDatabase();
-  if (!Number.isSafeInteger(index) || index < 0 || !(blob instanceof Blob) || typeof mimeType !== "string" || !mimeType) {
+  // Validate caller-controlled metadata before touching Blob properties or opening
+  // IndexedDB. A malformed value should reject cleanly, never throw an incidental
+  // TypeError such as reading .size from null.
+  if (typeof sessionId !== "string" || !sessionId.trim() || sessionId.length > 256 ||
+      !Number.isSafeInteger(index) || index < 0 ||
+      !(blob instanceof Blob) ||
+      typeof mimeType !== "string" || !mimeType.trim()) {
     throw new Error("Recording segment metadata is invalid.");
   }
+  if (blob.size < 1) return;
+  const database = await openRecordingDatabase();
   await new Promise<void>((resolve, reject) => {
     const transaction = database.transaction(STORE_NAME, "readwrite");
     const store = transaction.objectStore(STORE_NAME);
@@ -97,7 +103,10 @@ export async function cacheRecordingChunk(sessionId: string, index: number, blob
 }
 
 export async function markCachedRecordingComplete(sessionId: string, mimeType: string) {
-  if (!sessionId || !mimeType) throw new Error("Recording completion metadata is invalid.");
+  if (typeof sessionId !== "string" || !sessionId.trim() || sessionId.length > 256 ||
+      typeof mimeType !== "string" || !mimeType.trim()) {
+    throw new Error("Recording completion metadata is invalid.");
+  }
   const database = await openRecordingDatabase();
   await new Promise<void>((resolve, reject) => {
     const transaction = database.transaction(STORE_NAME, "readwrite");
@@ -116,6 +125,9 @@ export async function markCachedRecordingComplete(sessionId: string, mimeType: s
 }
 
 export async function getCachedRecording(sessionId: string): Promise<CachedRecording | null> {
+  if (typeof sessionId !== "string" || !sessionId.trim() || sessionId.length > 256) {
+    throw new Error("Recording session identifier is invalid.");
+  }
   const database = await openRecordingDatabase();
   return new Promise((resolve, reject) => {
     const transaction = database.transaction(STORE_NAME, "readonly");
@@ -158,6 +170,9 @@ export async function getCachedRecording(sessionId: string): Promise<CachedRecor
 }
 
 export async function clearCachedRecording(sessionId: string) {
+  if (typeof sessionId !== "string" || !sessionId.trim() || sessionId.length > 256) {
+    throw new Error("Recording session identifier is invalid.");
+  }
   const database = await openRecordingDatabase();
   await new Promise<void>((resolve, reject) => {
     const transaction = database.transaction(STORE_NAME, "readwrite");
