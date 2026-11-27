@@ -717,24 +717,32 @@ export default function Home() {
       "Job description:\n" + jobDescription.slice(0, 10000),
       "Opening interviewer message already delivered: " + openingMessage
     ].join("\n\n");
-    const client = new GrokRealtimeClient({
+    let client: GrokRealtimeClient;
+    client = new GrokRealtimeClient({
       sessionId: targetSessionId,
       stream: mediaStream,
       instructions,
       initialMessage: isReconnect ? "" : openingMessage,
       callbacks: {
-        onStatus: status => setVoiceStatus(status === "closed" ? "off" : status),
+        // Ignore callbacks queued by a socket that has already been replaced.
+        onStatus: status => {
+          if (grokVoiceRef.current !== client) return;
+          setVoiceStatus(status === "closed" ? "off" : status);
+        },
         onMicrophoneState: state => {
+          if (grokVoiceRef.current !== client) return;
           const mutedMessage = "Your microphone is muted. Unmute it to continue the live voice interview, or type your answer.";
           setError(previous => state === "muted" ? mutedMessage : previous === mutedMessage ? "" : previous);
         },
         onError: message => {
-          grokVoiceRef.current?.close();
+          if (grokVoiceRef.current !== client) return;
+          client.close();
           grokVoiceRef.current = null;
           setError(message);
           setVoiceStatus("unavailable");
         },
         onTranscript: (speaker, text) => {
+          if (grokVoiceRef.current !== client) return;
           const pendingEntry = { role: speaker, content: text, clientMessageId: crypto.randomUUID() };
           pendingTranscriptRef.current.push(pendingEntry);
           transcriptWriteRef.current = transcriptWriteRef.current.then(async () => {
