@@ -66,7 +66,7 @@ npm run dev
 The dev command applies pending development migrations and starts Next.js. Open http://localhost:3000.
 
 ## Employer dashboard
-Open http://localhost:3000/dashboard and sign in with `EMPLOYER_USERNAME` and `EMPLOYER_PASSWORD` from `.env.local`. Use **Invite candidate** to create an interview and generate a private link. Copy the link and send it to the candidate manually; outbound email delivery is not configured yet.
+Open http://localhost:3000/dashboard and sign in with `EMPLOYER_USERNAME` and `EMPLOYER_PASSWORD` from `.env`. Use **Invite candidate** to create an interview and generate a private link. Copy the link and send it to the candidate manually; outbound email delivery is not configured yet.
 
 
 - PostgreSQL migration preparation and release gates are documented in [the database migration runbook](docs/postgres-migration-runbook.md); the `main` branch remains on SQLite until this draft is reviewed and the migration is accepted.
