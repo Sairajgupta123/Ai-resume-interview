@@ -29,7 +29,7 @@ test("bounds reconnect history and supplied interview context", () => {
     jobDescription: "y".repeat(20_000),
     openingMessage: "z".repeat(5_000)
   });
-  const jsonText = instructions.split("UNTRUSTED INTERVIEW CONTEXT JSON:\\n")[1];
+  const jsonText = instructions.split("UNTRUSTED INTERVIEW CONTEXT JSON:\n")[1];
   const context = JSON.parse(jsonText);
   assert.equal(context.recentConversation.length, 12);
   assert.ok(context.recentConversation.every(message => message.content.length <= 2_000));
