@@ -237,6 +237,13 @@ export async function POST(request: NextRequest, context: Context) {
         data: { recordingPath: relativePath }
       }),
       cleanupNew: () => deleteRecording(relativePath),
+      // If the DB request times out after committing, a cleanup must not remove
+      // the object now referenced by the interview. If this read also fails,
+      // preserve the object and let later storage reconciliation handle the orphan.
+      isNewRecordingReferenced: async () => Boolean(await db.interview.findFirst({
+        where: { recordingPath: relativePath },
+        select: { id: true }
+      })),
       cleanupPrevious: path => deleteRecording(path),
       previousPath: interview.recordingPath,
       onCleanupError: (cleanupError, stage) => {
