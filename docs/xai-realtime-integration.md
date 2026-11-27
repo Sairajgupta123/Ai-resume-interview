@@ -9,7 +9,7 @@
 5. The client waits for both the WebSocket `open` event and xAI's `session.created` event. Either may arrive first. Transient initialization failures retry with a fresh token, up to three attempts.
 6. The browser sends `session.update` with the interview instructions, `eve` voice, server VAD, `grok-transcribe` input transcription and 24 kHz PCM input/output.
 7. The browser waits for `session.updated` before starting the audio graph. The scripted opening question is sent as a `force_message`; it is a TTS-synthesized assistant line and does not need a separate `response.create`.
-8. Microphone frames are resampled to signed PCM16 at 24 kHz and sent as base64 `input_audio_buffer.append` events. Assistant PCM chunks are queued for playback; final input/output transcripts are passed to the interview UI.
+8. Microphone frames are resampled to signed PCM16 at 24 kHz and sent as base64 `input_audio_buffer.append` events. Assistant PCM chunks are queued for playback. Persist the final candidate transcript from `conversation.item.input_audio_transcription.completed` and the final assistant transcript from `response.output_audio_transcript.done`. xAI's `conversation.item.input_audio_transcription.updated` event is cumulative interim caption text; do not persist every update as a separate transcript turn.
 
 ## Required manual staging checks
 
