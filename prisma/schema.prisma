@@ -62,6 +62,7 @@ model InterviewMessage {
   role        String
   content         String
   clientMessageId String?   @unique
+  isTerminal      Boolean   @default(false)
   createdAt       DateTime  @default(now())
   interview       Interview @relation(fields: [interviewId], references: [id], onDelete: Cascade)
   @@index([interviewId, createdAt])
