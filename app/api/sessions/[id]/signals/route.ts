@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { isEmployerAuthenticated } from "@/lib/auth";
 import { getCandidateInvitationToken, hasValidCandidateInvitation } from "@/lib/invitation";
-import { validateSignalPayload, isSignalOlderThanDescription } from "@/lib/signalling-policy.mjs";
+import { validateSignalPayload, isSignalOlderThanDescription, isSignalAfterCursor } from "@/lib/signalling-policy.mjs";
 
 export const runtime = "nodejs";
 type Context = { params: Promise<{ id: string }> };
@@ -103,7 +103,11 @@ export async function GET(request: NextRequest, context: Context) {
       isSignalOlderThanDescription(signal.createdAt, signal.id, latestDescription.createdAt, latestDescription.id)) return false;
     return true;
   });
-  if (!rawSince && latestDescription && !currentSignals.some(signal => signal.id === latestDescription.id)) {
+  // The cursor query is capped at 50 rows. Always include a newer SDP
+  // description even when a burst of ICE candidates pushed it past that page.
+  if (latestDescription &&
+    isSignalAfterCursor(latestDescription.createdAt, latestDescription.id, since, afterId) &&
+    !currentSignals.some(signal => signal.id === latestDescription.id)) {
     currentSignals.push(latestDescription);
   }
   currentSignals.sort((left, right) =>
