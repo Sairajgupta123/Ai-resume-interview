@@ -541,6 +541,7 @@ export default function Dashboard() {
           <div><small>TOTAL RECORDS</small><strong>{retentionPreview.totalInterviews}</strong></div>
           <div><small>COMPLETED</small><strong>{retentionPreview.completedInterviews}</strong></div>
           <div><small>IN PROGRESS</small><strong>{retentionPreview.inProgressInterviews}</strong></div>
+          <div><small>INVITED</small><strong>{retentionPreview.invitedInterviews}</strong></div>
           <div><small>ELIGIBLE FOR REVIEW</small><strong>{retentionPreview.eligibleCompletedInterviews}</strong></div>
         </div>
         <div className="retention-policy-note">
