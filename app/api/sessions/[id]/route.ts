@@ -112,12 +112,12 @@ export async function GET(_request: NextRequest, context: Context) {
           // Match report recovery's bounded transcript window. Fetch newest
           // turns first so legacy or malformed sessions cannot create an
           // unbounded employer dashboard response.
-          orderBy: { createdAt: "desc" },
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
           take: 200,
           select: { role: true, content: true }
         },
         decisionHistory: {
-          orderBy: { createdAt: "desc" },
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
           take: 50,
           select: { id: true, decision: true, notes: true, createdAt: true }
         }
