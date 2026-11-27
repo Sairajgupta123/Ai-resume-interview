@@ -176,6 +176,13 @@ async function main() {
     let total = 0;
     for (const table of TABLES) total += await copyTable(source, target, table, counts[table], resume);
 
+    // Re-hash after copying so writes made to the source during the import cannot
+    // produce a mixed snapshot that is incorrectly marked complete.
+    const finalSource = await fingerprintSource(source);
+    if (finalSource.fingerprint !== fingerprint) {
+      throw new Error("SQLite source changed during import. Destination is not certified complete; freeze a new source snapshot and restore an empty destination before starting over.");
+    }
+
     await target.$executeRawUnsafe(
       `UPDATE "${IMPORT_STATE_TABLE}" SET "completedAt" = CURRENT_TIMESTAMP WHERE "id" = $1`,
       IMPORT_STATE_ID
