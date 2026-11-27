@@ -41,7 +41,7 @@ function s3RequestUrl(endpoint: URL, bucket: string, key: string) {
   return url;
 }
 
-async function s3Request(method: "PUT" | "GET" | "HEAD" | "DELETE", key: string, body?: Buffer, contentType?: string, range?: string) {
+async function s3Request(method: "PUT" | "GET" | "HEAD" | "DELETE", key: string, body?: Buffer, contentType?: string, range?: string, allowNotFound = false) {
   const config = remoteStorageConfig();
   if (!config) throw new Error("Private cloud recording storage is not configured.");
   const url = s3RequestUrl(config.endpoint, config.bucket, key);
@@ -72,6 +72,8 @@ async function s3Request(method: "PUT" | "GET" | "HEAD" | "DELETE", key: string,
     redirect: "error",
     signal: AbortSignal.timeout(30_000)
   });
+  // DELETE is idempotent: a missing object is already in the desired state.
+  if (allowNotFound && response.status === 404) return response;
   if (!response.ok) throw new Error("Private recording storage returned " + response.status + ": " + (await response.text()).slice(0, 500));
   return response;
 }
@@ -179,7 +181,7 @@ async function recordingSize(storedPath: string) {
 
 async function deleteRecording(storedPath: string) {
   if (isRemoteRecordingPath(storedPath)) {
-    await s3Request("DELETE", recordingObjectKey(storedPath));
+    await s3Request("DELETE", recordingObjectKey(storedPath), undefined, undefined, undefined, true);
     return;
   }
   const normalized = storedPath.replace(/\\/g, "/");
@@ -187,7 +189,12 @@ async function deleteRecording(storedPath: string) {
   if (normalized !== "data/recordings/" + filename || !isSafeRecordingFilename(filename)) {
     throw new Error("Recording storage reference is invalid.");
   }
-  await unlink(join(process.cwd(), "data", "recordings", filename));
+  try {
+    await unlink(join(process.cwd(), "data", "recordings", filename));
+  } catch (error) {
+    // A prior cleanup attempt may already have removed the file.
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
 }
 
 export async function POST(request: NextRequest, context: Context) {
