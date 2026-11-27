@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { isEmployerAuthenticated } from "@/lib/auth";
 import { getCandidateInvitationToken, hasValidCandidateInvitation } from "@/lib/invitation";
 import { validateSignalPayload, isSignalOlderThanDescription, isSignalAfterCursor } from "@/lib/signalling-policy.mjs";
+import { isInterviewTimeLimitReached } from "@/lib/interview-policy.mjs";
 
 export const runtime = "nodejs";
 type Context = { params: Promise<{ id: string }> };
@@ -64,7 +65,9 @@ export async function GET(request: NextRequest, context: Context) {
   const interview = await db.interview.findUnique({ where: { id }, select: { status: true, mode: true, startedAt: true, consentAcceptedAt: true } });
   if (!interview) return NextResponse.json({ error: "Interview not found." }, { status: 404, headers });
   if (interview.mode !== "live") return NextResponse.json({ signals: [] }, { headers });
-  if (interview.status === "completed") return NextResponse.json({ signals: [] }, { headers });
+  if (interview.status === "completed" || (interview.startedAt && isInterviewTimeLimitReached(interview.startedAt))) {
+    return NextResponse.json({ signals: [] }, { headers });
+  }
   if (sender === "candidate" && (!interview.startedAt || !interview.consentAcceptedAt || interview.status !== "in_progress")) {
     return NextResponse.json({ error: "The live interview has not been started with candidate consent." }, { status: 409, headers });
   }
@@ -133,7 +136,9 @@ export async function POST(request: NextRequest, context: Context) {
     const interview = await db.interview.findUnique({ where: { id }, select: { mode: true, status: true, startedAt: true, consentAcceptedAt: true } });
     if (!interview) return NextResponse.json({ error: "Interview not found." }, { status: 404, headers });
     if (interview.mode !== "live") return NextResponse.json({ error: "Live video is only enabled for live interviews." }, { status: 409, headers });
-    if (interview.status === "completed") return NextResponse.json({ error: "This interview has ended." }, { status: 409, headers });
+    if (interview.status === "completed" || (interview.startedAt && isInterviewTimeLimitReached(interview.startedAt))) {
+      return NextResponse.json({ error: "The 15-minute interview time limit has been reached." }, { status: 409, headers });
+    }
     if (sender === "candidate" && (!interview.startedAt || !interview.consentAcceptedAt || interview.status !== "in_progress")) {
       return NextResponse.json({ error: "The live interview has not been started with candidate consent." }, { status: 409, headers });
     }
