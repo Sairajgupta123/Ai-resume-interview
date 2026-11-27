@@ -65,6 +65,8 @@ This checklist is for a staging deployment using the intended browser, xAI accou
 - [ ] Set the candidate device clock several minutes ahead of the server and confirm the live signalling cursor still receives the employer's answer and ICE candidates.
 - [ ] Camera/microphone tracks can be muted and restored.
 - [ ] Reconnection after refresh uses the scoped candidate cookie.
+- [ ] Force the employer's answer-signalling POST to fail once after the local answer is created; confirm the same answer is retried and the candidate offer is not lost.
+- [ ] Force a transient browser error while applying a remote SDP signal; confirm the polling cursor does not skip the signal and the next poll retries it.
 - [ ] Signalling rejects malformed, oversized or wrong-participant messages.
 - [ ] Employer can prepare ICE settings while an invited live interview is waiting, but candidate ICE settings are rejected until consent and interview start are persisted.
 - [ ] At exactly 15 minutes from the persisted start time, signalling POST rejects new SDP, ICE and hangup messages; polling returns no further signals.
