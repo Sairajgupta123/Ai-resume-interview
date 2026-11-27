@@ -24,6 +24,7 @@ function remoteStorageConfig() {
   if (!endpoint || !bucket || !accessKey || !secretKey) return null;
   const url = new URL(endpoint);
   if (url.protocol !== "https:" && process.env.NODE_ENV === "production") throw new Error("Recording storage endpoint must use HTTPS in production.");
+  if (url.username || url.password || url.search || url.hash) throw new Error("Recording storage endpoint must not contain credentials, query parameters or a fragment.");
   return { endpoint: url, bucket, region, accessKey, secretKey };
 }
 
