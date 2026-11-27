@@ -54,6 +54,7 @@ export default function Dashboard() {
   const detailRequestRef = useRef(0);
   // Ignore older dashboard refreshes when mutations or manual refreshes overlap.
   const dashboardLoadRef = useRef(0);
+  const comparisonRequestRef = useRef(0);
 
   useEffect(() => {
     if (!authenticated || !selected || selected.mode !== "live" || selected.status === "completed") {
@@ -416,22 +417,27 @@ export default function Dashboard() {
   const filtered = items.filter(x => `${x.candidateName} ${x.role}`.toLowerCase().includes(query.toLowerCase()));
   const compared = items.filter(x => compareIds.includes(x.id));
   const toggleCompare = (id: string) => {
+    comparisonRequestRef.current += 1;
     setComparison(null);
     setCompareIds(current => current.includes(id) ? current.filter(value => value !== id) : current.length < 3 ? [...current, id] : current);
   };
   const runEvidenceComparison = async () => {
     if (compareIds.length < 2 || comparisonBusy) return;
+    const requestId = ++comparisonRequestRef.current;
+    const requestedIds = [...compareIds];
     setComparisonBusy(true); setError("");
     try {
       const response = await fetch("/api/employer/compare", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ interviewIds: compareIds })
+        body: JSON.stringify({ interviewIds: requestedIds })
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Could not compare candidates.");
-      setComparison(data.comparison);
+      if (requestId === comparisonRequestRef.current) setComparison(data.comparison);
     } catch (error) {
-      setError(error instanceof Error ? error.message : "Could not compare candidates.");
+      if (requestId === comparisonRequestRef.current) {
+        setError(error instanceof Error ? error.message : "Could not compare candidates.");
+      }
     } finally {
       setComparisonBusy(false);
     }
@@ -647,7 +653,7 @@ export default function Dashboard() {
       </tbody></table></div>}
       <p className="analytics-disclaimer">This feed records hiring decisions and notes. It is not a complete security access log and does not record every page view or data access.</p>
     </section>
-    {compared.length > 0 && <section className="dashboard-table-card"><div className="table-heading"><div><h2>Candidate comparison</h2><p>Compare up to three candidates side by side. AI scores are advisory, not hiring decisions.</p></div><button className="outline-btn" onClick={runEvidenceComparison} disabled={compareIds.length < 2 || comparisonBusy}>{comparisonBusy ? "Comparing…" : "Compare skill evidence"}</button><button className="outline-btn" onClick={() => { setCompareIds([]); setComparison(null); }}>Clear comparison</button></div><div className="table-scroll"><table><thead><tr><th>Measure</th>{compared.map(item=><th key={item.id}>{item.candidateName}<small> · {item.role}</small></th>)}</tr></thead><tbody>{([{label:"AI score",value:(item:Item)=>item.overallScore === null ? "—" : `${item.overallScore}/100`},{label:"AI recommendation",value:(item:Item)=>item.recommendation || "—"},{label:"Employer decision",value:(item:Item)=>item.employerDecision || "Pending"},{label:"Interview status",value:(item:Item)=>item.status},{label:"Interview mode",value:(item:Item)=>item.mode},{label:"Duration",value:(item:Item)=>`${Math.floor(item.durationSeconds/60)}m ${item.durationSeconds%60}s`}]).map(metric=><tr key={metric.label}><th>{metric.label}</th>{compared.map(item=><td key={item.id}>{metric.value(item)}</td>)}</tr>)}</tbody></table></div>
+    {compared.length > 0 && <section className="dashboard-table-card"><div className="table-heading"><div><h2>Candidate comparison</h2><p>Compare up to three candidates side by side. AI scores are advisory, not hiring decisions.</p></div><button className="outline-btn" onClick={runEvidenceComparison} disabled={compareIds.length < 2 || comparisonBusy}>{comparisonBusy ? "Comparing…" : "Compare skill evidence"}</button><button className="outline-btn" onClick={() => { comparisonRequestRef.current += 1; setCompareIds([]); setComparison(null); }}>Clear comparison</button></div><div className="table-scroll"><table><thead><tr><th>Measure</th>{compared.map(item=><th key={item.id}>{item.candidateName}<small> · {item.role}</small></th>)}</tr></thead><tbody>{([{label:"AI score",value:(item:Item)=>item.overallScore === null ? "—" : `${item.overallScore}/100`},{label:"AI recommendation",value:(item:Item)=>item.recommendation || "—"},{label:"Employer decision",value:(item:Item)=>item.employerDecision || "Pending"},{label:"Interview status",value:(item:Item)=>item.status},{label:"Interview mode",value:(item:Item)=>item.mode},{label:"Duration",value:(item:Item)=>`${Math.floor(item.durationSeconds/60)}m ${item.durationSeconds%60}s`}]).map(metric=><tr key={metric.label}><th>{metric.label}</th>{compared.map(item=><td key={item.id}>{metric.value(item)}</td>)}</tr>)}</tbody></table></div>
       {comparison && <div className="evidence-comparison">
         <h3>Skill evidence comparison</h3>
         <p>{comparison.comparisonNote}</p>
