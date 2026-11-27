@@ -3,6 +3,7 @@
 export type CachedRecording = {
   chunks: Blob[];
   mimeType: string;
+  complete: boolean;
 };
 
 const DATABASE_NAME = "mzobs-interview-recordings";
@@ -60,6 +61,14 @@ export async function cacheRecordingChunk(sessionId: string, index: number, blob
       blob,
       savedAt: Date.now()
     });
+    const markStarted = () => store.put({
+      key: sessionId + ":meta",
+      sessionId,
+      recordType: "metadata",
+      status: "recording",
+      mimeType,
+      updatedAt: Date.now()
+    });
 
     // A new recording starts at index zero. Remove any longer, stale recording
     // from the same interview in this transaction before saving its first chunk.
@@ -72,6 +81,7 @@ export async function cacheRecordingChunk(sessionId: string, index: number, blob
           store.delete(cursor.primaryKey);
           cursor.continue();
         } else {
+          markStarted();
           saveChunk();
         }
       };
@@ -83,6 +93,25 @@ export async function cacheRecordingChunk(sessionId: string, index: number, blob
     transaction.oncomplete = () => resolve();
     transaction.onerror = () => reject(transaction.error || new Error("Could not persist a recording segment."));
     transaction.onabort = () => reject(transaction.error || new Error("Recording segment persistence was interrupted."));
+  });
+}
+
+export async function markCachedRecordingComplete(sessionId: string, mimeType: string) {
+  if (!sessionId || !mimeType) throw new Error("Recording completion metadata is invalid.");
+  const database = await openRecordingDatabase();
+  await new Promise<void>((resolve, reject) => {
+    const transaction = database.transaction(STORE_NAME, "readwrite");
+    transaction.objectStore(STORE_NAME).put({
+      key: sessionId + ":meta",
+      sessionId,
+      recordType: "metadata",
+      status: "complete",
+      mimeType,
+      updatedAt: Date.now()
+    });
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error || new Error("Could not finalize local recording metadata."));
+    transaction.onabort = () => reject(transaction.error || new Error("Recording finalization was interrupted."));
   });
 }
 
@@ -111,14 +140,17 @@ export async function getCachedRecording(sessionId: string): Promise<CachedRecor
       }
       // Wait for the read transaction to complete before exposing its snapshot.
       // A missing segment would silently concatenate an incomplete video.
-      const hasGap = rows.some((row, index) => !Number.isSafeInteger(row.index) || row.index !== index || !(row.blob instanceof Blob) || row.blob.size < 1);
-      const mimeType = rows[0].mimeType || "video/webm";
-      const hasMixedTypes = rows.some(row => (row.mimeType || "video/webm") !== mimeType);
+      const metadata = rows.find(row => (row as { recordType?: string }).recordType === "metadata") as unknown as { status?: string; mimeType?: string } | undefined;
+      const chunks = rows.filter(row => (row as { recordType?: string }).recordType !== "metadata");
+      const hasGap = chunks.some((row, index) => !Number.isSafeInteger(row.index) || row.index !== index || !(row.blob instanceof Blob) || row.blob.size < 1);
+      const mimeType = metadata?.mimeType || chunks[0]?.mimeType || "video/webm";
+      const hasMixedTypes = chunks.some(row => (row.mimeType || "video/webm") !== mimeType);
+      const complete = metadata?.status === "complete";
       if (hasGap || hasMixedTypes) {
         fail(new Error("Saved recording segments are incomplete or inconsistent. The video cannot be safely recovered."));
         return;
       }
-      resolve({ chunks: rows.map(row => row.blob), mimeType });
+      resolve({ chunks: chunks.map(row => row.blob), mimeType, complete });
     };
     transaction.onerror = () => fail(transaction.error || new Error("Could not recover saved recording segments."));
     transaction.onabort = () => fail(transaction.error || new Error("Recording recovery was interrupted."));
