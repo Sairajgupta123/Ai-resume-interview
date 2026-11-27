@@ -18,6 +18,7 @@ export function buildEmployerAnalyticsFromAggregates(aggregates: {
   decisionCounts: Record<string, number>;
   roleCounts: Array<{ role: string; count: number }>;
   weeklyCounts: Array<{ total: number; completed: number }>;
-  completedReports: Array<{ reportJson: string | null }>;
+  completedReports?: Array<{ reportJson: string | null }>;
+  completedReportSummary?: { scoredCount: number; scoreTotal: number; scoreBands: number[] };
 }, now?: Date): EmployerAnalytics;
 export function summarizeEmployerAnalyticsReports(reports: Array<{ reportJson: string | null }>): { scoredCount: number; scoreTotal: number; scoreBands: number[] };
