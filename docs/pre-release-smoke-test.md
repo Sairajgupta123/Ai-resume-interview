@@ -80,6 +80,12 @@ This checklist is for a staging deployment using the intended browser, xAI accou
 - [ ] Reconnection after refresh uses the scoped candidate cookie.
 - [ ] Force the employer's answer-signalling POST to fail once after the local answer is created; confirm the same answer is retried and the candidate offer is not lost.
 - [ ] Force a transient browser error while applying a remote SDP signal; confirm the polling cursor does not skip the signal and the next poll retries it.
+- [ ] After an initial candidate/employer connection succeeds, force the candidate ICE connection into `failed`; verify the candidate creates an ICE-restart offer, the employer applies that newer offer while its peer is stable, and the employer returns a fresh answer.
+- [ ] Confirm the candidate applies the restart answer only while it has a local offer outstanding, and both peers return to `connected`/ `completed` without creating a second peer connection or losing media tracks.
+- [ ] During ICE restart, delay or reorder candidate ICE messages around the restart offer; verify queued candidates are applied after the matching remote description and stale candidates do not prevent the fresh candidates from connecting.
+- [ ] Simulate a failed restart-offer POST after the server accepted it; verify the next signalling poll negotiates against the latest stored candidate offer and the employer does not answer an older SDP revision.
+- [ ] Force a temporary `disconnected` state that later recovers without an ICE restart; confirm the UI reports interruption and returns to connected without consuming the two failed-restart attempts.
+- [ ] Force two consecutive ICE failures; confirm the candidate retries at most twice and displays a clear recovery failure instead of silently claiming the video is connected.
 - [ ] Signalling rejects malformed, oversized or wrong-participant messages.
 - [ ] Employer can prepare ICE settings while an invited live interview is waiting, but candidate ICE settings are rejected until consent and interview start are persisted.
 - [ ] At exactly 15 minutes from the persisted start time, signalling POST rejects new SDP, ICE and hangup messages; polling returns no further signals.
