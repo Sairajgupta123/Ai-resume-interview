@@ -37,6 +37,7 @@ This checklist is for a staging deployment using the intended browser, xAI accou
 - [ ] A failed upload can be retried without creating a second recording.
 - [ ] A report cannot be finalized while recording upload or recovery is incomplete.
 - [ ] Complete a report after a failed upload, then verify one late recovery is accepted only when no recording was previously committed; subsequent replacement attempts are rejected.
+- [ ] On a completed interview with a failed recording upload, throttle or delay the IndexedDB lookup after refresh; verify the Create another interview action stays disabled until the recovery check finishes, then remains blocked if complete cached chunks are found.
 - [ ] The recording is stored privately in the configured object bucket, not in a public URL or SQLite blob.
 - [ ] Employer can play, seek, pause and resume the recording; unauthorized candidate/session IDs cannot retrieve it.
 - [ ] Verify an authenticated HEAD request returns recording metadata without a response body, and an unauthenticated HEAD request is rejected.
