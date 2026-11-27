@@ -14,10 +14,11 @@ export async function GET() {
     const days = parseRetentionDays(configuredDays);
     const now = new Date();
     const cutoff = days === null ? null : new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
-    const [totalInterviews, completedInterviews, inProgressInterviews, eligibleCompletedInterviews, consentedInterviews, missingConsentMetadata] = await Promise.all([
+    const [totalInterviews, completedInterviews, inProgressInterviews, invitedInterviews, eligibleCompletedInterviews, consentedInterviews, missingConsentMetadata] = await Promise.all([
       db.interview.count(),
       db.interview.count({ where: { status: "completed" } }),
-      db.interview.count({ where: { status: { not: "completed" } } }),
+      db.interview.count({ where: { status: "in_progress" } }),
+      db.interview.count({ where: { status: "invited" } }),
       cutoff ? db.interview.count({ where: { status: "completed", createdAt: { lt: cutoff } } }) : Promise.resolve(0),
       db.interview.count({ where: { consentAcceptedAt: { not: null }, consentVersion: { not: null } } }),
       db.interview.count({ where: { OR: [{ consentAcceptedAt: null }, { consentVersion: null }] } })
@@ -26,6 +27,7 @@ export async function GET() {
       totalInterviews,
       completedInterviews,
       inProgressInterviews,
+      invitedInterviews,
       eligibleCompletedInterviews,
       consentedInterviews,
       missingConsentMetadata
