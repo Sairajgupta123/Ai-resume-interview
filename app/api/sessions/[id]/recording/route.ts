@@ -251,7 +251,13 @@ export async function POST(request: NextRequest, context: Context) {
       }),
       cleanupNew: () => deleteRecording(relativePath),
       cleanupNewPath: relativePath,
-      enqueueCleanup: (storedPath, reason) => enqueueRecordingCleanupTask(db, { storedPath, reason }),
+      enqueueCleanup: (storedPath, reason) => enqueueRecordingCleanupTask(db, {
+        storedPath,
+        reason,
+        // If the commit outcome could not be read, give any in-flight database
+        // transaction time to settle before the worker's reference check.
+        now: reason.includes("reference-check-failed") ? new Date(Date.now() + 5 * 60 * 1000) : undefined
+      }),
       // If the DB request times out after committing, a cleanup must not remove
       // the object now referenced by the interview. If this read also fails,
       // preserve the object and let later storage reconciliation handle the orphan.
