@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { isEmployerAuthenticated } from "@/lib/auth";
-import { buildRetentionPreview } from "@/lib/retention-policy.mjs";
+import { buildRetentionPreviewFromCounts, parseRetentionDays } from "@/lib/retention-policy.mjs";
 
 export const runtime = "nodejs";
 
@@ -10,15 +10,26 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401, headers: { "Cache-Control": "no-store" } });
   }
   try {
-    const records = await db.interview.findMany({
-      select: {
-        status: true,
-        createdAt: true,
-        consentAcceptedAt: true,
-        consentVersion: true
-      }
-    });
-    const preview = buildRetentionPreview(records, process.env.INTERVIEW_RETENTION_DAYS);
+    const configuredDays = process.env.INTERVIEW_RETENTION_DAYS;
+    const days = parseRetentionDays(configuredDays);
+    const now = new Date();
+    const cutoff = days === null ? null : new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+    const [totalInterviews, completedInterviews, inProgressInterviews, eligibleCompletedInterviews, consentedInterviews, missingConsentMetadata] = await Promise.all([
+      db.interview.count(),
+      db.interview.count({ where: { status: "completed" } }),
+      db.interview.count({ where: { status: { not: "completed" } } }),
+      cutoff ? db.interview.count({ where: { status: "completed", createdAt: { lt: cutoff } } }) : Promise.resolve(0),
+      db.interview.count({ where: { consentAcceptedAt: { not: null }, consentVersion: { not: null } } }),
+      db.interview.count({ where: { OR: [{ consentAcceptedAt: null }, { consentVersion: null }] } })
+    ]);
+    const preview = buildRetentionPreviewFromCounts({
+      totalInterviews,
+      completedInterviews,
+      inProgressInterviews,
+      eligibleCompletedInterviews,
+      consentedInterviews,
+      missingConsentMetadata
+    }, configuredDays, now);
     return NextResponse.json(
       { preview },
       { headers: { "Cache-Control": "private, no-store" } }
