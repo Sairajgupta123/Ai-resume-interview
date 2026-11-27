@@ -66,6 +66,56 @@ async function s3Request(method: "PUT" | "GET" | "HEAD" | "DELETE", key: string,
   return response;
 }
 
+async function readBoundedRecordingForm(request: NextRequest, maxBytes: number): Promise<{ form: FormData } | { error: string; status: number }> {
+  const contentType = request.headers.get("content-type") || "";
+  if (!contentType.toLowerCase().startsWith("multipart/form-data;")) {
+    return { error: "A multipart recording upload is required.", status: 415 };
+  }
+  const rawLength = request.headers.get("content-length");
+  if (rawLength !== null) {
+    const declaredLength = Number(rawLength);
+    if (!Number.isSafeInteger(declaredLength) || declaredLength < 1) {
+      return { error: "Invalid recording upload length.", status: 400 };
+    }
+    if (declaredLength > maxBytes) {
+      return { error: "Recording upload exceeds the 100 MB limit.", status: 413 };
+    }
+  }
+
+  const reader = request.body?.getReader();
+  if (!reader) return { error: "Recording upload body is missing.", status: 400 };
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+  try {
+    while (true) {
+      const part = await reader.read();
+      if (part.done) break;
+      totalBytes += part.value.byteLength;
+      if (totalBytes > maxBytes) {
+        await reader.cancel().catch(() => undefined);
+        return { error: "Recording upload exceeds the 100 MB limit.", status: 413 };
+      }
+      chunks.push(part.value);
+    }
+  } catch {
+    return { error: "Could not read recording upload.", status: 400 };
+  }
+
+  try {
+    // Parse only after the complete multipart body has passed the streaming
+    // byte limit. This also safely supports runtimes that omit Content-Length.
+    const body = new Blob(chunks);
+    const boundedRequest = new Request(request.url, {
+      method: "POST",
+      headers: { "Content-Type": contentType },
+      body
+    });
+    return { form: await boundedRequest.formData() };
+  } catch {
+    return { error: "Invalid multipart recording upload.", status: 400 };
+  }
+}
+
 function isRemoteRecordingPath(value: string) {
   return value.startsWith("s3://");
 }
@@ -149,19 +199,11 @@ export async function POST(request: NextRequest, context: Context) {
       return NextResponse.json({ error: "Recording is only accepted after the candidate has consented and started the interview." }, { status: 403, headers: privateHeaders });
     }
 
-    // Multipart parsing buffers the form before exposing the File object.
-    // Require a declared request size so chunked/unknown-length uploads cannot
-    // bypass the 100 MB request bound and allocate unbounded memory here.
-    const rawContentLength = request.headers.get("content-length");
-    if (rawContentLength === null) {
-      return NextResponse.json({ error: "A content length is required for recording uploads." }, { status: 411, headers: privateHeaders });
+    const parsedForm = await readBoundedRecordingForm(request, MAX_RECORDING_BYTES + 1024 * 1024);
+    if ("error" in parsedForm) {
+      return NextResponse.json({ error: parsedForm.error }, { status: parsedForm.status, headers: privateHeaders });
     }
-    const contentLength = Number(rawContentLength);
-    if (!Number.isSafeInteger(contentLength) || contentLength < 1 || contentLength > MAX_RECORDING_BYTES + 1024 * 1024) {
-      return NextResponse.json({ error: "Recording upload exceeds the 100 MB limit." }, { status: 413, headers: privateHeaders });
-    }
-    const form = await request.formData();
-    const file = form.get("recording");
+    const file = parsedForm.form.get("recording");
     if (!(file instanceof File)) return NextResponse.json({ error: "Recording file is required." }, { status: 400, headers: privateHeaders });
     const mimeType = file.type.split(";")[0].trim();
     if (file.size < 1 || file.size > MAX_RECORDING_BYTES) {
