@@ -48,3 +48,30 @@ test("disables retention preview when no valid policy is configured", () => {
 test("rejects invalid preview dates", () => {
   assert.throws(() => buildRetentionPreview(records, "365", new Date("invalid")));
 });
+
+import { buildRetentionPreviewFromCounts } from "../lib/retention-policy.mjs";
+
+test("builds the same preview from database aggregate counts", () => {
+  const counts = {
+    totalInterviews: 4,
+    completedInterviews: 3,
+    inProgressInterviews: 1,
+    eligibleCompletedInterviews: 2,
+    consentedInterviews: 2,
+    missingConsentMetadata: 2
+  };
+  const fromCounts = buildRetentionPreviewFromCounts(counts, "365", now);
+  const fromRows = buildRetentionPreview(records, "365", now);
+  assert.deepEqual(fromCounts, fromRows);
+});
+
+test("rejects invalid aggregate counts instead of returning misleading metrics", () => {
+  assert.throws(() => buildRetentionPreviewFromCounts({
+    totalInterviews: -1,
+    completedInterviews: 0,
+    inProgressInterviews: 0,
+    eligibleCompletedInterviews: 0,
+    consentedInterviews: 0,
+    missingConsentMetadata: 0
+  }, "365", now));
+});
