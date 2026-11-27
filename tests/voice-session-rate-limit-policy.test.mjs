@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   getVoiceSessionLimit,
+  getVoiceSessionAttemptDecision,
   isVoiceSessionWindowExpired,
   VOICE_SESSION_BLOCK_MS,
   VOICE_SESSION_MAX_ATTEMPTS,
@@ -31,4 +32,10 @@ test("expires the rolling window after five minutes", () => {
 test("keeps credential mint limits bounded and explicit", () => {
   assert.equal(VOICE_SESSION_MAX_ATTEMPTS, 12);
   assert.equal(VOICE_SESSION_BLOCK_MS, 5 * 60 * 1000);
+});
+
+test("allows exactly twelve reserved credential attempts and rejects the next concurrent reservation", () => {
+  assert.deepEqual(getVoiceSessionAttemptDecision(11), { limited: false, shouldBlock: false });
+  assert.deepEqual(getVoiceSessionAttemptDecision(12), { limited: false, shouldBlock: true });
+  assert.deepEqual(getVoiceSessionAttemptDecision(13), { limited: true, shouldBlock: true });
 });
