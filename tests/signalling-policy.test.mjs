@@ -41,3 +41,20 @@ test("rejects unknown kinds and oversized payloads", () => {
   assert.equal(validateSignalPayload("offer", "x".repeat(24_001), "candidate").ok, false);
   assert.equal(validateSignalPayload("unexpected", "x", "candidate").ok, false);
 });
+
+
+test("a newer SDP description supersedes an earlier hangup signal", async () => {
+  const { isSignalOlderThanDescription } = await import("../lib/signalling-policy.mjs");
+  assert.equal(isSignalOlderThanDescription("2026-11-27T10:00:00.000Z", "b", "2026-11-27T10:00:01.000Z", "a"), true);
+});
+
+test("a hangup after the latest SDP description remains active", async () => {
+  const { isSignalOlderThanDescription } = await import("../lib/signalling-policy.mjs");
+  assert.equal(isSignalOlderThanDescription("2026-11-27T10:00:02.000Z", "b", "2026-11-27T10:00:01.000Z", "a"), false);
+});
+
+test("same-timestamp signal ordering uses stable IDs", async () => {
+  const { isSignalOlderThanDescription } = await import("../lib/signalling-policy.mjs");
+  assert.equal(isSignalOlderThanDescription("2026-11-27T10:00:00.000Z", "a", "2026-11-27T10:00:00.000Z", "b"), true);
+  assert.equal(isSignalOlderThanDescription("2026-11-27T10:00:00.000Z", "c", "2026-11-27T10:00:00.000Z", "b"), false);
+});
