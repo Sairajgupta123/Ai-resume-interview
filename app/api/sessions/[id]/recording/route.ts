@@ -42,7 +42,7 @@ function s3RequestUrl(endpoint: URL, bucket: string, key: string) {
   return url;
 }
 
-async function s3Request(method: "PUT" | "GET" | "HEAD" | "DELETE", key: string, body?: Buffer, contentType?: string, range?: string, allowNotFound = false) {
+async function s3Request(method: "PUT" | "GET" | "HEAD", key: string, body?: Buffer, contentType?: string, range?: string) {
   const config = remoteStorageConfig();
   if (!config) throw new Error("Private cloud recording storage is not configured.");
   const url = s3RequestUrl(config.endpoint, config.bucket, key);
@@ -73,8 +73,6 @@ async function s3Request(method: "PUT" | "GET" | "HEAD" | "DELETE", key: string,
     redirect: "error",
     signal: AbortSignal.timeout(30_000)
   });
-  // DELETE is idempotent: a missing object is already in the desired state.
-  if (allowNotFound && response.status === 404) return response;
   if (!response.ok) throw new Error("Private recording storage returned " + response.status + ": " + (await response.text()).slice(0, 500));
   return response;
 }
