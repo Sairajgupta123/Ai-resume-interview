@@ -86,3 +86,23 @@ test("cleanup failure after database failure is reported without hiding original
   }), /database error/);
   assert.deepEqual(errors, [["cleanup error", "new-recording-after-commit-error"]]);
 });
+
+test("cleanup error reporter throwing cannot break a successful replacement", async () => {
+  const result = await commitRecordingReplacement({
+    commit: async () => ({ count: 1 }),
+    cleanupNew: async () => assert.fail("new file must be retained"),
+    cleanupPrevious: async () => { throw new Error("storage unavailable"); },
+    previousPath: "old-recording.webm",
+    onCleanupError: () => { throw new Error("logger unavailable"); }
+  });
+  assert.deepEqual(result, { ok: true, conflict: false });
+});
+
+test("cleanup error reporter throwing cannot hide the original database error", async () => {
+  await assert.rejects(() => commitRecordingReplacement({
+    commit: async () => { throw new Error("database error"); },
+    cleanupNew: async () => { throw new Error("cleanup error"); },
+    cleanupPrevious: async () => {},
+    onCleanupError: () => { throw new Error("logger unavailable"); }
+  }), /database error/);
+});
