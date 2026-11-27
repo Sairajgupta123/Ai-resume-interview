@@ -14,7 +14,7 @@ test("successful replacement commits new reference then removes previous file", 
   assert.deepEqual(calls, ["commit", "cleanup-old-recording.webm"]);
 });
 
-test("database commit failure triggers cleanup of the new file and preserves old file", async () => {
+test("database commit failure triggers cleanup when no reference check is configured", async () => {
   const calls = [];
   await assert.rejects(() => commitRecordingReplacement({
     commit: async () => { calls.push("commit"); throw new Error("database unavailable"); },
@@ -23,6 +23,32 @@ test("database commit failure triggers cleanup of the new file and preserves old
     previousPath: "old-recording.webm"
   }), /database unavailable/);
   assert.deepEqual(calls, ["commit", "cleanup-new"]);
+});
+
+test("ambiguous database failure preserves new file when follow-up read finds its reference", async () => {
+  const calls = [];
+  await assert.rejects(() => commitRecordingReplacement({
+    commit: async () => { throw new Error("connection lost after commit"); },
+    isNewRecordingReferenced: async () => { calls.push("check-reference"); return true; },
+    cleanupNew: async () => calls.push("cleanup-new"),
+    cleanupPrevious: async () => calls.push("cleanup-old"),
+    previousPath: "old-recording.webm"
+  }), /connection lost after commit/);
+  assert.deepEqual(calls, ["check-reference"]);
+});
+
+test("ambiguous database failure preserves new file when reference check is unavailable", async () => {
+  const errors = [];
+  const calls = [];
+  await assert.rejects(() => commitRecordingReplacement({
+    commit: async () => { throw new Error("database unavailable"); },
+    isNewRecordingReferenced: async () => { throw new Error("read unavailable"); },
+    cleanupNew: async () => calls.push("cleanup-new"),
+    cleanupPrevious: async () => calls.push("cleanup-old"),
+    onCleanupError: (error, stage) => errors.push([error.message, stage])
+  }), /database unavailable/);
+  assert.deepEqual(calls, []);
+  assert.deepEqual(errors, [["read unavailable", "new-recording-reference-check-after-commit-error"]]);
 });
 
 test("concurrent update conflict cleans up new file and does not delete old file", async () => {
