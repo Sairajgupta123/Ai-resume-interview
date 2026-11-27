@@ -925,6 +925,8 @@ export default function Home() {
 
       {phase === "report" && report && <section className="report-layout">
         <div className="report-top"><div><div className="eyebrow">INTERVIEW COMPLETE / EMPLOYER REVIEW</div><h1>Interview <em>insights.</em></h1><p>{candidateName} · {role} · {formatTime(seconds)} duration</p></div><div className="report-actions"><button className="outline-btn" onClick={() => window.print()}>Print / Save PDF</button><button className="primary-btn compact" onClick={downloadReport}>Download report JSON ↧</button></div></div>
+        {recoverableRecording && !recordingSaved && <div className="privacy-note"><b>Unfinished recording found on this device.</b><p>The interview report is complete, but the video upload did not finish. You can securely recover the saved segments now.</p><button className="outline-btn" onClick={() => void recoverSavedRecording()} disabled={uploadingRecording}>{uploadingRecording ? "Recovering recording…" : "Recover saved recording"}</button></div>}
+        {recordingSaved && <div className="privacy-note">✓ Recording saved for employer review.</div>}
         {error && <div className="error-box">{error}</div>}
         <div className="score-grid"><div className="score-card"><small>OVERALL SCORE</small><strong>{report.overallScore}<i>/100</i></strong><div className="score-track"><span style={{ width: `${Math.max(0, Math.min(100, report.overallScore))}%` }} /></div></div><div className="recommend-card"><small>AI REVIEW SUGGESTION</small><strong>{report.recommendation}</strong><p>Advisory signal only. Final hiring decision stays with the employer.</p></div></div>
         <div className="report-card"><div className="eyebrow">EXECUTIVE SUMMARY</div><p>{report.summary}</p></div>
