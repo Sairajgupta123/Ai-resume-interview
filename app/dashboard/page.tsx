@@ -31,6 +31,9 @@ export default function Dashboard() {
   const [deletionActionBusy, setDeletionActionBusy] = useState("");
   const [deletionQueueMessage, setDeletionQueueMessage] = useState("");
   const [decisionNotes, setDecisionNotes] = useState("");
+  const [inviteReissueBusy, setInviteReissueBusy] = useState(false);
+  const [replacementInviteUrl, setReplacementInviteUrl] = useState("");
+  const [inviteReissueError, setInviteReissueError] = useState("");
   const [decisionBusy, setDecisionBusy] = useState(false);
   const [deletionReason, setDeletionReason] = useState("");
   const [deletionConfirmation, setDeletionConfirmation] = useState("");
@@ -280,6 +283,8 @@ export default function Dashboard() {
       }
       if (requestId !== detailRequestRef.current) return;
       const interview = data.interview as Detail;
+      setReplacementInviteUrl("");
+      setInviteReissueError("");
       setSelected(interview);
       setDecisionNotes(typeof interview.employerNotes === "string" ? interview.employerNotes : "");
     } catch (failure) {
@@ -292,6 +297,41 @@ export default function Dashboard() {
   const closeDetail = () => {
     detailRequestRef.current += 1;
     setSelected(null);
+    setReplacementInviteUrl("");
+    setInviteReissueError("");
+  };
+
+  const reissueInvitation = async () => {
+    if (!selected || selected.status !== "invited" || inviteReissueBusy) return;
+    const targetId = selected.id;
+    const requestId = detailRequestRef.current;
+    setInviteReissueBusy(true);
+    setInviteReissueError("");
+    setReplacementInviteUrl("");
+    try {
+      const response = await fetch("/api/sessions/" + encodeURIComponent(targetId) + "/invite", {
+        method: "POST",
+        credentials: "same-origin",
+        cache: "no-store"
+      });
+      const data: unknown = await response.json();
+      if (!response.ok) {
+        const message = data && typeof data === "object" && "error" in data && typeof data.error === "string"
+          ? data.error
+          : "Could not create a replacement invitation.";
+        throw new Error(message);
+      }
+      if (!data || typeof data !== "object" || !("inviteUrl" in data) || typeof data.inviteUrl !== "string") {
+        throw new Error("The invitation was updated, but the replacement link could not be confirmed. Refresh and check the interview.");
+      }
+      if (detailRequestRef.current === requestId) setReplacementInviteUrl(data.inviteUrl);
+    } catch (failure) {
+      if (detailRequestRef.current === requestId) {
+        setInviteReissueError(failure instanceof Error ? failure.message : "Could not create a replacement invitation.");
+      }
+    } finally {
+      setInviteReissueBusy(false);
+    }
   };
 
   const saveDecision = async (decision: "shortlist" | "review" | "reject") => {
@@ -556,6 +596,7 @@ export default function Dashboard() {
       </tbody></table></div>
     </section>
     {selected && <div className="detail-backdrop" onClick={closeDetail}><section className="detail-drawer" onClick={e=>e.stopPropagation()}><button className="drawer-close" onClick={closeDetail}>×</button><div className="eyebrow">CANDIDATE REVIEW</div><h2>{selected.candidateName}</h2><p className="drawer-sub">{selected.role} · {selected.mode} interview</p>{selected.status === "completed" && selected.reportJson ? <a className="outline-btn" href={`/api/sessions/${selected.id}/export`}>Download full interview report CSV ↓</a> : <p className="drawer-sub">CSV export is available after the interview report is completed.</p>}
+      {selected.status === "invited" && <div className="privacy-deletion-request"><div className="eyebrow">CANDIDATE INVITATION</div><h3>Replacement invitation link</h3><p>Use this if the original link expired or was lost. Creating a replacement invalidates the previous link. This is available only before the candidate opens the invitation.</p>{inviteReissueError && <div className="error-box">{inviteReissueError}</div>}{replacementInviteUrl ? <><input aria-label="Replacement candidate invitation link" readOnly value={replacementInviteUrl}/><button className="outline-btn" onClick={async()=>{try{await navigator.clipboard.writeText(replacementInviteUrl);}catch{setInviteReissueError("Could not copy automatically. Select and copy the invitation link manually.");}}}>Copy replacement link</button></> : <button className="outline-btn" disabled={inviteReissueBusy} onClick={()=>void reissueInvitation()}>{inviteReissueBusy ? "Creating replacement link…" : "Generate replacement invitation"}</button>}</div>}
       {selected.reportJson ? <ReportView json={selected.reportJson}/> : <p className="drawer-sub">No completed report is available for this interview.</p>}
       <div className="employer-decision"><div className="eyebrow">EMPLOYER DECISION</div><p>AI recommendation is advisory. Record your independent hiring decision.</p>{selected.status === "completed" ? <><textarea rows={3} maxLength={3000} value={decisionNotes} onChange={e=>setDecisionNotes(e.target.value)} placeholder="Optional notes for the hiring team…" /><div className="decision-actions"><button disabled={decisionBusy} onClick={()=>saveDecision("shortlist")}>Shortlist</button><button disabled={decisionBusy} onClick={()=>saveDecision("review")}>Needs review</button><button disabled={decisionBusy} onClick={()=>saveDecision("reject")}>Reject</button></div></> : <p className="drawer-sub">Hiring decisions become available after the interview is completed.</p>}{selected.employerDecision && <small>Current decision: <b>{selected.employerDecision}</b>{selected.decisionAt ? ` · ${date(selected.decisionAt)}` : ""}</small>}{selected.decisionHistory?.length > 0 && <div className="decision-history"><b>Decision history</b>{selected.decisionHistory.map(item=><div key={item.id}><span>{item.decision}</span><small>{date(item.createdAt)}</small>{item.notes && <p>{item.notes}</p>}</div>)}</div>}</div>
       {selected.status === "completed" && <div className="privacy-deletion-request">
