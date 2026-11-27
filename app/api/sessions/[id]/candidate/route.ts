@@ -33,7 +33,7 @@ async function candidateResponse(id: string, token: string | null, exchange = fa
       startedAt: true,
       messages: {
         // Keep the newest turns available for candidate refresh recovery.
-        orderBy: { createdAt: "desc" },
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
         take: 100,
         select: { role: true, content: true }
       }
