@@ -1,6 +1,6 @@
 # Applying Prisma schema updates to an existing SQLite deployment
 
-The application currently uses Prisma with SQLite and does not yet maintain a checked-in Prisma Migrate history. The employer dashboard indexes are declared in `prisma/schema.prisma`; an existing persistent SQLite database will not gain those indexes merely because the application bundle was rebuilt.
+The application currently uses Prisma with SQLite and does not yet maintain a checked-in Prisma Migrate history. The employer dashboard indexes are declared in `prisma/schema.prisma`; an existing persistent SQLite database will not gain those indexes merely because the application bundle was rebuilt. The interview list's `(createdAt, id)` index supports its stable newest-first cursor ordering.
 
 ## Safe staging procedure
 
