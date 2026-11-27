@@ -58,7 +58,10 @@ export async function POST(request: Request, context: Context) {
         to: [deletion.candidateEmailSnapshot],
         subject: "Verify your interview data deletion request",
         text: "A request was opened to delete your interview data. If you made this request, verify it using this secure link (expires in 30 minutes): " + verifyUrl.toString() + "\n\nIf you did not request this, do not use the link and contact the hiring organization.",
-      })
+      }),
+      // Bound the external email dependency so a stalled provider cannot hold
+      // the verification request and its reserved token indefinitely.
+      signal: AbortSignal.timeout(10_000)
     });
     deliverySucceeded = response.ok;
     if (!response.ok) console.error("Deletion verification email delivery failed:", response.status);
