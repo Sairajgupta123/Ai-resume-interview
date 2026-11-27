@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { isEmployerAuthenticated } from "@/lib/auth";
 import { getCandidateInvitationToken, hasValidCandidateInvitation } from "@/lib/invitation";
-import { validateSignalPayload } from "@/lib/signalling-policy.mjs";
+import { validateSignalPayload, isSignalOlderThanDescription } from "@/lib/signalling-policy.mjs";
 
 export const runtime = "nodejs";
 type Context = { params: Promise<{ id: string }> };
@@ -95,9 +95,14 @@ export async function GET(request: NextRequest, context: Context) {
   // A refreshed peer must negotiate against the newest SDP description, not
   // replay an older offer/answer from a connection that no longer exists.
   // ICE and hangup signals remain available because they are not SDP revisions.
-  const currentSignals = signals.filter(signal =>
-    signal.kind !== descriptionKind || signal.id === latestDescription?.id
-  );
+  const currentSignals = signals.filter(signal => {
+    if (signal.kind === descriptionKind && signal.id !== latestDescription?.id) return false;
+    // A fresh SDP negotiation supersedes old call-ending signals. Keep a
+    // hangup only when it happened after the latest remote offer/answer.
+    if (signal.kind === "hangup" && latestDescription &&
+      isSignalOlderThanDescription(signal.createdAt, signal.id, latestDescription.createdAt, latestDescription.id)) return false;
+    return true;
+  });
   if (!rawSince && latestDescription && !currentSignals.some(signal => signal.id === latestDescription.id)) {
     currentSignals.push(latestDescription);
   }
