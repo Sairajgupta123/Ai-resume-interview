@@ -86,3 +86,20 @@ test("development may use the local public app URL", () => {
     NEXT_PUBLIC_APP_URL: "http://localhost:3000"
   }), []);
 });
+
+
+test("rejects a weak optional recording cleanup worker secret", () => {
+  const errors = getProductionConfigErrors({
+    ...validProductionEnv(),
+    CRON_SECRET: "too-short"
+  });
+  assert.ok(errors.some(error => error.includes("CRON_SECRET")));
+});
+
+test("allows production without the optional recording cleanup worker enabled", () => {
+  const errors = getProductionConfigErrors({
+    ...validProductionEnv(),
+    CRON_SECRET: ""
+  });
+  assert.equal(errors.some(error => error.includes("CRON_SECRET")), false);
+});
