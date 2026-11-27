@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { cacheRecordingChunk, clearCachedRecording, getCachedRecording, markCachedRecordingComplete } from "@/lib/recording-cache";
 import { GrokRealtimeClient } from "@/lib/grok-realtime-client";
 import { buildRealtimeInterviewInstructions } from "@/lib/realtime-interview-instructions.mjs";
+import { isIceCandidateForDescription } from "@/lib/signalling-policy.mjs";
 
 type ChatMessage = { role: "assistant" | "user"; content: string };
 type Report = {
@@ -244,12 +245,17 @@ export default function Home() {
             for (const signal of data.signals || []) {
               if (signal.kind === "answer" && peer!.signalingState === "have-local-offer") {
                 await peer!.setRemoteDescription(JSON.parse(signal.payload));
-                for (const candidate of pendingIce.splice(0)) await peer!.addIceCandidate(candidate).catch(() => {});
+                const activeRemoteDescription = peer!.remoteDescription;
+                const readyIce = pendingIce.splice(0).filter(candidate => isIceCandidateForDescription(candidate, activeRemoteDescription));
+                for (const candidate of readyIce) await peer!.addIceCandidate(candidate).catch(() => {});
               }
               if (signal.kind === "ice") {
                 const candidate = JSON.parse(signal.payload) as RTCIceCandidateInit;
-                if (peer!.remoteDescription) await peer!.addIceCandidate(candidate).catch(() => {});
-                else if (pendingIce.length < 128) pendingIce.push(candidate);
+                if (peer!.remoteDescription && isIceCandidateForDescription(candidate, peer!.remoteDescription)) {
+                  await peer!.addIceCandidate(candidate).catch(() => {});
+                } else if (pendingIce.length < 128) {
+                  pendingIce.push(candidate);
+                }
               }
               if (signal.kind === "hangup") { stopped = true; if (timer !== undefined) window.clearInterval(timer); peer!.close(); setError("Employer ended the live video connection."); }
               // Keep the last successfully handled cursor if applying a signal
