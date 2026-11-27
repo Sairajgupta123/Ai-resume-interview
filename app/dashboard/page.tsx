@@ -75,6 +75,10 @@ export default function Dashboard() {
     };
     employerStopCallRef.current = stopLocalCall;
     const pendingIce: RTCIceCandidateInit[] = [];
+    // Keep a generated answer until the server confirms it. If the POST fails
+    // after setLocalDescription(), retry the same answer instead of losing the offer.
+    let pendingAnswer: { offerId: string; payload: string } | null = null;
+    let answeredOfferId = "";
     const postSignal = (kind: string, payload: string) => fetch(`/api/sessions/${selected.id}/signals`, {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind, payload })
     });
@@ -129,16 +133,24 @@ export default function Dashboard() {
             const response = await fetch(`/api/sessions/${selected.id}/signals?since=${encodeURIComponent(cursor)}&afterId=${encodeURIComponent(cursorId)}`, { cache: "no-store" });
             if (!response.ok) return;
             const data = await response.json();
+            if (pendingAnswer) {
+              const retryResponse = await postSignal("answer", pendingAnswer.payload);
+              if (!retryResponse.ok) throw new Error("The live call answer could not be sent. Retrying…");
+              answeredOfferId = pendingAnswer.offerId;
+              pendingAnswer = null;
+              setLiveCallState("Answer sent · connecting…");
+            }
             for (const signal of data.signals || []) {
-              cursor = signal.createdAt;
-              cursorId = signal.id;
-              if (signal.kind === "offer" && peer!.signalingState === "stable") {
+              if (signal.kind === "offer" && peer!.signalingState === "stable" && signal.id !== answeredOfferId) {
                 await peer!.setRemoteDescription(JSON.parse(signal.payload));
                 for (const candidate of pendingIce.splice(0)) await peer!.addIceCandidate(candidate).catch(() => {});
                 const answer = await peer!.createAnswer();
                 await peer!.setLocalDescription(answer);
-                const answerResponse = await postSignal("answer", JSON.stringify(peer!.localDescription));
-                if (!answerResponse.ok) throw new Error("The live call answer could not be sent. Please refresh the interview and retry.");
+                pendingAnswer = { offerId: signal.id, payload: JSON.stringify(peer!.localDescription) };
+                const answerResponse = await postSignal("answer", pendingAnswer.payload);
+                if (!answerResponse.ok) throw new Error("The live call answer could not be sent. Retrying…");
+                answeredOfferId = signal.id;
+                pendingAnswer = null;
                 setLiveCallState("Answer sent · connecting…");
               } else if (signal.kind === "ice") {
                 const candidate = JSON.parse(signal.payload) as RTCIceCandidateInit;
@@ -148,6 +160,10 @@ export default function Dashboard() {
                 stopLocalCall();
                 setLiveCallState("Candidate ended the call.");
               }
+              // Advance only after this signal has been handled. If handling an
+              // offer/answer fails, the next poll can replay it safely.
+              cursor = signal.createdAt;
+              cursorId = signal.id;
             }
           } catch { /* retry on transient network errors */ }
           finally { polling = false; }
