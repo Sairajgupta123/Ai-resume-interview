@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { mkdir, stat, unlink, writeFile } from "node:fs/promises";
+import { mkdir, stat, writeFile } from "node:fs/promises";
 import { createReadStream } from "node:fs";
 import { Readable } from "node:stream";
 import { randomUUID, createHash, createHmac } from "node:crypto";
@@ -10,6 +10,7 @@ import { getCandidateInvitationToken, hasValidCandidateSession } from "@/lib/inv
 import { MAX_RECORDING_BYTES, inspectRecordingUpload, isSafeRecordingFilename } from "@/lib/recording-policy.mjs";
 import { commitRecordingReplacement } from "@/lib/recording-replacement.mjs";
 import { parseByteRange } from "@/lib/recording-range.mjs";
+import { deleteStoredInterviewRecording } from "@/lib/deletion-storage.mjs";
 
 export const runtime = "nodejs";
 
@@ -180,21 +181,9 @@ async function recordingSize(storedPath: string) {
 }
 
 async function deleteRecording(storedPath: string) {
-  if (isRemoteRecordingPath(storedPath)) {
-    await s3Request("DELETE", recordingObjectKey(storedPath), undefined, undefined, undefined, true);
-    return;
-  }
-  const normalized = storedPath.replace(/\\/g, "/");
-  const filename = normalized.split("/").pop() || "";
-  if (normalized !== "data/recordings/" + filename || !isSafeRecordingFilename(filename)) {
-    throw new Error("Recording storage reference is invalid.");
-  }
-  try {
-    await unlink(join(process.cwd(), "data", "recordings", filename));
-  } catch (error) {
-    // A prior cleanup attempt may already have removed the file.
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-  }
+  // Reuse the same path validation and idempotent deletion implementation used
+  // by the privacy-deletion workflow so replacement cleanup cannot drift.
+  await deleteStoredInterviewRecording(storedPath);
 }
 
 export async function POST(request: NextRequest, context: Context) {
