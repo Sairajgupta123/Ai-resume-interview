@@ -51,6 +51,7 @@ model LoginAttempt {
   updatedAt       DateTime @updatedAt
 
   @@index([blockedUntil])
+  @@index([windowStartedAt])
 }
 
 model InterviewMessage {
