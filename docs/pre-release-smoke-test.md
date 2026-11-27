@@ -49,6 +49,8 @@ This checklist is for a staging deployment using the intended browser, xAI accou
 - [ ] Drop the network while a transcript write is pending; reconnect retries the same message IDs before opening a new voice session.
 - [ ] Retry an answer with the same request ID and identical interview, speaker and answer content; the original interviewer response is returned without creating duplicate transcript rows.
 - [ ] Reuse an answer request ID with changed answer text, another interview ID or a different speaker; the API rejects each conflict with HTTP 409.
+- [ ] Simulate a lost response for an interviewer turn marked `done: true`; retrying the same answer must restore `done: true` and trigger report completion rather than reopening the interview.
+- [ ] Simulate a lost opening-question response; retrying interview start must restore the original opening question and its terminal state.
 - [ ] Force a transcript write to fail permanently; voice input becomes unavailable, typing remains usable, and report generation is blocked until queued transcript entries are saved.
 - [ ] Finalized candidate and interviewer transcript turns are saved once, in chronological order.
 - [ ] Retrying a transcript message with the same client message ID is idempotent; changing its content is rejected.
