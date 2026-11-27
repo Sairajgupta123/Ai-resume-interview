@@ -685,11 +685,16 @@ function ReportView({json}:{json:string}) {
   const improvementAreas = list(report.improvementAreas).filter((value): value is string => typeof value === "string" && Boolean(value.trim()));
   const skills = list(report.skills).filter((value): value is Record<string, unknown> => Boolean(value) && typeof value === "object" && !Array.isArray(value));
   const questionFeedback = list(report.questionFeedback).filter((value): value is Record<string, unknown> => Boolean(value) && typeof value === "object" && !Array.isArray(value));
+  const supportedSkillCount = skills.filter(item =>
+    typeof item.evidence === "string" && item.evidence !== "Insufficient evidence" && item.evidence.trim().length >= 8
+  ).length;
+  const evidenceCoverage = skills.length ? Math.round((supportedSkillCount / skills.length) * 100) : 0;
   const score = Number.isInteger(report.overallScore) && Number(report.overallScore) >= 0 && Number(report.overallScore) <= 100
     ? Number(report.overallScore)
     : "—";
   return <div className="drawer-report">
     <div className="drawer-score"><strong>{score}</strong><span>/100 · {text(report.recommendation, "Needs review")}</span></div>
+    <p className="drawer-sub">Evidence coverage: <b>{evidenceCoverage}%</b> ({supportedSkillCount} of {skills.length} assessed skills have a supporting candidate-answer quote). Missing evidence is not proof that a candidate lacks the skill.</p>
     <p>{text(report.summary, "No report summary is available.")}</p>
     <h3>Strengths</h3>
     {strengths.length ? <ul>{strengths.map((item,i)=><li key={i}>{item}</li>)}</ul> : <p>No strengths were recorded.</p>}
