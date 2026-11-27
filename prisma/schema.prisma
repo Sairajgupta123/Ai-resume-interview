@@ -39,6 +39,7 @@ model Interview {
   decisionHistory EmployerDecisionHistory[]
   signals         InterviewSignal[]
   @@index([createdAt])
+  @@index([status, createdAt])
   @@index([candidateName])
 }
 
@@ -74,6 +75,7 @@ model EmployerDecisionHistory {
   interview   Interview @relation(fields: [interviewId], references: [id], onDelete: Cascade)
 
   @@index([interviewId, createdAt])
+  @@index([createdAt, id])
 }
 
 
