@@ -1,5 +1,7 @@
 "use client";
 
+import { inspectCachedRecordingRows } from "./recording-cache-policy.mjs";
+
 export type CachedRecording = {
   chunks: Blob[];
   mimeType: string;
@@ -150,19 +152,13 @@ export async function getCachedRecording(sessionId: string): Promise<CachedRecor
         resolve(null);
         return;
       }
-      // Wait for the read transaction to complete before exposing its snapshot.
-      // A missing segment would silently concatenate an incomplete video.
-      const metadata = rows.find(row => (row as { recordType?: string }).recordType === "metadata") as unknown as { status?: string; mimeType?: string } | undefined;
-      const chunks = rows.filter(row => (row as { recordType?: string }).recordType !== "metadata");
-      const hasGap = chunks.some((row, index) => !Number.isSafeInteger(row.index) || row.index !== index || !(row.blob instanceof Blob) || row.blob.size < 1);
-      const mimeType = metadata?.mimeType || chunks[0]?.mimeType || "video/webm";
-      const hasMixedTypes = chunks.some(row => (row.mimeType || "video/webm") !== mimeType);
-      const complete = metadata?.status === "complete";
-      if (hasGap || hasMixedTypes) {
-        fail(new Error("Saved recording segments are incomplete or inconsistent. The video cannot be safely recovered."));
-        return;
+      // Evaluate the completed IndexedDB snapshot with the same pure policy
+      // used by unit tests; never concatenate missing or mixed-format chunks.
+      try {
+        resolve(inspectCachedRecordingRows(rows));
+      } catch (error) {
+        fail(error instanceof Error ? error : new Error("Saved recording segments are inconsistent."));
       }
-      resolve({ chunks: chunks.map(row => row.blob), mimeType, complete });
     };
     transaction.onerror = () => fail(transaction.error || new Error("Could not recover saved recording segments."));
     transaction.onabort = () => fail(transaction.error || new Error("Recording recovery was interrupted."));
