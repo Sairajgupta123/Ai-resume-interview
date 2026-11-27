@@ -29,6 +29,17 @@ test("expires the rolling window after five minutes", () => {
   assert.equal(isVoiceSessionWindowExpired(attempt, 1000 + VOICE_SESSION_WINDOW_MS), true);
 });
 
+test("expired rolling window clears an otherwise active cooldown", () => {
+  const attempt = {
+    windowStartedAt: new Date(1000),
+    blockedUntil: new Date(1000 + VOICE_SESSION_WINDOW_MS + VOICE_SESSION_BLOCK_MS)
+  };
+  assert.deepEqual(
+    getVoiceSessionLimit(attempt, 1000 + VOICE_SESSION_WINDOW_MS),
+    { limited: false, retryAfterSeconds: 0 }
+  );
+});
+
 test("keeps credential mint limits bounded and explicit", () => {
   assert.equal(VOICE_SESSION_MAX_ATTEMPTS, 12);
   assert.equal(VOICE_SESSION_BLOCK_MS, 5 * 60 * 1000);
