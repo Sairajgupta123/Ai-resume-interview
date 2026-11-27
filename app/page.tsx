@@ -209,6 +209,11 @@ export default function Home() {
             });
           }
         };
+        // Ignore employer answers/ICE from an earlier browser connection.
+        // The cursor is advanced before this offer is persisted, so only signals
+        // generated for this negotiation can be applied to the new peer.
+        cursor = new Date().toISOString();
+        cursorId = "";
         const offer = await peer.createOffer();
         await peer.setLocalDescription(offer);
         const offerResponse = await fetch(`/api/sessions/${sessionId}/signals`, {
