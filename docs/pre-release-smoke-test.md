@@ -28,7 +28,8 @@ This checklist is for a staging deployment using the intended browser, xAI accou
 ## Recorded interview
 - [ ] Configure a long random `CRON_SECRET` and verify the recording-cleanup worker rejects missing/incorrect bearer credentials.
 - [ ] Queue an unreferenced synthetic recording object and verify the scheduled worker deletes it and marks its task completed.
-- [ ] Queue a path still referenced by an interview and verify the worker marks the task complete without deleting the referenced object.
+- [ ] Queue a path still referenced by an interview and verify the worker preserves the object, leaves the task pending with `RECORDING_STILL_REFERENCED`, does not consume a retry attempt, and schedules a recheck about five minutes later.
+- [ ] Replace the interview's recording so the old path is no longer referenced; verify the pending cleanup task is later reclaimed and the old object is deleted exactly once.
 - [ ] Simulate a transient storage failure; verify the task is retried after backoff, an expired lease can be reclaimed, and the 12-attempt ceiling prevents endless retries.
 - [ ] Trigger two authenticated cleanup-worker requests concurrently while multiple synthetic tasks are due; verify no object is deleted twice, each task has one final state, and both invocations return bounded batch results.
 - [ ] Verify scheduler monitoring alerts after two consecutive failed invocations, and that overdue tasks, leases older than five minutes and tasks at the 12-attempt ceiling are visible to operators.
