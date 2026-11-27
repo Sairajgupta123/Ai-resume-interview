@@ -76,7 +76,12 @@ export async function POST(request: NextRequest, context: Context) {
     const previousAttempt = await db.loginAttempt.findUnique({ where: { key: rateLimitKey } });
     const rateLimit = getVoiceSessionRateLimit(previousAttempt, now.getTime());
     if (rateLimit.limited) {
-      const blockedUntil = new Date(now.getTime() + VOICE_SESSION_BLOCK_MS);
+      // Preserve an existing block deadline; repeated retries must not extend
+      // the lockout indefinitely.
+      const existingBlock = previousAttempt?.blockedUntil && previousAttempt.blockedUntil.getTime() > now.getTime()
+        ? previousAttempt.blockedUntil
+        : null;
+      const blockedUntil = existingBlock || new Date(now.getTime() + VOICE_SESSION_BLOCK_MS);
       await db.loginAttempt.upsert({
         where: { key: rateLimitKey },
         create: { key: rateLimitKey, attempts: VOICE_SESSION_MAX_MINTS + 1, windowStartedAt: now, blockedUntil },
@@ -84,7 +89,7 @@ export async function POST(request: NextRequest, context: Context) {
       });
       return privateJson(
         { error: "Too many AI voice reconnection attempts. Please wait before trying again." },
-        { status: 429, headers: { "Retry-After": String(rateLimit.retryAfterSeconds) } }
+        { status: 429, headers: { "Retry-After": String(Math.max(1, Math.ceil((blockedUntil.getTime() - now.getTime()) / 1000))) } }
       );
     }
 
