@@ -29,3 +29,9 @@ The application currently uses Prisma with SQLite and does not yet maintain a ch
 - Do not run `db push` against production without a verified backup, maintenance window and staging rehearsal.
 - Do not use `--accept-data-loss` to force a schema change.
 - PostgreSQL requires a separate reviewed Prisma migration and data-transfer process described in [the PostgreSQL migration runbook](postgres-migration-runbook.md).
+
+## Recording cleanup queue schema addition
+
+The current branch adds the `RecordingCleanupTask` table as an additive change. It records the stored object path, bounded reason/error codes, retry time, attempt count and worker lease. It intentionally has no foreign key to `Interview` because a task must survive deletion of the interview row. The unique object path makes enqueue idempotent.
+
+Apply this addition using the safe staging procedure above. The application must not be deployed with the new worker route until `npx prisma db push` has created the table on the persistent SQLite database. The worker requires `CRON_SECRET` and should be invoked only by a trusted scheduler. Verify the worker can claim a pending task, skip a still-referenced object, delete an unreferenced test object, retry a transient failure and reclaim an expired lease before enabling it for production traffic.
