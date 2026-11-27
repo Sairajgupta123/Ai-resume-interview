@@ -98,7 +98,8 @@ export async function POST(request: NextRequest, context: Context) {
 
     // Re-check the active session inside the transaction so a concurrent report or
     // completion cannot leave transcript entries attached to a completed interview.
-    await db.$transaction(async (tx) => {
+    try {
+      await db.$transaction(async (tx) => {
       const current = await tx.interview.findUnique({
         where: { id },
         select: { status: true, mode: true, consentAcceptedAt: true, startedAt: true, reportLockAt: true }
@@ -137,7 +138,24 @@ export async function POST(request: NextRequest, context: Context) {
       await tx.interviewMessage.create({
         data: { interviewId: id, role, content, clientMessageId: body.clientMessageId as string, createdAt }
       });
-    });
+      });
+    } catch (error) {
+      // Concurrent retries can both pass the pre-insert lookup. Treat the
+      // unique clientMessageId winner as a successful idempotent retry.
+      if (typeof error === "object" && error !== null && "code" in error && error.code === "P2002") {
+        const existing = await db.interviewMessage.findUnique({
+          where: { clientMessageId: body.clientMessageId as string },
+          select: { interviewId: true, role: true, content: true }
+        });
+        if (existing && isTranscriptRetryCompatible(existing, { interviewId: id, role, content })) {
+          return NextResponse.json({ saved: true }, { headers: privateHeaders });
+        }
+        if (existing) {
+          return NextResponse.json({ error: "Transcript message ID conflict." }, { status: 409, headers: privateHeaders });
+        }
+      }
+      throw error;
+    }
 
     return NextResponse.json({ saved: true }, {
       headers: privateHeaders
