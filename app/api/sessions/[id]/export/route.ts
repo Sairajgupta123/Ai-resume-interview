@@ -24,7 +24,7 @@ export async function GET(_request: Request, context: Context) {
           select: { role: true, content: true, createdAt: true }
         },
         decisionHistory: {
-          orderBy: { createdAt: "asc" },
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
           take: 100,
           select: { decision: true, notes: true, createdAt: true }
         },
