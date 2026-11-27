@@ -104,7 +104,13 @@ async function readBoundedRecordingForm(request: NextRequest, maxBytes: number):
   try {
     // Parse only after the complete multipart body has passed the streaming
     // byte limit. This also safely supports runtimes that omit Content-Length.
-    const body = new Blob(chunks);
+    const bodyBytes = new Uint8Array(totalBytes);
+    let offset = 0;
+    for (const chunk of chunks) {
+      bodyBytes.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    const body = new Blob([bodyBytes.buffer as ArrayBuffer]);
     const boundedRequest = new Request(request.url, {
       method: "POST",
       headers: { "Content-Type": contentType },
