@@ -644,7 +644,7 @@ export default function Home() {
   };
 
 
-  const startGrokVoice = async (targetSessionId: string, openingMessage: string, resume = false) => {
+  const startGrokVoice = async (targetSessionId: string, openingMessage: string, isReconnect = false) => {
     const mediaStream = streamRef.current;
     if (!mediaStream || !targetSessionId) return;
 
@@ -698,7 +698,7 @@ export default function Home() {
       "Use resume and job-description context to validate experience, projects, role skills and problem solving. Never invent candidate facts.",
       "Evaluate only job-related answer content. Never infer competence, honesty, emotion, age, gender, disability, race, personality or identity from voice, accent or appearance.",
       "Keep each spoken response natural and concise. In the final 90 seconds ask at most one essential clarification and then close politely.",
-      resume
+      isReconnect
         ? "This is a reconnect to an interview already in progress. Do not restart or repeat the introduction. Continue naturally from the recent conversation below and ask the next appropriate question."
         : "The opening question has already been spoken. Continue from that point; do not repeat the opening.",
       "Recent saved conversation (oldest to newest):\n" + history.slice(-12).map(message => message.role + ": " + message.content).join("\n").slice(-10000),
@@ -711,7 +711,7 @@ export default function Home() {
       sessionId: targetSessionId,
       stream: mediaStream,
       instructions,
-      initialMessage: resume ? "" : openingMessage,
+      initialMessage: isReconnect ? "" : openingMessage,
       callbacks: {
         onStatus: status => setVoiceStatus(status === "closed" ? "off" : status),
         onMicrophoneState: state => {
