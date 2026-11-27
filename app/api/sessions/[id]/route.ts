@@ -109,7 +109,11 @@ export async function GET(_request: NextRequest, context: Context) {
         recordingPath: true, employerDecision: true, employerNotes: true,
         decisionAt: true, durationSeconds: true, createdAt: true,
         messages: {
-          orderBy: { createdAt: "asc" },
+          // Match report recovery's bounded transcript window. Fetch newest
+          // turns first so legacy or malformed sessions cannot create an
+          // unbounded employer dashboard response.
+          orderBy: { createdAt: "desc" },
+          take: 200,
           select: { role: true, content: true }
         },
         decisionHistory: {
@@ -124,7 +128,12 @@ export async function GET(_request: NextRequest, context: Context) {
     // keys inside the server so dashboard clients cannot inspect storage layout.
     const { recordingPath, ...publicInterview } = interview;
     return NextResponse.json({
-      interview: { ...publicInterview, hasRecording: Boolean(recordingPath) }
+      interview: {
+        ...publicInterview,
+        // Preserve chronological display order after the bounded newest-first read.
+        messages: publicInterview.messages.slice().reverse(),
+        hasRecording: Boolean(recordingPath)
+      }
     }, { headers });
   } catch {
     return NextResponse.json({ error: "Could not load interview details." }, { status: 500, headers });
