@@ -58,3 +58,16 @@ test("same-timestamp signal ordering uses stable IDs", async () => {
   assert.equal(isSignalOlderThanDescription("2026-11-27T10:00:00.000Z", "a", "2026-11-27T10:00:00.000Z", "b"), true);
   assert.equal(isSignalOlderThanDescription("2026-11-27T10:00:00.000Z", "c", "2026-11-27T10:00:00.000Z", "b"), false);
 });
+
+
+test("cursor comparison includes the same-timestamp signal only when its ID is later", async () => {
+  const { isSignalAfterCursor } = await import("../lib/signalling-policy.mjs");
+  const timestamp = "2026-11-27T10:00:00.000Z";
+  assert.equal(isSignalAfterCursor(timestamp, "b", timestamp, "a"), true);
+  assert.equal(isSignalAfterCursor(timestamp, "a", timestamp, "b"), false);
+});
+
+test("cursor comparison includes signals with newer timestamps", async () => {
+  const { isSignalAfterCursor } = await import("../lib/signalling-policy.mjs");
+  assert.equal(isSignalAfterCursor("2026-11-27T10:00:01.000Z", "a", "2026-11-27T10:00:00.000Z", "z"), true);
+});
