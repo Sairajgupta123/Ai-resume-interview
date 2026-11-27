@@ -54,6 +54,12 @@ export async function PUT(request: NextRequest, context: Context) {
     return NextResponse.json({ error: "Only a valid duration update is accepted." }, { status: 400, headers });
   }
   try {
+    // Authenticate before looking up the session so unauthorised callers cannot
+    // distinguish an existing interview from an unknown session ID.
+    const employer = await isEmployerAuthenticated();
+    const candidate = employer ? false : await hasValidCandidateInvitation(id, getCandidateInvitationToken(request, id));
+    if (!employer && !candidate) return NextResponse.json({ error: "Unauthorized interview update." }, { status: 401, headers });
+
     const interview = await db.interview.findUnique({
       where: { id },
       select: { id: true, status: true, startedAt: true }
@@ -62,10 +68,6 @@ export async function PUT(request: NextRequest, context: Context) {
     if (interview.status === "completed") {
       return NextResponse.json({ error: "Completed interview sessions are read-only." }, { status: 409, headers });
     }
-
-    const employer = await isEmployerAuthenticated();
-    const candidate = await hasValidCandidateInvitation(id, getCandidateInvitationToken(request, id));
-    if (!employer && !candidate) return NextResponse.json({ error: "Unauthorized interview update." }, { status: 401, headers });
 
     // Transcript entries, reports, and duration are server-owned. In particular,
     // never trust a candidate-supplied timer value for employer-facing analytics.
