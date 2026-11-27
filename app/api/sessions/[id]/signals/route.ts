@@ -72,17 +72,39 @@ export async function GET(request: NextRequest, context: Context) {
   const afterId = request.nextUrl.searchParams.get("afterId") || "";
   const since = rawSince ? new Date(rawSince) : new Date(0);
   if (Number.isNaN(since.getTime()) || afterId.length > 64) return NextResponse.json({ error: "Invalid cursor." }, { status: 400, headers });
-  const signals = await db.interviewSignal.findMany({
-    where: {
-      interviewId: id,
-      sender: sender === "employer" ? "candidate" : "employer",
-      OR: [{ createdAt: { gt: since } }, ...(rawSince && afterId ? [{ createdAt: since, id: { gt: afterId } }] : [])]
-    },
-    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-    take: 50,
-    select: { id: true, kind: true, payload: true, createdAt: true }
-  });
-  return NextResponse.json({ signals }, { headers });
+  const remoteSender = sender === "employer" ? "candidate" : "employer";
+  const descriptionKind = sender === "employer" ? "offer" : "answer";
+  const [signals, latestDescription] = await Promise.all([
+    db.interviewSignal.findMany({
+      where: {
+        interviewId: id,
+        sender: remoteSender,
+        OR: [{ createdAt: { gt: since } }, ...(rawSince && afterId ? [{ createdAt: since, id: { gt: afterId } }] : [])]
+      },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      take: 50,
+      select: { id: true, kind: true, payload: true, createdAt: true }
+    }),
+    db.interviewSignal.findFirst({
+      where: { interviewId: id, sender: remoteSender, kind: descriptionKind },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      select: { id: true, kind: true, payload: true, createdAt: true }
+    })
+  ]);
+
+  // A refreshed peer must negotiate against the newest SDP description, not
+  // replay an older offer/answer from a connection that no longer exists.
+  // ICE and hangup signals remain available because they are not SDP revisions.
+  const currentSignals = signals.filter(signal =>
+    signal.kind !== descriptionKind || signal.id === latestDescription?.id
+  );
+  if (!rawSince && latestDescription && !currentSignals.some(signal => signal.id === latestDescription.id)) {
+    currentSignals.push(latestDescription);
+  }
+  currentSignals.sort((left, right) =>
+    left.createdAt.getTime() - right.createdAt.getTime() || left.id.localeCompare(right.id)
+  );
+  return NextResponse.json({ signals: currentSignals }, { headers });
 }
 export async function POST(request: NextRequest, context: Context) {
   const { id } = await context.params;
