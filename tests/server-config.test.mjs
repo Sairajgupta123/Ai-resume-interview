@@ -25,6 +25,19 @@ test("valid production configuration passes", () => {
   assert.doesNotThrow(() => assertProductionConfig(validProductionEnv));
 });
 
+
+test("production rejects PostgreSQL URLs until the Prisma provider migration is complete", () => {
+  const errors = getProductionConfigErrors({
+    ...validProductionEnv,
+    DATABASE_URL: "postgresql://app:secret@db.example.com:5432/mzobs"
+  });
+  assert.ok(errors.some(error => error.includes("Prisma SQLite")));
+  assert.throws(
+    () => assertProductionConfig({ ...validProductionEnv, DATABASE_URL: "postgresql://app:secret@db.example.com:5432/mzobs" }),
+    /PostgreSQL is not supported/
+  );
+});
+
 test("production startup reports all missing critical configuration together", () => {
   const errors = getProductionConfigErrors({ NODE_ENV: "production" });
   assert.ok(errors.some(error => error.includes("DATABASE_URL")));
