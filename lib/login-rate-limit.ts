@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { db } from "@/lib/db";
-import { getLoginLimit, isLoginWindowExpired } from "./login-rate-limit-policy.mjs";
+import { getLoginLimit, isLoginWindowExpired, LOGIN_ATTEMPT_RETENTION_MS } from "./login-rate-limit-policy.mjs";
 
 function requestIdentity(request: Request, username: string) {
   // Configure the production proxy to overwrite these headers with the real client IP.
@@ -13,6 +13,13 @@ function requestIdentity(request: Request, username: string) {
 export async function loginRateLimit(request: Request, username: string) {
   const key = requestIdentity(request, username);
   const now = new Date();
+  // Bound abandoned username/IP hashes so random login probes cannot grow this table forever.
+  await db.loginAttempt.deleteMany({
+    where: {
+      windowStartedAt: { lt: new Date(now.getTime() - LOGIN_ATTEMPT_RETENTION_MS) },
+      OR: [{ blockedUntil: null }, { blockedUntil: { lte: now } }]
+    }
+  });
   const attempt = await db.loginAttempt.findUnique({ where: { key } });
   const limit = getLoginLimit(attempt, now.getTime());
   if (isLoginWindowExpired(attempt, now.getTime())) {
