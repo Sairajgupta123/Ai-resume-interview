@@ -108,3 +108,11 @@ test("aggregate database inputs produce the same analytics as row-based calculat
   }, now);
   assert.deepEqual(aggregateResult, buildEmployerAnalytics(rows, now));
 });
+
+test("excludes future-dated records from the current six-week trend", () => {
+  const future = new Date(now.getTime() + 60 * 60 * 1000);
+  const result = buildEmployerAnalytics([
+    { ...rows[0], createdAt: future }
+  ], now);
+  assert.equal(result.weeklyTrend.reduce((sum, week) => sum + week.total, 0), 0);
+});
