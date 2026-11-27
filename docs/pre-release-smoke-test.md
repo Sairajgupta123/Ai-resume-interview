@@ -93,6 +93,7 @@ This checklist is for a staging deployment using the intended browser, xAI accou
 - [ ] Submit the same candidate answer twice with the same request ID after simulating a lost response; verify exactly one user answer and one interviewer response are stored and the original response is recovered.
 - [ ] Submit the same answer request ID with changed content or against another interview; verify the server rejects the replay.
 - [ ] Submit two different answer requests concurrently; verify only one obtains the answer lock and transcript turns remain ordered.
+- [ ] After the interviewer returns `done=true`, attempt to submit a fresh answer; verify the server rejects it and requires report generation. A retry of an already-committed answer request ID must still recover its original interviewer response.
 - [ ] Attempt report generation while an answer is actively processing; verify the report is rejected until the answer action completes or its lock safely expires.
 - [ ] Attempt a new answer while report generation is actively processing; verify the report lock prevents transcript mutation during report evaluation.
 - [ ] Simulate an AI report response being lost after the database commit; refresh the candidate page and verify the same saved report is restored without generating a second report.
