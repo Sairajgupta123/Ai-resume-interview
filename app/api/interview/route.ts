@@ -10,6 +10,7 @@ import { validateInterviewerTurn } from "@/lib/interviewer-turn-policy.mjs";
 import { buildAdaptiveGuidance } from "@/lib/adaptive-interview-policy.mjs";
 import { buildCoverageGuidance, buildSkillCoverage, extractTargetSkills } from "@/lib/skill-coverage-policy.mjs";
 import { buildFairnessGuidance, buildInterviewFairnessPlan } from "@/lib/interview-fairness-policy.mjs";
+import { isTranscriptRetryCompatible } from "@/lib/transcript-policy.mjs";
 
 function attachCandidateCookie(response: NextResponse, request: NextRequest, sessionId: string, expiresAt: Date | null) {
   const token = getCandidateInvitationToken(request, sessionId);
@@ -368,11 +369,15 @@ export async function POST(request: NextRequest) {
       // the saved interviewer turn rather than evaluating or storing the answer twice.
       const previousAnswer = await db.interviewMessage.findUnique({
         where: { clientMessageId: body.requestId },
-        select: { interviewId: true, role: true, createdAt: true }
+        select: { interviewId: true, role: true, content: true, createdAt: true }
       });
       if (previousAnswer) {
-        if (previousAnswer.interviewId !== body.sessionId || previousAnswer.role !== "user") {
-          return privateJson({ error: "This answer request ID has already been used." }, { status: 409 });
+        if (!isTranscriptRetryCompatible(previousAnswer, {
+          interviewId: body.sessionId!,
+          role: "user",
+          content: answer
+        })) {
+          return privateJson({ error: "This answer request ID has already been used with different interview content." }, { status: 409 });
         }
         const savedTurn = await db.interviewMessage.findFirst({
           where: {
