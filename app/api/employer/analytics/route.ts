@@ -13,10 +13,8 @@ export async function GET() {
   try {
     const now = new Date();
     const windows = buildEmployerAnalyticsWeekWindows(now);
-    const weeklyQueries = windows.map(async (window, index) => {
-      const dateFilter = index === windows.length - 1
-        ? { gte: window.start, lte: now }
-        : { gte: window.start, lt: window.end };
+    const weeklyQueries = windows.map(async window => {
+      const dateFilter = { gte: window.start, lt: window.end };
       const [total, completed] = await Promise.all([
         db.interview.count({ where: { createdAt: dateFilter } }),
         db.interview.count({ where: { createdAt: dateFilter, status: "completed" } })
