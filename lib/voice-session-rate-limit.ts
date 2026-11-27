@@ -5,7 +5,6 @@ import {
   getVoiceSessionAttemptDecision,
   isVoiceSessionWindowExpired,
   VOICE_SESSION_BLOCK_MS,
-  VOICE_SESSION_MAX_ATTEMPTS,
   VOICE_SESSION_WINDOW_MS
 } from "./voice-session-rate-limit-policy.mjs";
 
@@ -30,7 +29,9 @@ export async function checkVoiceSessionRateLimit(request: Request, interviewId: 
   });
   const attempt = await db.loginAttempt.findUnique({ where: { key } });
   if (isVoiceSessionWindowExpired(attempt, now.getTime())) {
-    await db.loginAttempt.deleteMany({ where: { key } });
+    await db.loginAttempt.deleteMany({
+      where: { key, windowStartedAt: { lt: new Date(now.getTime() - VOICE_SESSION_WINDOW_MS) } }
+    });
   }
   return { key, ...getVoiceSessionLimit(attempt, now.getTime()) };
 }
