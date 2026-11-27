@@ -236,8 +236,6 @@ export default function Home() {
             if (!response.ok) return;
             const data = await response.json();
             for (const signal of data.signals || []) {
-              cursor = signal.createdAt;
-              cursorId = signal.id;
               if (signal.kind === "answer" && peer!.signalingState === "have-local-offer") {
                 await peer!.setRemoteDescription(JSON.parse(signal.payload));
                 for (const candidate of pendingIce.splice(0)) await peer!.addIceCandidate(candidate).catch(() => {});
@@ -248,6 +246,10 @@ export default function Home() {
                 else if (pendingIce.length < 128) pendingIce.push(candidate);
               }
               if (signal.kind === "hangup") { stopped = true; if (timer !== undefined) window.clearInterval(timer); peer!.close(); setError("Employer ended the live video connection."); }
+              // Keep the last successfully handled cursor if applying a signal
+              // throws, allowing the next poll to retry it after a transient error.
+              cursor = signal.createdAt;
+              cursorId = signal.id;
             }
           } catch { /* retry on next poll */ }
           finally { polling = false; }
