@@ -71,20 +71,29 @@ export async function POST(request: NextRequest) {
   }
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   if (!(await isEmployerAuthenticated())) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401, headers: privateHeaders });
   }
+  const cursorValue = request.nextUrl.searchParams.get("cursor");
+  if (cursorValue !== null && (cursorValue.length < 1 || cursorValue.length > 64 || !/^[a-zA-Z0-9_-]+$/.test(cursorValue))) {
+    return NextResponse.json({ error: "Invalid interview page cursor." }, { status: 400, headers: privateHeaders });
+  }
   try {
-    const interviews = await db.interview.findMany({
-      orderBy: { createdAt: "desc" },
+    const rows = await db.interview.findMany({
+      take: 101,
+      ...(cursorValue ? { cursor: { id: cursorValue }, skip: 1 } : {}),
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       select: {
         id: true, candidateName: true, role: true, mode: true, status: true,
         overallScore: true, recommendation: true, employerDecision: true,
         durationSeconds: true, createdAt: true
       }
     });
-    return NextResponse.json({ interviews }, { headers: privateHeaders });
+    const hasMore = rows.length > 100;
+    const interviews = hasMore ? rows.slice(0, 100) : rows;
+    const nextCursor = hasMore ? interviews[interviews.length - 1]?.id ?? null : null;
+    return NextResponse.json({ interviews, nextCursor, hasMore }, { headers: privateHeaders });
   } catch {
     return NextResponse.json({ error: "Could not load employer interviews." }, { status: 500, headers: privateHeaders });
   }
