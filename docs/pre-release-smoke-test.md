@@ -96,6 +96,7 @@ This checklist is for a staging deployment using the intended browser, xAI accou
 - [ ] Employer can review transcript, report and private recording.
 - [ ] Employer can record shortlist, review or reject with notes; decision history is retained.
 - [ ] Candidate comparison displays evidence and missing-evidence states without automatically selecting a winner.
+- [ ] Select three completed candidates in a deliberate order and confirm the comparison columns preserve that exact selection order, regardless of database query ordering.
 - [ ] CSV exports open correctly and formula-like candidate text is not executed by spreadsheet software.
 
 ## Privacy deletion and recovery
