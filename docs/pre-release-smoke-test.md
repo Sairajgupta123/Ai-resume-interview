@@ -12,6 +12,8 @@ This checklist is for a staging deployment using the intended browser, xAI accou
 - [ ] Confirm the xAI account has access to the configured chat and Realtime models.
 - [ ] Confirm TURN credentials are configured if cross-network candidate/employer video is required.
 
+- [ ] At the production ingress, send a forged `X-Real-IP` and `X-Forwarded-For` value; confirm the proxy overwrites/normalizes the trusted client address and the voice-session rate limit cannot be bypassed by caller-controlled forwarding headers.
+
 ## Employer and invitation
 
 - [ ] Employer can log in with the configured credentials.
