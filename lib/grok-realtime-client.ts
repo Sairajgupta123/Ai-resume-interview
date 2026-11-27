@@ -63,6 +63,7 @@ export class GrokRealtimeClient {
     this.stream = args.stream;
     this.instructions = args.instructions;
     this.initialMessage = args.initialMessage;
+    this.openingTranscriptPending = Boolean(args.initialMessage.trim());
     this.callbacks = args.callbacks;
   }
 
@@ -218,15 +219,17 @@ export class GrokRealtimeClient {
       await sessionReady;
       if (this.closed) return;
       this.startAudioGraph();
-      socket.send(JSON.stringify({
-        type: "conversation.item.create",
-        item: {
-          type: "force_message",
-          role: "assistant",
-          interruptible: true,
-          content: [{ type: "output_text", text: this.initialMessage }]
-        }
-      }));
+      if (this.initialMessage.trim()) {
+        socket.send(JSON.stringify({
+          type: "conversation.item.create",
+          item: {
+            type: "force_message",
+            role: "assistant",
+            interruptible: true,
+            content: [{ type: "output_text", text: this.initialMessage }]
+          }
+        }));
+      }
       this.callbacks.onStatus?.("connected");
   
     } catch (error) {
