@@ -19,8 +19,22 @@ jobs:
   verify:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: mzobs
+          POSTGRES_PASSWORD: mzobs-ci-password
+          POSTGRES_DB: mzobs_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U mzobs -d mzobs_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
     env:
-      DATABASE_URL: "file:../ci.db"
+      DATABASE_URL: "postgresql://mzobs:mzobs-ci-password@localhost:5432/mzobs_ci?schema=public"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -32,6 +46,8 @@ jobs:
         run: npm install --no-audit --no-fund
       - name: Validate Prisma schema
         run: npm run db:validate
+      - name: Apply PostgreSQL migrations
+        run: npm run db:migrate
       - name: Unit tests
         run: npm test
       - name: Type check
