@@ -40,7 +40,7 @@ A resume- and job-description-aware interview application powered by xAI Grok.
 - xAI Chat Completions API and xAI Realtime Speech-to-Speech API
 
 ## Requirements
-- Node.js 20+
+- Node.js 22 or 24 (CI is validated on Node.js 24)
 - npm
 - An xAI API key with access to the configured model
 
