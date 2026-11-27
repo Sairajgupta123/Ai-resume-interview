@@ -1,22 +1,13 @@
-import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { deleteStoredInterviewRecording } from "@/lib/deletion-storage.mjs";
 import { processRecordingCleanupBatch } from "@/lib/recording-cleanup-worker.mjs";
+import { isAuthorizedRecordingCleanupRequest } from "@/lib/recording-cleanup-auth.mjs";
 
 export const runtime = "nodejs";
 
-function isAuthorized(request: Request) {
-  const secret = process.env.CRON_SECRET;
-  const authorization = request.headers.get("authorization") || "";
-  if (!secret || !authorization.startsWith("Bearer ")) return false;
-  const supplied = Buffer.from(authorization.slice(7));
-  const expected = Buffer.from(secret);
-  return supplied.length === expected.length && timingSafeEqual(supplied, expected);
-}
-
 export async function POST(request: Request) {
-  if (!isAuthorized(request)) {
+  if (!isAuthorizedRecordingCleanupRequest(request, process.env.CRON_SECRET)) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401, headers: { "Cache-Control": "no-store" } });
   }
   try {
