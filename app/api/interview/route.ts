@@ -491,6 +491,16 @@ export async function POST(request: NextRequest) {
               select: { role: true, content: true }
             }))
           : (body.history || []).slice(-18);
+        if (body.sessionId) {
+          const latestInterviewerTurn = await db.interviewMessage.findFirst({
+            where: { interviewId: body.sessionId, role: "assistant" },
+            orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+            select: { isTerminal: true }
+          });
+          if (latestInterviewerTurn?.isTerminal) {
+            return privateJson({ error: "The interviewer has ended this interview. Generate the report to finish." }, { status: 409 });
+          }
+        }
         const adaptiveGuidance = buildAdaptiveGuidance(body.answer!);
         const targetSkills = extractTargetSkills(body.jobDescription || "", body.resume || "");
         const coverageHistory = [...history, { role: "user", content: body.answer! }];
