@@ -149,8 +149,15 @@ export async function POST(request: NextRequest, context: Context) {
       return NextResponse.json({ error: "Recording is only accepted after the candidate has consented and started the interview." }, { status: 403, headers: privateHeaders });
     }
 
-    const contentLength = Number(request.headers.get("content-length") || 0);
-    if (!Number.isSafeInteger(contentLength) || contentLength < 0 || contentLength > MAX_RECORDING_BYTES + 1024 * 1024) {
+    // Multipart parsing buffers the form before exposing the File object.
+    // Require a declared request size so chunked/unknown-length uploads cannot
+    // bypass the 100 MB request bound and allocate unbounded memory here.
+    const rawContentLength = request.headers.get("content-length");
+    if (rawContentLength === null) {
+      return NextResponse.json({ error: "A content length is required for recording uploads." }, { status: 411, headers: privateHeaders });
+    }
+    const contentLength = Number(rawContentLength);
+    if (!Number.isSafeInteger(contentLength) || contentLength < 1 || contentLength > MAX_RECORDING_BYTES + 1024 * 1024) {
       return NextResponse.json({ error: "Recording upload exceeds the 100 MB limit." }, { status: 413, headers: privateHeaders });
     }
     const form = await request.formData();
