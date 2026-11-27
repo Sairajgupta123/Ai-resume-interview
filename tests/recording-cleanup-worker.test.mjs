@@ -65,7 +65,7 @@ test("schedules retry with a bounded error code when storage deletion fails", as
   assert.equal(db.updates[1].data.status, "failed");
   assert.equal(db.updates[1].data.lastErrorCode, "STORAGE_DELETE_FAILED");
   assert.ok(db.updates[1].data.nextAttemptAt instanceof Date);
-  assert.ok(db.updates[1].data.nextAttemptAt.getTime() > Date.now());
+  assert.equal(db.updates[1].data.nextAttemptAt.toISOString(), "2026-11-27T10:00:30.000Z");
 });
 
 test("does not delete when another worker already claimed the task", async () => {
