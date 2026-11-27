@@ -35,7 +35,7 @@ export async function GET() {
     const completedReports: Array<{ reportJson: string }> = [];
     let lastReportId: string | null = null;
     while (true) {
-      const batch = await db.interview.findMany({
+      const batch: Array<{ id: string; reportJson: string | null }> = await db.interview.findMany({
         where: {
           status: "completed",
           reportJson: { not: null },
