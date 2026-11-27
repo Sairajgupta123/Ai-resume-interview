@@ -746,6 +746,11 @@ export default function Home() {
           const pendingEntry = { role: speaker, content: text, clientMessageId: crypto.randomUUID() };
           pendingTranscriptRef.current.push(pendingEntry);
           transcriptWriteRef.current = transcriptWriteRef.current.then(async () => {
+            // Do not persist later turns after an earlier entry failed. Leave
+            // them queued so reconnect recovery can replay the transcript in order.
+            if (transcriptPersistenceFailedRef.current) {
+              throw new Error("A previous live transcript entry is still waiting to be saved.");
+            }
             let lastError: Error | null = null;
             // Keep the same clientMessageId for every retry: the API uses it to
             // make a timed-out request safe to replay without duplicating a message.
