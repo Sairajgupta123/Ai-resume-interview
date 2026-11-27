@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { cacheRecordingChunk, clearCachedRecording, getCachedRecording } from "@/lib/recording-cache";
+import { cacheRecordingChunk, clearCachedRecording, getCachedRecording, markCachedRecordingComplete } from "@/lib/recording-cache";
 import { GrokRealtimeClient } from "@/lib/grok-realtime-client";
 
 type ChatMessage = { role: "assistant" | "user"; content: string };
@@ -121,7 +121,8 @@ export default function Home() {
           void clearCachedRecording(interview.id).catch(() => {});
         } else {
           void getCachedRecording(interview.id).then(cached => {
-            if (cached?.chunks.length) setRecoverableRecording(true);
+            if (cached?.chunks.length && cached.complete) setRecoverableRecording(true);
+          else if (cached?.chunks.length) setError("An interrupted partial recording was found on this device. It is not marked complete, so it cannot be uploaded as a full interview recording.");
           }).catch(() => setError("A locally saved recording could not be checked. Your interview answers remain available."));
         }
         setCandidateName(interview.candidateName);
@@ -499,6 +500,7 @@ export default function Home() {
     try {
       const cached = await getCachedRecording(sessionId);
       if (!cached || cached.chunks.length === 0) throw new Error("No recoverable recording segments were found.");
+      if (!cached.complete) throw new Error("These saved segments belong to an interrupted recording and are not marked complete. They cannot safely replace the full interview recording.");
       const blob = new Blob(cached.chunks, { type: cached.mimeType || "video/webm" });
       if (blob.size < 1) throw new Error("The recovered recording is empty.");
       const extension = cached.mimeType.includes("quicktime") ? "mov" : cached.mimeType.includes("mp4") ? "mp4" : "webm";
@@ -593,6 +595,9 @@ export default function Home() {
             throw new Error("Recording stopped after a browser error. The video was not uploaded; recover saved segments or continue without video.");
           }
           const type = recorder.mimeType || "video/webm";
+          if (targetSessionId && !recordingPersistenceFailedRef.current) {
+            await markCachedRecordingComplete(targetSessionId, type);
+          }
           const extension = type.includes("quicktime") ? "mov" : type.includes("mp4") ? "mp4" : "webm";
           const filename = `mzobs-interview-${Date.now()}.${extension}`;
           const blob = new Blob(chunks, { type });
@@ -630,7 +635,7 @@ export default function Home() {
           setError(error instanceof Error ? error.message : "Could not upload recording.");
           if (targetSessionId) {
             void getCachedRecording(targetSessionId).then(cached => {
-              if (cached?.chunks.length) setRecoverableRecording(true);
+              if (cached?.chunks.length && cached.complete) setRecoverableRecording(true);
             }).catch(() => {});
           }
           settleCompletion(false);
@@ -811,8 +816,10 @@ export default function Home() {
       const cached = targetSessionId ? await getCachedRecording(targetSessionId) : null;
       checkingRecordingBackup = false;
       if (streamRef.current !== acquiredStream || acquiredStream.getTracks().every(track => track.readyState !== "live")) return;
-      if (cached?.chunks.length) {
+      if (cached?.chunks.length && cached.complete) {
         setRecoverableRecording(true);
+      } else if (cached?.chunks.length) {
+        setError("An interrupted partial recording was found on this device. It is not marked complete, so it cannot be uploaded as a full interview recording.");
       } else {
         startRecording(acquiredStream, targetSessionId);
       }
