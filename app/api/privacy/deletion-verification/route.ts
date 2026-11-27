@@ -2,15 +2,24 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { canVerifyDeletionRequest, hashDeletionVerificationToken, verifyDeletionVerificationToken } from "@/lib/deletion-verification-policy.mjs";
 import { verifyDeletionRequest } from "@/lib/deletion-verification-service.mjs";
+import { readBoundedJson } from "@/lib/bounded-json.mjs";
 
 export const runtime = "nodejs";
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
+    const contentType = (request.headers.get("content-type") || "").split(";", 1)[0].trim().toLowerCase();
+    if (contentType !== "application/json") {
+      return NextResponse.json({ error: "Content-Type must be application/json." }, { status: 415, headers: { "Cache-Control": "no-store" } });
+    }
+    const parsed = await readBoundedJson(request, 8 * 1024);
+    if (!parsed.ok) {
+      return NextResponse.json({ error: parsed.error }, { status: parsed.status, headers: { "Cache-Control": "no-store" } });
+    }
+    const body = parsed.value;
     const token = typeof body.token === "string" ? body.token : "";
     const requestId = typeof body.requestId === "string" ? body.requestId : "";
-    if (!requestId || token.length < 32 || token.length > 256) return NextResponse.json({ error: "Verification link is invalid or expired." }, { status: 400, headers: { "Cache-Control": "no-store" } });
+    if (!requestId || requestId.length > 128 || token.length < 32 || token.length > 256) return NextResponse.json({ error: "Verification link is invalid or expired." }, { status: 400, headers: { "Cache-Control": "no-store" } });
     const tokenHash = hashDeletionVerificationToken(token);
     const deletion = await db.privacyDeletionRequest.findUnique({ where: { id: requestId } });
     if (!deletion || !canVerifyDeletionRequest(deletion)) {
