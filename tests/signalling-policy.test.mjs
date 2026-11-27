@@ -71,3 +71,19 @@ test("cursor comparison includes signals with newer timestamps", async () => {
   const { isSignalAfterCursor } = await import("../lib/signalling-policy.mjs");
   assert.equal(isSignalAfterCursor("2026-11-27T10:00:01.000Z", "a", "2026-11-27T10:00:00.000Z", "z"), true);
 });
+
+
+test("matches trickled ICE candidates to the active SDP ICE generation", async () => {
+  const { isIceCandidateForDescription } = await import("../lib/signalling-policy.mjs");
+  const oldDescription = { type: "offer", sdp: "v=0\\r\\na=ice-ufrag:old-generation\\r\\n" };
+  const newDescription = { type: "offer", sdp: "v=0\\r\\na=ice-ufrag:new-generation\\r\\n" };
+  const restartCandidate = { candidate: "candidate:1", usernameFragment: "new-generation" };
+  assert.equal(isIceCandidateForDescription(restartCandidate, oldDescription), false);
+  assert.equal(isIceCandidateForDescription(restartCandidate, newDescription), true);
+  assert.equal(isIceCandidateForDescription({ candidate: "candidate:2", usernameFragment: "old-generation" }, newDescription), false);
+});
+
+test("accepts legacy ICE candidates without username fragments", async () => {
+  const { isIceCandidateForDescription } = await import("../lib/signalling-policy.mjs");
+  assert.equal(isIceCandidateForDescription({ candidate: "candidate:1" }, { sdp: "v=0\\r\\na=ice-ufrag:current\\r\\n" }), true);
+});
