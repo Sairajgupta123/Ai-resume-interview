@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { candidateInvitationCookieName, getCandidateInvitationToken, hasValidCandidateInvitation, hasValidCandidateSession } from "@/lib/invitation";
 import { elapsedInterviewSeconds, INTERVIEW_LIMIT_SECONDS, isVerifiableEvidenceQuote, restoreChronologicalOrder } from "@/lib/interview-policy.mjs";
-import { calculateEvidenceCoverage, deriveRecommendation, hasDuplicateSkills, isRatingEvidenceConsistent } from "@/lib/evaluation-policy.mjs";
+import { calculateEvidenceCoverage, deriveRecommendation, hasDuplicateSkills, hasRequiredSkillCoverage, isRatingEvidenceConsistent } from "@/lib/evaluation-policy.mjs";
 import { isRestorableInterviewReport } from "@/lib/report-recovery-policy.mjs";
 import { buildBoundedReportTranscript } from "@/lib/report-transcript-policy.mjs";
 import { extractGrokAssistantText } from "@/lib/grok-response-policy.mjs";
@@ -172,7 +172,7 @@ function boundedText(value: unknown, field: string, maxLength: number) {
   return value.trim();
 }
 
-function validateReport(raw: any, candidateAnswers: string[]) {
+function validateReport(raw: any, candidateAnswers: string[], requiredSkills: string[]) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
     throw new Error("AI report validation failed: report must be an object.");
   }
@@ -209,6 +209,9 @@ function validateReport(raw: any, candidateAnswers: string[]) {
   });
   if (hasDuplicateSkills(skills)) {
     throw new Error("AI report validation failed: duplicate or empty skill names.");
+  }
+  if (!hasRequiredSkillCoverage(skills, requiredSkills)) {
+    throw new Error("AI report validation failed: one or more target skills are missing from the skill assessment.");
   }
   if (!Array.isArray(raw.questionFeedback) || raw.questionFeedback.length > 40) {
     throw new Error("AI report validation failed: invalid question feedback list.");
@@ -617,16 +620,17 @@ export async function POST(request: NextRequest) {
         if (body.sessionId && !boundedTranscript.messages.some(message => message.role === "user")) {
           return privateJson({ error: "No candidate answers are available in the report context. Please contact the hiring team." }, { status: 409 });
         }
+        const requiredSkills = extractTargetSkills(body.jobDescription || "", body.resume || "");
         const content = await askGrok([
           { role: "system", content: SYSTEM },
-          { role: "user", content: `Generate the employer-facing evidence-based interview report from this saved server-side transcript. Do not infer anything from video or voice appearance.\n${context}\nUntrusted transcript JSON (complete messages only; ${boundedTranscript.omittedMessages} messages omitted due to the report context limit):\n${JSON.stringify(boundedTranscript.messages)}\nReturn report JSON only.` }
+          { role: "user", content: `Generate the employer-facing evidence-based interview report from this saved server-side transcript. Do not infer anything from video or voice appearance.\n${context}\nRequired target skill assessments (include every skill using its exact label; use "Insufficient evidence" when answers do not support a rating): ${JSON.stringify(requiredSkills)}\nUntrusted transcript JSON (complete messages only; ${boundedTranscript.omittedMessages} messages omitted due to the report context limit):\n${JSON.stringify(boundedTranscript.messages)}\nReturn report JSON only.` }
         ]);
         const rawReport = parseJson(content);
         // Evidence is validated against exactly the candidate answers the model saw.
         const candidateAnswers = boundedTranscript.messages
           .filter(message => message.role === "user")
           .map(message => message.content);
-        const report = validateReport(rawReport, candidateAnswers);
+        const report = validateReport(rawReport, candidateAnswers, requiredSkills);
         if (body.sessionId) {
           if (!reportLockAt) throw new Error("Interview report lock was not acquired.");
           const durationSeconds = startedAt ? Math.min(INTERVIEW_LIMIT_SECONDS, elapsedInterviewSeconds(startedAt)) : 0;
