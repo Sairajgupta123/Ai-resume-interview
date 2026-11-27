@@ -19,7 +19,7 @@ export async function GET(_request: Request, context: Context) {
         recommendation: true, employerDecision: true, employerNotes: true,
         reportJson: true,
         messages: {
-          orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
           take: 200,
           select: { role: true, content: true, createdAt: true }
         },
@@ -64,7 +64,7 @@ export async function GET(_request: Request, context: Context) {
       ["Decision history entries exported", interview.decisionHistory.length],
       ["Decision history entries available", interview._count.decisionHistory],
       ["Decision history entries omitted", Math.max(0, interview._count.decisionHistory - interview.decisionHistory.length)],
-      ["Export note", "Transcript and decision history are capped for export. Omitted counts are shown above."],
+      ["Export note", "The latest transcript messages and decision history entries are exported in chronological order. Omitted counts are shown above."],
       ["Summary", report.summary || ""],
       [],
       ["SKILL ASSESSMENT"],
@@ -83,11 +83,11 @@ export async function GET(_request: Request, context: Context) {
       [],
       ["EMPLOYER DECISION HISTORY"],
       ["Decision", "Notes", "Date"],
-      ...interview.decisionHistory.map(item => [item.decision, item.notes, item.createdAt.toISOString()]),
+      ...interview.decisionHistory.slice().reverse().map(item => [item.decision, item.notes, item.createdAt.toISOString()]),
       [],
       ["INTERVIEW TRANSCRIPT"],
       ["Speaker", "Message", "Timestamp"],
-      ...interview.messages.map(message => [message.role === "assistant" ? "AI interviewer" : "Candidate", message.content, message.createdAt.toISOString()])
+      ...interview.messages.slice().reverse().map(message => [message.role === "assistant" ? "AI interviewer" : "Candidate", message.content, message.createdAt.toISOString()])
     ];
     const csv = rows.map(row => row.map(safeCsvCell).join(",")).join("\r\n");
     const filename = `mzobs-interview-${interview.id}.csv`;
