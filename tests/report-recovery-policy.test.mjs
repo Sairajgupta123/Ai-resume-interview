@@ -36,6 +36,19 @@ test("rejects unsupported skill ratings and overlong evidence", () => {
   assert.equal(isRestorableInterviewReport({ ...validReport(), skills: [{ skill: "SQL", rating: "Good", evidence: "x".repeat(1201) }] }), false);
 });
 
+test("rejects duplicate or blank skill names in recovered reports", () => {
+  const report = validReport();
+  report.skills = [
+    { skill: "JavaScript", rating: "Strong", evidence: "I built a JavaScript API service." },
+    { skill: " javascript ", rating: "Good", evidence: "I used JavaScript in my project." }
+  ];
+  assert.equal(isRestorableInterviewReport(report), false);
+  assert.equal(isRestorableInterviewReport({
+    ...validReport(),
+    skills: [{ skill: " ", rating: "Strong", evidence: "I built a JavaScript API service." }]
+  }), false);
+});
+
 test("rejects oversized feedback entries and invalid disclaimer", () => {
   assert.equal(isRestorableInterviewReport({ ...validReport(), questionFeedback: [{ question: "x".repeat(1001), assessment: "ok", evidence: "I used SQL queries." }] }), false);
   assert.equal(isRestorableInterviewReport({ ...validReport(), disclaimer: 42 }), false);
