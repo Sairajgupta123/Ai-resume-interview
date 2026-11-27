@@ -4,6 +4,7 @@ import { assertProductionConfig, getProductionConfigErrors } from "../lib/server
 
 const validProductionEnv = {
   NODE_ENV: "production",
+  NEXT_PUBLIC_APP_URL: "https://interviews.example.com",
   DATABASE_URL: "file:../prod.db",
   EMPLOYER_USERNAME: "mzobs-owner",
   EMPLOYER_PASSWORD: "a-unique-password-with-strong-length",
@@ -41,6 +42,7 @@ test("production rejects PostgreSQL URLs until the Prisma provider migration is 
 test("production startup reports all missing critical configuration together", () => {
   const errors = getProductionConfigErrors({ NODE_ENV: "production" });
   assert.ok(errors.some(error => error.includes("DATABASE_URL")));
+  assert.ok(errors.some(error => error.includes("NEXT_PUBLIC_APP_URL")));
   assert.ok(errors.some(error => error.includes("EMPLOYER_USERNAME")));
   assert.ok(errors.some(error => error.includes("EMPLOYER_PASSWORD")));
   assert.ok(errors.some(error => error.includes("SESSION_SECRET")));
@@ -61,4 +63,26 @@ test("production rejects default credentials and non-HTTPS recording storage", (
   assert.ok(errors.some(error => error.includes("unique password")));
   assert.ok(errors.some(error => error.includes("unique random value")));
   assert.ok(errors.some(error => error.includes("HTTPS")));
+});
+
+test("production requires a trusted HTTPS public app origin", () => {
+  for (const value of [
+    "http://interviews.example.com",
+    "https://localhost:3000",
+    "https://user:pass@interviews.example.com",
+    "https://interviews.example.com/path",
+    "https://interviews.example.com/?next=evil",
+    "https://interviews.example.com/#fragment",
+    "not-a-url"
+  ]) {
+    const errors = getProductionConfigErrors({ ...validProductionEnv, NEXT_PUBLIC_APP_URL: value });
+    assert.ok(errors.some(error => error.includes("NEXT_PUBLIC_APP_URL")), value);
+  }
+});
+
+test("development may use the local public app URL", () => {
+  assert.deepEqual(getProductionConfigErrors({
+    NODE_ENV: "development",
+    NEXT_PUBLIC_APP_URL: "http://localhost:3000"
+  }), []);
 });
