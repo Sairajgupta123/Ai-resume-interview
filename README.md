@@ -9,6 +9,7 @@ A resume- and job-description-aware interview application powered by xAI Grok.
 - 15-minute interview timer
 - Browser speech-to-text input and text-to-speech interviewer prompts remain available for recorded interviews and text fallback (browser support varies)
 - Live interview mode includes a Grok Realtime speech-to-speech WebSocket client using short-lived candidate-scoped credentials, PCM audio streaming, AI audio playback, interruption handling and saved final transcripts; this integration still requires full browser/provider end-to-end validation
+- Grok Realtime credential minting is rate-limited per candidate/interview using shared PostgreSQL state, with a fixed cooldown after repeated reconnect attempts; the raw invitation token is not stored in the rate-limit key
 - Candidate and employer browser video/audio can connect peer-to-peer using WebRTC during live interview mode; recordings use private S3-compatible object storage in production and local disk only for development
 - PostgreSQL persistence for interview sessions, transcripts and reports
 - Employer login and dashboard with interview search, candidate review, report and transcript
