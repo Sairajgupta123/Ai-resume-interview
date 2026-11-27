@@ -32,7 +32,7 @@ export async function GET() {
       Promise.all(weeklyQueries)
     ]);
     const statusCounts = Object.fromEntries(statusGroups.map(row => [row.status, row._count._all]));
-    const decisionCounts = Object.fromEntries(decisionGroups.map(row => [row.employerDecision ?? "pending", row._count._all]));
+    const decisionCounts = Object.fromEntries(decisionGroups.map(row => [row.employerDecision ?? "__null__", row._count._all]));
     const roleCounts = roleGroups.map(row => ({ role: row.role, count: row._count._all }));
     const analytics = buildEmployerAnalyticsFromAggregates({
       statusCounts, decisionCounts, roleCounts, weeklyCounts, completedReports
