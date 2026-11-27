@@ -66,13 +66,13 @@ ORDER BY updatedAt ASC;
 SELECT id, reason, attempts, leaseStartedAt, lastErrorCode
 FROM RecordingCleanupTask
 WHERE status = 'in_progress'
-  AND leaseStartedAt < datetime('now', '-5 minutes');
+  AND julianday(leaseStartedAt) < julianday('now', '-5 minutes');
 
 -- Due tasks that have remained unprocessed for 15 minutes
 SELECT status, COUNT(*) AS overdue_count
 FROM RecordingCleanupTask
 WHERE status IN ('pending', 'failed')
-  AND nextAttemptAt < datetime('now', '-15 minutes')
+  AND julianday(nextAttemptAt) < julianday('now', '-15 minutes')
 GROUP BY status;
 ```
 
