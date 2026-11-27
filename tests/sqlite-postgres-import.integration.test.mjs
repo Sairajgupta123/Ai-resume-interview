@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -75,6 +75,26 @@ test("SQLite importer preserves all seven models and their relationships in Post
       [resolve(projectRoot, "scripts/import-sqlite-to-postgres.cjs")],
       { cwd: projectRoot, env: { ...process.env, SQLITE_DATABASE_URL: sqliteUrl, DATABASE_URL: targetDatabaseUrl }, stdio: "pipe" }
     );
+
+    const importEnv = { ...process.env, SQLITE_DATABASE_URL: sqliteUrl, DATABASE_URL: targetDatabaseUrl };
+    const safeResume = spawnSync(
+      process.execPath,
+      [resolve(projectRoot, "scripts/import-sqlite-to-postgres.cjs"), "--resume"],
+      { cwd: projectRoot, env: importEnv, encoding: "utf8" }
+    );
+    assert.equal(safeResume.status, 0, safeResume.stderr);
+
+    await sqlite.loginAttempt.update({
+      where: { key: "fixture-rate-limit-key" },
+      data: { attempts: 4 }
+    });
+    const changedSnapshotResume = spawnSync(
+      process.execPath,
+      [resolve(projectRoot, "scripts/import-sqlite-to-postgres.cjs"), "--resume"],
+      { cwd: projectRoot, env: importEnv, encoding: "utf8" }
+    );
+    assert.notEqual(changedSnapshotResume.status, 0);
+    assert.match(changedSnapshotResume.stderr, /source snapshot fingerprint differs/i);
 
     postgres = new PostgresPrismaClient({ datasources: { db: { url: targetDatabaseUrl } } });
     await postgres.$connect();
