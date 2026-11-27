@@ -75,7 +75,10 @@ export class GrokRealtimeClient {
     const tokenResponse = await fetch(`/api/sessions/${encodeURIComponent(this.sessionId)}/voice-session`, {
       method: "POST",
       credentials: "same-origin",
-      cache: "no-store"
+      cache: "no-store",
+      // Bound the credential request so a stalled network cannot leave the
+      // interview UI stuck in "connecting" before WebSocket setup even begins.
+      signal: AbortSignal.timeout(15_000)
     });
     const tokenData = await tokenResponse.json();
     if (!tokenResponse.ok || typeof tokenData.token !== "string") {
