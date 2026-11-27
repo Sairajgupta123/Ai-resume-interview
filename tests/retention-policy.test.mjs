@@ -7,6 +7,7 @@ const records = [
   { status: "completed", createdAt: "2025-11-19T11:59:59.000Z", consentAcceptedAt: now, consentVersion: "v1" },
   { status: "completed", createdAt: "2025-11-20T12:00:00.000Z", consentAcceptedAt: now, consentVersion: "v1" },
   { status: "in_progress", createdAt: "2025-01-01T00:00:00.000Z", consentAcceptedAt: null, consentVersion: null },
+  { status: "invited", createdAt: "2025-01-01T00:00:00.000Z", consentAcceptedAt: null, consentVersion: null },
   { status: "completed", createdAt: "2025-01-01T00:00:00.000Z", consentAcceptedAt: null, consentVersion: "v1" }
 ];
 
@@ -24,6 +25,7 @@ test("preview includes only completed records older than the cutoff", () => {
   assert.equal(result.eligibleCompletedInterviews, 2);
   assert.equal(result.completedInterviews, 3);
   assert.equal(result.inProgressInterviews, 1);
+  assert.equal(result.invitedInterviews, 1);
 });
 
 test("never includes in-progress interviews in retention eligibility", () => {
@@ -53,9 +55,10 @@ import { buildRetentionPreviewFromCounts } from "../lib/retention-policy.mjs";
 
 test("builds the same preview from database aggregate counts", () => {
   const counts = {
-    totalInterviews: 4,
+    totalInterviews: 5,
     completedInterviews: 3,
     inProgressInterviews: 1,
+    invitedInterviews: 1,
     eligibleCompletedInterviews: 2,
     consentedInterviews: 2,
     missingConsentMetadata: 2
