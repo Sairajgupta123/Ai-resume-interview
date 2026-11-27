@@ -708,6 +708,9 @@ export default function Home() {
               throw new Error(message);
             }
             pendingTranscriptRef.current = pendingTranscriptRef.current.filter(item => item.clientMessageId !== entry.clientMessageId);
+            // Restore the recovered turn into the visible and future Grok
+            // context; it was deliberately not added while persistence failed.
+            setHistory(previous => [...previous, { role: entry.role, content: entry.content }]);
             saved = true;
             break;
           } catch (error) {
