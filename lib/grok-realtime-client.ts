@@ -77,6 +77,7 @@ export class GrokRealtimeClient {
 
     // Retry transient provider handshakes with a fresh short-lived token.
     for (let attempt = 0; attempt < 3; attempt += 1) {
+      if (this.closed) return;
       const tokenResponse = await fetch(`/api/sessions/${encodeURIComponent(this.sessionId)}/voice-session`, {
         method: "POST",
         credentials: "same-origin",
@@ -141,6 +142,7 @@ export class GrokRealtimeClient {
         attemptSocket.close();
         if (this.socket === attemptSocket) this.socket = null;
         lastConnectionError = error instanceof Error ? error : new Error("Could not connect to the AI voice service.");
+        if (this.closed) return;
         if (attempt < 2) await new Promise(resolve => window.setTimeout(resolve, 300 * (attempt + 1)));
       }
     }
