@@ -15,6 +15,9 @@ export default function Dashboard() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [items, setItems] = useState<Item[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [selected, setSelected] = useState<Detail | null>(null);
   const [query, setQuery] = useState("");
   const [compareIds, setCompareIds] = useState<string[]>([]);
@@ -205,6 +208,8 @@ export default function Dashboard() {
       throw new Error("The employer interview list response was invalid. Refresh and try again.");
     }
     setItems(data.interviews as Item[]);
+    setNextCursor("nextCursor" in data && typeof data.nextCursor === "string" ? data.nextCursor : null);
+    setHasMore("hasMore" in data && data.hasMore === true);
     setAuthenticated(true);
     const fetchPanel = async (url: string, fallback: string) => {
       const response = await fetch(url, { cache: "no-store" });
@@ -449,6 +454,35 @@ export default function Dashboard() {
       setDeletionBusy(false);
     }
   };
+  const loadMore = async () => {
+    if (!nextCursor || !hasMore || loadingMore) return;
+    setLoadingMore(true);
+    setError("");
+    try {
+      const response = await fetch("/api/sessions?cursor=" + encodeURIComponent(nextCursor), { cache: "no-store" });
+      const data: unknown = await response.json();
+      if (!response.ok) {
+        const message = data && typeof data === "object" && "error" in data && typeof data.error === "string"
+          ? data.error
+          : "Could not load more interviews.";
+        throw new Error(message);
+      }
+      if (!data || typeof data !== "object" || !("interviews" in data) || !Array.isArray(data.interviews)) {
+        throw new Error("The next interview page response was invalid. Refresh and try again.");
+      }
+      setItems(current => {
+        const known = new Set(current.map(item => item.id));
+        return [...current, ...(data.interviews as Item[]).filter(item => !known.has(item.id))];
+      });
+      setNextCursor("nextCursor" in data && typeof data.nextCursor === "string" ? data.nextCursor : null);
+      setHasMore("hasMore" in data && data.hasMore === true);
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : "Could not load more interviews.");
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+
   const exportCsv = () => {
     const columns = ["Candidate", "Role", "Mode", "Status", "AI score", "AI recommendation", "Employer decision", "Duration seconds", "Created at"];
     const rows = items.map(item => [item.candidateName, item.role, item.mode, item.status, item.overallScore ?? "", item.recommendation ?? "", item.employerDecision ?? "", item.durationSeconds, item.createdAt]);
@@ -588,12 +622,13 @@ export default function Dashboard() {
         <p className="drawer-sub">Scores and AI recommendations remain advisory. Missing evidence is not proof that a candidate lacks the skill.</p>
       </div>}
     </section>}
-    <section className="dashboard-table-card"><div className="table-heading"><div><h2>Candidate interviews</h2><p>Open an interview to review its transcript and report.</p></div><div className="header-actions"><input className="search-input" placeholder="Search candidate or role…" value={query} onChange={e=>setQuery(e.target.value)} /><button className="outline-btn" onClick={exportCsv} disabled={!items.length}>Export CSV</button></div></div>
+    <section className="dashboard-table-card"><div className="table-heading"><div><h2>Candidate interviews</h2><p>Open an interview to review its transcript and report.</p></div><div className="header-actions"><input className="search-input" placeholder="Search loaded candidates…" value={query} onChange={e=>setQuery(e.target.value)} /><button className="outline-btn" onClick={exportCsv} disabled={!items.length}>Export CSV</button></div></div>
       {error && <div className="error-box">{error}</div>}
       <div className="table-scroll"><table><thead><tr><th>COMPARE / CANDIDATE</th><th>ROLE</th><th>FORMAT</th><th>STATUS</th><th>SCORE</th><th>DATE</th><th /></tr></thead><tbody>
       {filtered.map(x=><tr key={x.id}><td><label className="compare-select"><input type="checkbox" checked={compareIds.includes(x.id)} disabled={!compareIds.includes(x.id) && compareIds.length >= 3} onChange={() => toggleCompare(x.id)} /><b>{x.candidateName}</b></label></td><td>{x.role}</td><td>{x.mode}</td><td><span className={x.status==="completed"?"status-complete":"status-progress"}>{x.status}</span></td><td>{x.overallScore===null?"—":`${x.overallScore}/100`}</td><td>{date(x.createdAt)}</td><td><button className="view-btn" onClick={()=>openDetail(x.id)}>Review →</button></td></tr>)}
       {!filtered.length && <tr><td colSpan={7} className="empty-cell">No interviews found yet. Create your first interview from the New interview button.</td></tr>}
       </tbody></table></div>
+      <div className="table-heading"><p className="analytics-updated">Showing {items.length} loaded interviews{hasMore ? " · more available" : " · all interviews loaded"}. Search and CSV export apply to loaded interviews.</p>{hasMore && <button className="outline-btn" onClick={() => void loadMore()} disabled={loadingMore}>{loadingMore ? "Loading…" : "Load 100 more"}</button>}</div>
     </section>
     {selected && <div className="detail-backdrop" onClick={closeDetail}><section className="detail-drawer" onClick={e=>e.stopPropagation()}><button className="drawer-close" onClick={closeDetail}>×</button><div className="eyebrow">CANDIDATE REVIEW</div><h2>{selected.candidateName}</h2><p className="drawer-sub">{selected.role} · {selected.mode} interview</p>{selected.status === "completed" && selected.reportJson ? <a className="outline-btn" href={`/api/sessions/${selected.id}/export`}>Download full interview report CSV ↓</a> : <p className="drawer-sub">CSV export is available after the interview report is completed.</p>}
       {selected.status === "invited" && <div className="privacy-deletion-request"><div className="eyebrow">CANDIDATE INVITATION</div><h3>Replacement invitation link</h3><p>Use this if the original link expired or was lost. Creating a replacement invalidates the previous link. This is available only before the candidate opens the invitation.</p>{inviteReissueError && <div className="error-box">{inviteReissueError}</div>}{replacementInviteUrl ? <><input aria-label="Replacement candidate invitation link" readOnly value={replacementInviteUrl}/><button className="outline-btn" onClick={async()=>{try{await navigator.clipboard.writeText(replacementInviteUrl);}catch{setInviteReissueError("Could not copy automatically. Select and copy the invitation link manually.");}}}>Copy replacement link</button></> : <button className="outline-btn" disabled={inviteReissueBusy} onClick={()=>void reissueInvitation()}>{inviteReissueBusy ? "Creating replacement link…" : "Generate replacement invitation"}</button>}</div>}
