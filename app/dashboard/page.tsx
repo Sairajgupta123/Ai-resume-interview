@@ -303,6 +303,10 @@ export default function Dashboard() {
     const requestId = ++detailRequestRef.current;
     setSelected(null);
     setError("");
+    setDeletionReason("");
+    setDeletionConfirmation("");
+    setDeletionMessage("");
+    setDeletionError("");
     try {
       const response = await fetch(`/api/sessions/${encodeURIComponent(id)}`, { cache: "no-store" });
       const data: unknown = await response.json();
@@ -336,6 +340,10 @@ export default function Dashboard() {
     setSelected(null);
     setReplacementInviteUrl("");
     setInviteReissueError("");
+    setDeletionReason("");
+    setDeletionConfirmation("");
+    setDeletionMessage("");
+    setDeletionError("");
   };
 
   const reissueInvitation = async () => {
