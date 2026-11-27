@@ -220,7 +220,10 @@ function validateReport(raw: any, candidateAnswers: string[]) {
       evidence: validateEvidence(item.evidence, `questionFeedback[${index}].evidence`)
     };
   });
-  const evidenceCoverage = calculateEvidenceCoverage([...skills, ...questionFeedback]);
+  // Recommendation evidence coverage must be based on skill assessments.
+  // Counting question-level feedback here could let many supported answers
+  // mask missing evidence for the actual role requirements.
+  const evidenceCoverage = calculateEvidenceCoverage(skills);
   return {
     overallScore: raw.overallScore,
     // The provider's recommendation is advisory input only. Derive the displayed
