@@ -94,7 +94,7 @@ export async function POST(request: NextRequest, context: Context) {
     });
     const decisionHistory = await db.employerDecisionHistory.findMany({
       where: { interviewId: id },
-      orderBy: { createdAt: "desc" },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       take: 50,
       select: { id: true, decision: true, notes: true, createdAt: true }
     });
