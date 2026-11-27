@@ -4,3 +4,16 @@ export function validateSignalPayload(
   payload: string,
   sender: "candidate" | "employer"
 ): SignalValidationResult;
+
+export function isSignalOlderThanDescription(
+  signalCreatedAt: Date | string,
+  signalId: string,
+  descriptionCreatedAt: Date | string,
+  descriptionId: string
+): boolean;
+export function isSignalAfterCursor(
+  signalCreatedAt: Date | string,
+  signalId: string,
+  cursorCreatedAt: Date | string,
+  cursorId?: string
+): boolean;
