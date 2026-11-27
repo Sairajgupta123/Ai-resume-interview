@@ -6,7 +6,7 @@ import { randomUUID, createHash, createHmac } from "node:crypto";
 import { join } from "node:path";
 import { db } from "@/lib/db";
 import { isEmployerAuthenticated } from "@/lib/auth";
-import { getCandidateInvitationToken, hasValidCandidateInvitation } from "@/lib/invitation";
+import { getCandidateInvitationToken, hasValidCandidateInvitation, hasValidCandidateSession } from "@/lib/invitation";
 import { MAX_RECORDING_BYTES, inspectRecordingUpload, isSafeRecordingFilename } from "@/lib/recording-policy.mjs";
 import { commitRecordingReplacement } from "@/lib/recording-replacement.mjs";
 import { parseByteRange } from "@/lib/recording-range.mjs";
@@ -130,7 +130,8 @@ export async function POST(request: NextRequest, context: Context) {
   // Authenticate before looking up the interview so unauthorised callers cannot
   // distinguish a missing interview from an existing one or inspect its state.
   const employer = await isEmployerAuthenticated();
-  const candidate = employer ? false : await hasValidCandidateInvitation(id, getCandidateInvitationToken(request, id));
+  const candidateToken = getCandidateInvitationToken(request, id);
+  const candidate = employer ? false : await hasValidCandidateSession(id, candidateToken);
   if (!employer && !candidate) {
     return NextResponse.json({ error: "Unauthorized recording upload." }, { status: 401, headers: privateHeaders });
   }
@@ -140,10 +141,11 @@ export async function POST(request: NextRequest, context: Context) {
       select: { id: true, recordingPath: true, status: true, consentAcceptedAt: true, startedAt: true }
     });
     if (!interview) return NextResponse.json({ error: "Interview not found." }, { status: 404, headers: privateHeaders });
-    if (interview.status === "completed") {
-      return NextResponse.json({ error: "Recording uploads are closed for completed interviews." }, { status: 409, headers: privateHeaders });
+    const completedRecovery = interview.status === "completed" && !interview.recordingPath;
+    if (interview.status === "completed" && !completedRecovery) {
+      return NextResponse.json({ error: "A recording is already saved or uploads are closed for this interview." }, { status: 409, headers: privateHeaders });
     }
-    if (!interview.consentAcceptedAt || !interview.startedAt || interview.status !== "in_progress") {
+    if (!interview.consentAcceptedAt || !interview.startedAt || (interview.status !== "in_progress" && !completedRecovery)) {
       return NextResponse.json({ error: "Recording is only accepted after the candidate has consented and started the interview." }, { status: 403, headers: privateHeaders });
     }
 
@@ -169,7 +171,10 @@ export async function POST(request: NextRequest, context: Context) {
     const relativePath = await saveRecording(bytes, mimeType, filename);
     const replacement = await commitRecordingReplacement({
       commit: () => db.interview.updateMany({
-        where: { id, status: "in_progress", recordingPath: interview.recordingPath },
+        // Permit one late recovery after completion only when no recording was
+        // saved before the report closed the interview. The status/path predicate
+        // prevents concurrent retries from replacing an already committed file.
+        where: { id, status: interview.status, recordingPath: interview.recordingPath },
         data: { recordingPath: relativePath }
       }),
       cleanupNew: () => deleteRecording(relativePath),
