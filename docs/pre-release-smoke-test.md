@@ -79,6 +79,13 @@ This checklist is for a staging deployment using the intended browser, xAI accou
 ## Report, employer review and exports
 
 - [ ] Report generation uses the saved server-side transcript, not a client-submitted replacement transcript.
+- [ ] Submit the same candidate answer twice with the same request ID after simulating a lost response; verify exactly one user answer and one interviewer response are stored and the original response is recovered.
+- [ ] Submit the same answer request ID with changed content or against another interview; verify the server rejects the replay.
+- [ ] Submit two different answer requests concurrently; verify only one obtains the answer lock and transcript turns remain ordered.
+- [ ] Attempt report generation while an answer is actively processing; verify the report is rejected until the answer action completes or its lock safely expires.
+- [ ] Attempt a new answer while report generation is actively processing; verify the report lock prevents transcript mutation during report evaluation.
+- [ ] Simulate an AI report response being lost after the database commit; refresh the candidate page and verify the same saved report is restored without generating a second report.
+- [ ] Simulate a report provider failure; verify the report lock is released and the candidate can safely retry without losing the transcript.
 - [ ] Report evidence quotes match candidate answers verbatim.
 - [ ] Missing evidence is not represented as a positive skill rating.
 - [ ] Report generation can recover the same committed report after a lost response or refresh.
