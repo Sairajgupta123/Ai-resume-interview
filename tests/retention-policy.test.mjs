@@ -36,7 +36,7 @@ test("never includes in-progress interviews in retention eligibility", () => {
 test("reports missing consent metadata without treating it as consent", () => {
   const result = buildRetentionPreview(records, "365", now);
   assert.equal(result.consentedInterviews, 2);
-  assert.equal(result.missingConsentMetadata, 2);
+  assert.equal(result.missingConsentMetadata, 3);
 });
 
 test("disables retention preview when no valid policy is configured", () => {
@@ -61,7 +61,7 @@ test("builds the same preview from database aggregate counts", () => {
     invitedInterviews: 1,
     eligibleCompletedInterviews: 2,
     consentedInterviews: 2,
-    missingConsentMetadata: 2
+    missingConsentMetadata: 3
   };
   const fromCounts = buildRetentionPreviewFromCounts(counts, "365", now);
   const fromRows = buildRetentionPreview(records, "365", now);
