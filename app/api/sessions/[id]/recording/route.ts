@@ -61,7 +61,16 @@ async function s3Request(method: "PUT" | "GET" | "HEAD" | "DELETE", key: string,
   const signingKey = hmac(serviceKey, "aws4_request") as Buffer;
   const signature = hmac(signingKey, stringToSign, "hex") as string;
   headers.authorization = "AWS4-HMAC-SHA256 Credential=" + config.accessKey + "/" + scope + ", SignedHeaders=" + signedHeaders + ", Signature=" + signature;
-  const response = await fetch(url, { method, headers, body: method === "PUT" ? new Uint8Array(body || Buffer.alloc(0)) : undefined, cache: "no-store" });
+  // Storage endpoints are external dependencies: fail closed on redirects and
+  // cap request time so uploads/playback cannot hold a server worker forever.
+  const response = await fetch(url, {
+    method,
+    headers,
+    body: method === "PUT" ? new Uint8Array(body || Buffer.alloc(0)) : undefined,
+    cache: "no-store",
+    redirect: "error",
+    signal: AbortSignal.timeout(30_000)
+  });
   if (!response.ok) throw new Error("Private recording storage returned " + response.status + ": " + (await response.text()).slice(0, 500));
   return response;
 }
