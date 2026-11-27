@@ -13,6 +13,7 @@ The schema currently contains these models:
 - `InterviewSignal`
 - `PrivacyDeletionRequest`
 - `PrivacyDeletionEvent`
+- `RecordingCleanupTask`
 
 The migration must preserve every primary key, unique constraint, relation, timestamp, nullable field, default and index. In particular, invitation token hashes, one-time exchange state, deletion verification hashes and deletion execution lease tokens must not be regenerated or exposed during migration.
 
