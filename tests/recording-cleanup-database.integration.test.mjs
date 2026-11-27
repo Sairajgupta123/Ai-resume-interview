@@ -90,6 +90,27 @@ test("recording cleanup tasks persist, deduplicate by object path and use atomic
     assert.deepEqual(deletedPaths, [storedPath]);
     assert.equal((await prisma.recordingCleanupTask.findUnique({ where: { storedPath } })).status, "completed");
     assert.equal((await prisma.recordingCleanupTask.findUnique({ where: { storedPath: referencedPath } })).status, "completed");
+
+    // Run two real worker batches at once against the same due task. The
+    // conditional updateMany lease must allow only one worker to delete it.
+    const concurrentPath = "s3://recordings/123e4567-e89b-12d3-a456-426614174001.webm";
+    await enqueueRecordingCleanupTask(prisma, {
+      storedPath: concurrentPath,
+      reason: "concurrent_worker_test",
+      now
+    });
+    const concurrentDeletes = [];
+    const deleteOnce = async path => {
+      concurrentDeletes.push(path);
+      await new Promise(resolve => setTimeout(resolve, 20));
+    };
+    const concurrentResults = await Promise.all([
+      processRecordingCleanupBatch({ db: prisma, deleteRecording: deleteOnce, now }),
+      processRecordingCleanupBatch({ db: prisma, deleteRecording: deleteOnce, now })
+    ]);
+    assert.deepEqual(concurrentDeletes, [concurrentPath]);
+    assert.equal(concurrentResults.reduce((sum, result) => sum + result.completed, 0), 1);
+    assert.equal((await prisma.recordingCleanupTask.findUnique({ where: { storedPath: concurrentPath } })).status, "completed");
   } finally {
     if (prisma) await prisma.$disconnect();
     await rm(tempDir, { recursive: true, force: true });
