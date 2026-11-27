@@ -10,7 +10,7 @@ A resume- and job-description-aware interview application powered by xAI Grok.
 - Browser speech-to-text input and text-to-speech interviewer prompts remain available for recorded interviews and text fallback (browser support varies)
 - Live interview mode includes a Grok Realtime speech-to-speech WebSocket client using short-lived candidate-scoped credentials, PCM audio streaming, AI audio playback, interruption handling and saved final transcripts; this integration still requires full browser/provider end-to-end validation
 - Candidate and employer browser video/audio can connect peer-to-peer using WebRTC during live interview mode; recordings use private S3-compatible object storage in production and local disk only for development
-- SQLite persistence for interview sessions, transcripts and reports
+- PostgreSQL persistence for interview sessions, transcripts and reports
 - Employer login and dashboard with interview search, candidate review, report and transcript
 - Employer-created candidate invitations with 72-hour expiring, hashed tokens, atomic one-time link exchange, session-scoped HttpOnly cookies and protected candidate API access
 - Candidate refresh recovery: invitation tokens are exchanged through a POST request body or the interview-start response for session-scoped HttpOnly cookies; refresh uses the cookie, and in-progress transcripts and elapsed interview time are restored after reload
@@ -35,7 +35,7 @@ A resume- and job-description-aware interview application powered by xAI Grok.
 
 ## Technology
 - Next.js 15, React 19, TypeScript
-- Prisma ORM + SQLite for local development
+- Prisma ORM + PostgreSQL
 - xAI Chat Completions API and xAI Realtime Speech-to-Speech API
 
 ## Requirements
@@ -51,19 +51,19 @@ npm install
 Copy-Item .env.example .env.local
 ```
 
-Open `.env.local` and set:
+Start the local database with `docker compose up -d postgres`, then open `.env.local` and set:
 - `XAI_API_KEY`: your xAI API key
 - `XAI_MODEL`: a chat model available to your xAI account
 - `EMPLOYER_USERNAME`: dashboard login (default example: admin)
 - `EMPLOYER_PASSWORD`: replace the example with a strong password
 - `SESSION_SECRET`: replace with a random secret of at least 32 characters
-- `DATABASE_URL`: keep `file:../dev.db` for local SQLite
+- `DATABASE_URL`: use the PostgreSQL connection URL from `.env.example` (adjust the password if you changed the Compose configuration)
 
 Then run:
 ```powershell
 npm run dev
 ```
-The dev command runs Prisma schema sync and starts Next.js. Open http://localhost:3000.
+The dev command applies pending development migrations and starts Next.js. Open http://localhost:3000.
 
 ## Employer dashboard
 Open http://localhost:3000/dashboard and sign in with `EMPLOYER_USERNAME` and `EMPLOYER_PASSWORD` from `.env.local`. Use **Invite candidate** to create an interview and generate a private link. Copy the link and send it to the candidate manually; outbound email delivery is not configured yet.
@@ -74,7 +74,7 @@ Open http://localhost:3000/dashboard and sign in with `EMPLOYER_USERNAME` and `E
 ## Important current boundaries
 - After candidate consent and camera/microphone permission, audio-video recording starts automatically in both live and recorded modes. Candidates can stop recording; the recording is uploaded over an authenticated endpoint before the report screen is shown. The app warns before leaving while recording or upload is active, but recording segments are also temporarily stored in browser IndexedDB until server upload succeeds. If an upload is interrupted, the candidate can recover locally saved segments from the same browser/device before completing the interview. Browser storage can still be cleared by the user, browser policy or device cleanup, so this is a recovery aid rather than a guaranteed backup. The recording bytes are not stored in SQLite. Local development uses `data/recordings`; production requires private S3-compatible object storage configured with `S3_ENDPOINT`, `S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY_ID` and `S3_SECRET_ACCESS_KEY`. The bucket must remain private; never expose object credentials to the browser. Browser recording support and upload size limits apply (100 MB maximum).
 - Live AI voice uses xAI Realtime over a browser WebSocket authenticated with a short-lived ephemeral token; the permanent xAI API key remains server-side. The microphone stream is sent to xAI for real-time speech processing, and finalized candidate/interviewer transcripts are saved to the interview record. Recorded interviews and text fallback continue to use browser speech APIs, whose availability and language quality vary by browser/device. Text entry remains available. The Realtime client is implemented but still needs end-to-end testing with an authorized xAI account and supported browser before production use.
-- The current Prisma schema is configured for SQLite. SQLite is suitable for local evaluation and single-machine testing, but this repository does not yet include the PostgreSQL schema/provider migration or a production database migration workflow. Do not point `DATABASE_URL` at PostgreSQL and assume it will work. Before a production or multi-instance launch, migrate the Prisma provider/schema, generate and test database migrations against managed PostgreSQL, and validate backups, connection pooling and concurrent writes. Configure secure private object storage as well: the current S3-compatible adapter uses path-style requests and AWS Signature Version 4; verify endpoint, bucket, region and credentials with a test upload before processing real candidates.
+- This branch migrates Prisma to PostgreSQL. Schema changes are deployed with `npm run db:migrate`; do not use schema push in production. Existing SQLite deployments must follow the backup/import/cutover procedure in [the PostgreSQL migration runbook](docs/postgres-migration-runbook.md) before switching their `DATABASE_URL`. The migration SQL and PostgreSQL CI service validate schema creation, but an existing production data import and managed-database rehearsal are still required. Configure secure private object storage as well: the current S3-compatible adapter uses path-style requests and AWS Signature Version 4; verify endpoint, bucket, region and credentials with a test upload before processing real candidates.
 - Candidate invitations are generated as expiring private links, but the app does not send emails automatically; employers copy and send the link themselves.
 - Employer dashboard supports filtering, comparing up to three candidates, exporting the interview list to CSV, and downloading a per-candidate report CSV with skill evidence, question feedback, decision history and transcript. Export endpoints require an authenticated employer session.
 - Grok Realtime is used for the live candidate-to-AI spoken interview; the turn-based Chat Completions path remains available for text fallback and recorded mode. WebRTC provides a separate candidate-to-employer audio/video room and is not the AI voice transport. A coturn-compatible TURN REST API service can be configured using TURN_URL and TURN_SHARED_SECRET in the server environment. The server issues time-limited HMAC credentials after validating the candidate invite token or employer session; the shared secret is never sent to the browser. Without TURN settings, the app uses public STUN only and peer connectivity may fail on restrictive NAT/firewall networks.
