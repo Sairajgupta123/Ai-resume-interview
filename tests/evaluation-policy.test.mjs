@@ -5,7 +5,8 @@ import {
   hasDuplicateSkills,
   isRatingEvidenceConsistent,
   calculateEvidenceCoverage,
-  deriveRecommendation
+  deriveRecommendation,
+  hasRequiredSkillCoverage
 } from "../lib/evaluation-policy.mjs";
 
 test("normalizes skill names for duplicate detection", () => {
@@ -43,4 +44,21 @@ test("derives conservative recommendations from score and evidence coverage", ()
   assert.equal(deriveRecommendation(78, 60), "Consider");
   assert.equal(deriveRecommendation(90, 40), "Needs review");
   assert.equal(deriveRecommendation(55, 100), "Needs review");
+});
+
+
+test("requires every extracted target skill to appear in the report", () => {
+  const required = ["React", "Node.js", "SQL"];
+  assert.equal(hasRequiredSkillCoverage([
+    { skill: "React" }, { skill: "Node.js" }, { skill: "SQL" }
+  ], required), true);
+  assert.equal(hasRequiredSkillCoverage([
+    { skill: "React" }, { skill: "Node.js" }
+  ], required), false);
+  assert.equal(hasRequiredSkillCoverage([{ skill: " react " }], ["React"]), true);
+});
+
+test("rejects invalid or empty required skill coverage inputs", () => {
+  assert.equal(hasRequiredSkillCoverage(null, ["React"]), false);
+  assert.equal(hasRequiredSkillCoverage([{ skill: "React" }], [" "]), false);
 });
