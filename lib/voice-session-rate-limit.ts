@@ -30,7 +30,7 @@ export async function checkVoiceSessionRateLimit(request: Request, interviewId: 
   const attempt = await db.loginAttempt.findUnique({ where: { key } });
   if (isVoiceSessionWindowExpired(attempt, now.getTime())) {
     await db.loginAttempt.deleteMany({
-      where: { key, windowStartedAt: { lt: new Date(now.getTime() - VOICE_SESSION_WINDOW_MS) } }
+      where: { key, windowStartedAt: { lte: new Date(now.getTime() - VOICE_SESSION_WINDOW_MS) } }
     });
   }
   return { key, ...getVoiceSessionLimit(attempt, now.getTime()) };
