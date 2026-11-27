@@ -97,16 +97,19 @@ export default function Dashboard() {
         peer = new RTCPeerConnection({ iceServers });
         employerPeerRef.current = peer;
         peer.ontrack = event => {
+          if (stopped) return;
           if (employerVideoRef.current) employerVideoRef.current.srcObject = event.streams[0];
           setLiveCallState("Connected · live video and audio");
         };
         peer.onconnectionstatechange = () => {
+          if (stopped) return;
           if (peer?.connectionState === "connecting") setLiveCallState("Connecting to candidate…");
           if (peer?.connectionState === "connected") setLiveCallState("Connected · live video and audio");
           if (peer?.connectionState === "failed") setLiveCallState("Connection failed. Waiting for the candidate to restart live video…");
           if (peer?.connectionState === "disconnected") setLiveCallState("Candidate connection interrupted. Waiting for automatic recovery…");
         };
         peer.oniceconnectionstatechange = () => {
+          if (stopped) return;
           if (peer?.iceConnectionState === "connected" || peer?.iceConnectionState === "completed") {
             setLiveCallState("Connected · live video and audio");
           } else if (peer?.iceConnectionState === "failed") {
