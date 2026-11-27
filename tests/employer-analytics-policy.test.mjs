@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildEmployerAnalytics } from "../lib/employer-analytics-policy.mjs";
+import { buildEmployerAnalytics, buildEmployerAnalyticsFromAggregates, buildEmployerAnalyticsWeekWindows, summarizeEmployerAnalyticsReports } from "../lib/employer-analytics-policy.mjs";
 
 const now = new Date("2026-11-20T12:00:00.000Z");
 const makeReport = (score, recommendation) => JSON.stringify({
@@ -80,8 +80,6 @@ test("handles an empty dataset without division errors", () => {
   assert.deepEqual(result.decisions, { shortlist: 0, review: 0, reject: 0, pending: 0 });
 });
 
-import { buildEmployerAnalyticsFromAggregates, buildEmployerAnalyticsWeekWindows } from "../lib/employer-analytics-policy.mjs";
-
 test("aggregate database inputs produce the same analytics as row-based calculation", () => {
   const windows = buildEmployerAnalyticsWeekWindows(now);
   const weeklyCounts = windows.map(window => {
@@ -115,4 +113,43 @@ test("excludes future-dated records from the current six-week trend", () => {
     { ...rows[0], createdAt: future }
   ], now);
   assert.equal(result.weeklyTrend.reduce((sum, week) => sum + week.total, 0), 0);
+});
+
+test("incremental report summaries preserve scores and bands without retaining report payloads", () => {
+  const reports = rows
+    .filter(row => row.status === "completed" && row.reportJson)
+    .map(row => ({ reportJson: row.reportJson }));
+  const chunks = [reports.slice(0, 1), reports.slice(1)];
+  const summary = { scoredCount: 0, scoreTotal: 0, scoreBands: [0, 0, 0] };
+  for (const chunk of chunks) {
+    const part = summarizeEmployerAnalyticsReports(chunk);
+    summary.scoredCount += part.scoredCount;
+    summary.scoreTotal += part.scoreTotal;
+    for (let index = 0; index < 3; index += 1) summary.scoreBands[index] += part.scoreBands[index];
+  }
+  const windows = buildEmployerAnalyticsWeekWindows(now);
+  const weeklyCounts = windows.map(window => {
+    const matches = rows.filter(row => {
+      const createdAt = new Date(row.createdAt);
+      return createdAt >= window.start && createdAt <= now && createdAt < window.end;
+    });
+    return { total: matches.length, completed: matches.filter(row => row.status === "completed").length };
+  });
+  const statusCounts = {};
+  const decisionCounts = {};
+  const roleCounts = new Map();
+  for (const row of rows) {
+    statusCounts[row.status] = (statusCounts[row.status] || 0) + 1;
+    decisionCounts[row.employerDecision ?? "__null__"] = (decisionCounts[row.employerDecision ?? "__null__"] || 0) + 1;
+    roleCounts.set(row.role, (roleCounts.get(row.role) || 0) + 1);
+  }
+  const result = buildEmployerAnalyticsFromAggregates({
+    statusCounts, decisionCounts,
+    roleCounts: [...roleCounts].map(([role, count]) => ({ role, count })),
+    weeklyCounts, completedReportSummary: summary
+  }, now);
+  const expected = buildEmployerAnalytics(rows, now);
+  assert.equal(result.averageScore, expected.averageScore);
+  assert.equal(result.scoredCount, expected.scoredCount);
+  assert.deepEqual(result.scoreBands, expected.scoreBands);
 });
