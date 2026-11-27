@@ -780,21 +780,28 @@ export default function Home() {
     if (cameraRequestRef.current || streamRef.current) return;
     cameraRequestRef.current = true;
     let acquiredStream: MediaStream | null = null;
+    let checkingRecordingBackup = false;
     try {
       acquiredStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
       streamRef.current = acquiredStream;
       if (videoRef.current) videoRef.current.srcObject = acquiredStream;
       setCameraOn(true);
-      const cached = targetSessionId ? await getCachedRecording(targetSessionId).catch(() => null) : null;
+      checkingRecordingBackup = Boolean(targetSessionId);
+      const cached = targetSessionId ? await getCachedRecording(targetSessionId) : null;
+      checkingRecordingBackup = false;
       if (streamRef.current !== acquiredStream || acquiredStream.getTracks().every(track => track.readyState !== "live")) return;
       if (cached?.chunks.length) {
         setRecoverableRecording(true);
       } else {
         startRecording(acquiredStream, targetSessionId);
       }
-    } catch {
+    } catch (error) {
       acquiredStream?.getTracks().forEach(track => track.stop());
-      setError("Camera/microphone permission was not granted. You can still answer by typing.");
+      if (streamRef.current === acquiredStream) streamRef.current = null;
+      setCameraOn(false);
+      setError(checkingRecordingBackup
+        ? (error instanceof Error ? error.message : "Could not verify the saved recording. Keep this tab open and retry before starting a new recording.")
+        : "Camera/microphone permission was not granted. You can still answer by typing.");
     } finally {
       cameraRequestRef.current = false;
     }
