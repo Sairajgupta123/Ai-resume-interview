@@ -44,3 +44,19 @@ test("times out if the provider never completes the handshake", async () => {
   const socket = new FakeSocket();
   await assert.rejects(waitForRealtimeSession(socket, 10), /initialization timed out/);
 });
+
+test("rejects provider errors after the socket opens but before session creation", async () => {
+  const socket = new FakeSocket();
+  const ready = waitForRealtimeSession(socket, 100);
+  socket.emit("open");
+  socket.emit("message", JSON.stringify({ type: "error", error: { message: "session configuration rejected" } }));
+  await assert.rejects(ready, /session configuration rejected/);
+});
+
+test("rejects a close after session.created but before the open event", async () => {
+  const socket = new FakeSocket();
+  const ready = waitForRealtimeSession(socket, 100);
+  socket.emit("message", JSON.stringify({ type: "session.created" }));
+  socket.emit("close");
+  await assert.rejects(ready, /closed during initialization/);
+});
