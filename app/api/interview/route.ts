@@ -325,10 +325,10 @@ export async function POST(request: NextRequest) {
           const firstQuestion = await db.interviewMessage.findFirst({
             where: { interviewId: body.sessionId, role: "assistant" },
             orderBy: { createdAt: "asc" },
-            select: { content: true }
+            select: { content: true, isTerminal: true }
           });
           if (firstQuestion) {
-            const response = privateJson({ message: firstQuestion.content, done: false, focus: "Interview introduction" });
+            const response = privateJson({ message: firstQuestion.content, done: firstQuestion.isTerminal, focus: "Interview introduction" });
             return attachCandidateCookie(response, request, body.sessionId, invitationExpiresAt);
           }
           return privateJson({ error: "Interview initialization is incomplete. Please contact the hiring team." }, { status: 409 });
@@ -346,9 +346,9 @@ export async function POST(request: NextRequest) {
           const existingQuestion = await db.interviewMessage.findFirst({
             where: { interviewId: body.sessionId, role: "assistant" },
             orderBy: { createdAt: "asc" },
-            select: { content: true }
+            select: { content: true, isTerminal: true }
           });
-          if (existingQuestion) return privateJson({ message: existingQuestion.content, done: false, focus: "Interview introduction" });
+          if (existingQuestion) return privateJson({ message: existingQuestion.content, done: existingQuestion.isTerminal, focus: "Interview introduction" });
           return privateJson({ error: "Interview is already initializing. Please wait a moment and retry." }, { status: 409 });
         }
         startLockAt = lockAt;
@@ -369,7 +369,7 @@ export async function POST(request: NextRequest) {
       // the saved interviewer turn rather than evaluating or storing the answer twice.
       const previousAnswer = await db.interviewMessage.findUnique({
         where: { clientMessageId: body.requestId },
-        select: { interviewId: true, role: true, content: true, createdAt: true }
+        select: { interviewId: true, role: true, content: true, isTerminal: true, createdAt: true }
       });
       if (previousAnswer) {
         if (!isTranscriptRetryCompatible(previousAnswer, {
@@ -386,12 +386,12 @@ export async function POST(request: NextRequest) {
             createdAt: { gt: previousAnswer.createdAt }
           },
           orderBy: { createdAt: "asc" },
-          select: { content: true }
+          select: { content: true, isTerminal: true }
         });
         if (!savedTurn) return privateJson({ error: "Your answer is still being processed. Please retry shortly." }, { status: 409 });
         const response = privateJson({
           message: savedTurn.content,
-          done: false,
+          done: savedTurn.isTerminal,
           focus: "Interview follow-up",
           timeLimitReached: !!startedAt && elapsedInterviewSeconds(startedAt) >= INTERVIEW_LIMIT_SECONDS
         });
@@ -434,7 +434,7 @@ export async function POST(request: NextRequest) {
               throw new Error("Interview start request expired. Please retry.");
             }
             await tx.interviewMessage.create({
-              data: { interviewId: body.sessionId!, role: "assistant", content: parsed.message.slice(0, 12000) }
+              data: { interviewId: body.sessionId!, role: "assistant", content: parsed.message.slice(0, 12000), isTerminal: parsed.done === true }
             });
             await tx.interview.update({
               where: { id: body.sessionId },
@@ -557,6 +557,7 @@ export async function POST(request: NextRequest) {
                   interviewId: body.sessionId!,
                   role: "assistant",
                   content: parsed.message.slice(0, 12000),
+                  isTerminal: parsed.done === true,
                   createdAt: assistantMessageAt
                 }
               ]
