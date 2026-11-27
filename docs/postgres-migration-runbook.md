@@ -52,7 +52,7 @@ No provider switch should be inferred from this checklist. It records tests requ
 1. Change the Prisma datasource provider only in a dedicated migration branch.
 2. Generate a reviewed initial migration from the complete Prisma schema; do not use `db push` as the production migration mechanism.
 3. Run migrations against a disposable PostgreSQL instance using the same major version and extensions as the intended managed database.
-4. Verify all seven models, foreign keys, cascade behavior, unique constraints and indexes.
+4. Verify all eight models, foreign keys, cascade behavior, unique constraints and indexes.
 5. Run Prisma schema validation, unit tests, type checking, production build and database integration tests against PostgreSQL in CI.
 6. Verify connection pooling and transaction behavior with the deployment's actual connection limits.
 
@@ -100,7 +100,7 @@ The migration is not complete until all of these are true:
 - [ ] A consistent, restorable SQLite backup exists.
 - [ ] A reviewed Prisma migration exists in version control.
 - [ ] CI runs integration tests against PostgreSQL, not only SQLite.
-- [ ] All seven models and all constraints/indexes are verified on PostgreSQL.
+- [ ] All eight models and all constraints/indexes are verified on PostgreSQL.
 - [ ] Source and destination row counts and primary-key sets match.
 - [ ] Transcript, invitation, decision and privacy-deletion workflows pass on PostgreSQL.
 - [ ] Production connection pooling, backups and restore are tested.
