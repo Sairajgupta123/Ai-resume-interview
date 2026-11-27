@@ -16,6 +16,26 @@ The schema currently contains these models:
 
 The migration must preserve every primary key, unique constraint, relation, timestamp, nullable field, default and index. In particular, invitation token hashes, one-time exchange state, deletion verification hashes and deletion execution lease tokens must not be regenerated or exposed during migration.
 
+## Application-specific compatibility audit
+
+The current Prisma schema uses string CUID primary keys, nullable and required `String` fields, `Int` counters/scores, `DateTime` timestamps, nullable unique token hashes, relation cascades and ordinary B-tree indexes. Report JSON is stored as text (`String?`), not a Prisma JSON column. Do not silently change these representations during the provider migration.
+
+The application uses Prisma model operations including `count`, `findMany`, `findUnique`, `findFirst`, `create`, `update`, `updateMany`, `upsert`, `deleteMany`, `groupBy` and interactive/array transactions. These are provider-supported Prisma APIs, but their generated SQL, null handling, ordering and transaction behavior still need integration verification on the exact PostgreSQL version.
+
+Specific compatibility checks:
+
+- [ ] Verify `groupBy` on `status`, `employerDecision` (including null) and `role`; confirm grouped counts reconcile to total interview counts.
+- [ ] Verify nullable unique values behave as expected for `invitationTokenHash`, `clientMessageId`, `verificationTokenHash` and `executionLeaseToken`; test multiple null rows and duplicate non-null values.
+- [ ] Verify every `onDelete: Cascade` relation, especially interview messages, signals, decision history and privacy deletion events.
+- [ ] Verify date filters using `lt`, `lte`, `gte` and equality at exact boundaries, including cursor ordering by `createdAt` then string `id`.
+- [ ] Verify timestamps retain millisecond precision and UTC instants through export/import; compare records around daylight-saving transitions even though application logic should use absolute instants.
+- [ ] Verify increment operations, upserts and conditional `updateMany` claims under concurrent login attempts, transcript retries and deletion-worker lease races.
+- [ ] Verify report JSON text round-trips exactly, including Unicode, escaped content, large transcripts and null values.
+- [ ] Review any user-facing text filtering and sorting for SQLite-versus-PostgreSQL collation differences; do not assume case-insensitive matching is identical across providers.
+- [ ] Run the full deletion database integration suite against PostgreSQL; the current local integration suite uses SQLite and is not evidence of PostgreSQL compatibility.
+
+No provider switch should be inferred from this checklist. It records tests required before the dedicated migration branch can be considered safe.
+
 ## Required migration sequence
 
 ### 1. Establish a recoverable source snapshot
