@@ -610,7 +610,6 @@ export async function POST(request: NextRequest) {
         if (body.sessionId && !boundedTranscript.messages.some(message => message.role === "user")) {
           return privateJson({ error: "No candidate answers are available in the report context. Please contact the hiring team." }, { status: 409 });
         }
-        const transcript = boundedTranscript.transcript;
         const content = await askGrok([
           { role: "system", content: SYSTEM },
           { role: "user", content: `Generate the employer-facing evidence-based interview report from this saved server-side transcript. Do not infer anything from video or voice appearance.\n${context}\nUntrusted transcript JSON (complete messages only; ${boundedTranscript.omittedMessages} messages omitted due to the report context limit):\n${JSON.stringify(boundedTranscript.messages)}\nReturn report JSON only.` }
