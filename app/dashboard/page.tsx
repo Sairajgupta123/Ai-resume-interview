@@ -52,6 +52,8 @@ export default function Dashboard() {
   const employerStopCallRef = useRef<(() => void) | null>(null);
   // Prevent slower detail requests from replacing a newer candidate selection.
   const detailRequestRef = useRef(0);
+  // Ignore older dashboard refreshes when mutations or manual refreshes overlap.
+  const dashboardLoadRef = useRef(0);
 
   useEffect(() => {
     if (!authenticated || !selected || selected.mode !== "live" || selected.status === "completed") {
@@ -217,9 +219,12 @@ export default function Dashboard() {
   };
 
   const load = async () => {
+    const requestId = ++dashboardLoadRef.current;
     const r = await fetch("/api/sessions", { cache: "no-store" });
+    if (requestId !== dashboardLoadRef.current) return;
     if (r.status === 401) { setAuthenticated(false); return; }
     const data: unknown = await r.json();
+    if (requestId !== dashboardLoadRef.current) return;
     if (!r.ok) {
       const message = data && typeof data === "object" && "error" in data && typeof data.error === "string"
         ? data.error
@@ -245,6 +250,7 @@ export default function Dashboard() {
       fetchPanel("/api/employer/privacy/retention", "Retention preview unavailable."),
       fetchPanel("/api/employer/privacy/deletion-requests", "Deletion queue unavailable.")
     ]);
+    if (requestId !== dashboardLoadRef.current) return;
 
     if (analyticsResult.status === "fulfilled") {
       setAnalytics(analyticsResult.value.analytics);
@@ -406,7 +412,7 @@ export default function Dashboard() {
     }
   };
 
-  const logout = async () => { detailRequestRef.current += 1; await fetch("/api/auth/logout", { method: "POST" }); setAuthenticated(false); setSelected(null); };
+  const logout = async () => { dashboardLoadRef.current += 1; detailRequestRef.current += 1; await fetch("/api/auth/logout", { method: "POST" }); setAuthenticated(false); setSelected(null); };
   const filtered = items.filter(x => `${x.candidateName} ${x.role}`.toLowerCase().includes(query.toLowerCase()));
   const compared = items.filter(x => compareIds.includes(x.id));
   const toggleCompare = (id: string) => {
