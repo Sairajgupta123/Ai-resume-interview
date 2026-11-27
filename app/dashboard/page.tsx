@@ -415,10 +415,14 @@ export default function Dashboard() {
       try {
         await load();
       } catch {
-        setError("Decision saved, but the dashboard list could not refresh. Refresh the page to see the latest data.");
+        if (detailRequestRef.current === detailRequestId) {
+          setError("Decision saved, but the dashboard list could not refresh. Refresh the page to see the latest data.");
+        }
       }
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : "Could not save decision.");
+      if (detailRequestRef.current === detailRequestId) {
+        setError(failure instanceof Error ? failure.message : "Could not save decision.");
+      }
     } finally {
       setDecisionBusy(false);
     }
