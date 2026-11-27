@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { isEmployerAuthenticated } from "@/lib/auth";
 import { validateDeletionRequestInput } from "@/lib/privacy-deletion-policy.mjs";
+import { readBoundedJson } from "@/lib/bounded-json.mjs";
 
 export const runtime = "nodejs";
 
@@ -41,7 +42,14 @@ export async function POST(request: NextRequest, context: Context) {
   }
   const { id } = await context.params;
   try {
-    const body = await request.json();
+    if ((request.headers.get("content-type") || "").split(";", 1)[0].trim().toLowerCase() !== "application/json") {
+      return NextResponse.json({ error: "Content-Type must be application/json." }, { status: 415, headers: { "Cache-Control": "no-store" } });
+    }
+    const parsed = await readBoundedJson(request, 8 * 1024);
+    if (!parsed.ok) {
+      return NextResponse.json({ error: parsed.error }, { status: parsed.status, headers: { "Cache-Control": "no-store" } });
+    }
+    const body = parsed.value;
     const interview = await db.interview.findUnique({
       where: { id },
       select: { id: true, candidateName: true, candidateEmail: true, role: true, status: true }
