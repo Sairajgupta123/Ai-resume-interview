@@ -53,6 +53,15 @@ This checklist is for a staging deployment using the intended browser, xAI accou
 - [ ] Reconnection after refresh uses the scoped candidate cookie.
 - [ ] Signalling rejects malformed, oversized or wrong-participant messages.
 
+## Employer dashboard pagination and analytics
+
+- [ ] Create more than 100 synthetic interviews and confirm the first page contains no more than 100 rows.
+- [ ] Load subsequent pages and confirm there are no duplicate or missing interview IDs, including records with identical creation timestamps.
+- [ ] Confirm newest-first ordering remains stable across page boundaries.
+- [ ] Confirm an invalid or oversized cursor is rejected with a client error and does not expose interview data.
+- [ ] Confirm candidate search and CSV export clearly apply to currently loaded pages only.
+- [ ] Confirm analytics totals and six-week trends remain consistent with the underlying synthetic dataset.
+
 ## Report, employer review and exports
 
 - [ ] Report generation uses the saved server-side transcript, not a client-submitted replacement transcript.
