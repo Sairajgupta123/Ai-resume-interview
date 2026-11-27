@@ -30,14 +30,16 @@ test("invalid start timestamps do not produce NaN elapsed time", () => {
   assert.equal(elapsedInterviewSeconds("not-a-date", now), 0);
 });
 
-test("evidence normalization ignores only case and whitespace", () => {
+test("evidence normalization helper remains available for non-quote comparisons", () => {
   assert.equal(normalizeEvidence("  Built  REST APIs "), "built rest apis");
 });
 
 test("evidence must be a contiguous quote from one answer", () => {
   const answers = ["I built REST APIs using Node.js.", "I deployed services with Docker."];
-  assert.equal(isVerifiableEvidenceQuote("built rest apis", answers), true);
+  assert.equal(isVerifiableEvidenceQuote("I built REST APIs", answers), true);
   assert.equal(isVerifiableEvidenceQuote("REST APIs using Node.js", answers), true);
+  assert.equal(isVerifiableEvidenceQuote("built rest apis", answers), false);
+  assert.equal(isVerifiableEvidenceQuote("I built  REST APIs", answers), false);
   assert.equal(isVerifiableEvidenceQuote("REST APIs deployed services", answers), false);
 });
 
