@@ -3,6 +3,7 @@ import {
   pcm16ToBase64,
   resampleFloat32ToPcm16
 } from "@/lib/grok-voice-audio.mjs";
+import { waitForRealtimeSession } from "@/lib/realtime-handshake.mjs";
 
 type TranscriptRole = "user" | "assistant";
 
@@ -93,49 +94,7 @@ export class GrokRealtimeClient {
       const attemptSocket = new WebSocket(REALTIME_URL, [`xai-client-secret.${tokenData.token}`]);
       this.socket = attemptSocket;
       try {
-        await new Promise<void>((resolve, reject) => {
-          let opened = false;
-          let sessionCreated = false;
-          let settled = false;
-          const cleanup = () => {
-            window.clearTimeout(timeout);
-            attemptSocket.removeEventListener("open", onOpen);
-            attemptSocket.removeEventListener("message", onMessage);
-            attemptSocket.removeEventListener("error", onError);
-            attemptSocket.removeEventListener("close", onClose);
-          };
-          const finish = () => {
-            if (!opened || !sessionCreated || settled) return;
-            settled = true;
-            cleanup();
-            resolve();
-          };
-          const fail = (error: Error) => {
-            if (settled) return;
-            settled = true;
-            cleanup();
-            reject(error);
-          };
-          const timeout = window.setTimeout(() => fail(new Error("AI voice session initialization timed out.")), 15_000);
-          const onOpen = () => { opened = true; finish(); };
-          const onMessage = (event: MessageEvent) => {
-            try {
-              const payload = JSON.parse(String(event.data)) as RealtimeEvent;
-              if (payload.type === "session.created") {
-                sessionCreated = true;
-                finish();
-              } else if (payload.type === "error") {
-                fail(new Error(payload.error?.message || "AI voice session initialization failed."));
-              }
-            } catch { /* ignore non-JSON events */ }
-          };
-          const onError = () => fail(new Error("Could not connect to the AI voice service."));
-          const onClose = () => fail(new Error("AI voice connection closed during initialization."));
-          attemptSocket.addEventListener("open", onOpen, { once: true });
-          attemptSocket.addEventListener("message", onMessage);
-          attemptSocket.addEventListener("error", onError, { once: true });
-          attemptSocket.addEventListener("close", onClose, { once: true });
-        });
+        await waitForRealtimeSession(attemptSocket, 15_000);
         socket = attemptSocket;
         break;
       } catch (error) {
