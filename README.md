@@ -16,6 +16,7 @@ A resume- and job-description-aware interview application powered by xAI Grok.
 - Candidate refresh recovery: invitation tokens are exchanged through a POST request body or the interview-start response for session-scoped HttpOnly cookies; refresh uses the cookie, and in-progress transcripts and elapsed interview time are restored after reload
 - Recording resilience: browser recording segments are periodically saved to IndexedDB on the candidate device; if the tab is refreshed or an upload fails, the candidate can recover and upload saved segments before completing the interview
 - Live WebRTC signaling authenticates through the same HttpOnly candidate cookie, so a refreshed candidate session can reconnect after granting camera/microphone permission
+- Employer interview list uses stable cursor-based pagination in 100-record pages; search and CSV export apply to currently loaded pages
 - Employer dashboard includes private candidate recording playback with loading/error recovery states, browser controls, full-screen support and byte-range streaming for seeking
 - AI report validation now rejects duplicate skill entries and rating/evidence mismatches, calculates evidence coverage, and derives conservative recommendations from validated score and evidence coverage rather than trusting the model's recommendation label
 - Adaptive interviewer turn validation checks response shape, message length, exactly one question per non-final turn, no question in a final closing statement, and exact normalized prompt repetition
