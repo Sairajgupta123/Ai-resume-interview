@@ -72,90 +72,80 @@ export class GrokRealtimeClient {
     this.closed = false;
     this.callbacks.onStatus?.("connecting");
 
-    const tokenResponse = await fetch(`/api/sessions/${encodeURIComponent(this.sessionId)}/voice-session`, {
-      method: "POST",
-      credentials: "same-origin",
-      cache: "no-store",
-      // Bound the credential request so a stalled network cannot leave the
-      // interview UI stuck in "connecting" before WebSocket setup even begins.
-      signal: AbortSignal.timeout(15_000)
-    });
-    const tokenData = await tokenResponse.json();
-    if (!tokenResponse.ok || typeof tokenData.token !== "string") {
-      throw new Error(tokenData.error || "Could not obtain a secure AI voice session.");
-    }
-    if (this.closed) return;
+    let socket: WebSocket | null = null;
+    let lastConnectionError: Error | null = null;
 
-    const socket = new WebSocket(REALTIME_URL, [`xai-client-secret.${tokenData.token}`]);
-    this.socket = socket;
+    // Retry transient provider handshakes with a fresh short-lived token.
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const tokenResponse = await fetch(`/api/sessions/${encodeURIComponent(this.sessionId)}/voice-session`, {
+        method: "POST",
+        credentials: "same-origin",
+        cache: "no-store",
+        signal: AbortSignal.timeout(15_000)
+      });
+      const tokenData = await tokenResponse.json();
+      if (!tokenResponse.ok || typeof tokenData.token !== "string") {
+        throw new Error(tokenData.error || "Could not obtain a secure AI voice session.");
+      }
+      if (this.closed) return;
 
-    const sessionCreated = new Promise<void>((resolve, reject) => {
-      const cleanup = () => {
-        window.clearTimeout(timeout);
-        socket.removeEventListener("message", onMessage);
-        socket.removeEventListener("close", onClose);
-      };
-      const timeout = window.setTimeout(() => {
-        cleanup();
-        reject(new Error("AI voice session initialization timed out."));
-      }, 15_000);
-      const onMessage = (event: MessageEvent) => {
-        try {
-          const payload = JSON.parse(String(event.data)) as RealtimeEvent;
-          if (payload.type === "session.created") {
+      const attemptSocket = new WebSocket(REALTIME_URL, [`xai-client-secret.${tokenData.token}`]);
+      this.socket = attemptSocket;
+      try {
+        await new Promise<void>((resolve, reject) => {
+          let opened = false;
+          let sessionCreated = false;
+          let settled = false;
+          const cleanup = () => {
+            window.clearTimeout(timeout);
+            attemptSocket.removeEventListener("open", onOpen);
+            attemptSocket.removeEventListener("message", onMessage);
+            attemptSocket.removeEventListener("error", onError);
+            attemptSocket.removeEventListener("close", onClose);
+          };
+          const finish = () => {
+            if (!opened || !sessionCreated || settled) return;
+            settled = true;
             cleanup();
             resolve();
-          } else if (payload.type === "error") {
+          };
+          const fail = (error: Error) => {
+            if (settled) return;
+            settled = true;
             cleanup();
-            reject(new Error(payload.error?.message || "AI voice session initialization failed."));
-          }
-        } catch { /* ignore non-JSON events */ }
-      };
-      const onClose = () => {
-        cleanup();
-        reject(new Error("AI voice connection closed during initialization."));
-      };
-      socket.addEventListener("message", onMessage);
-      socket.addEventListener("close", onClose, { once: true });
-    });
-    // Attach after initialization; referencing this promise in its executor hits the temporal dead zone.
-    void sessionCreated.catch(() => undefined);
-
-    try {
-      await new Promise<void>((resolve, reject) => {
-        const cleanup = () => {
-          window.clearTimeout(timeout);
-          socket.removeEventListener("open", onOpen);
-          socket.removeEventListener("error", onError);
-          socket.removeEventListener("close", onClose);
-        };
-        const timeout = window.setTimeout(() => {
-          cleanup();
-          socket.close();
-          reject(new Error("AI voice connection timed out."));
-        }, 15_000);
-        const onOpen = () => {
-          cleanup();
-          resolve();
-        };
-        const onError = () => {
-          cleanup();
-          reject(new Error("Could not connect to the AI voice service."));
-        };
-        const onClose = () => {
-          cleanup();
-          reject(new Error("AI voice connection closed before it was ready."));
-        };
-        socket.addEventListener("open", onOpen, { once: true });
-        socket.addEventListener("error", onError, { once: true });
-        socket.addEventListener("close", onClose, { once: true });
-      });
-      await sessionCreated;
-    } catch (error) {
-      socket.close();
-      this.socket = null;
-      throw error;
+            reject(error);
+          };
+          const timeout = window.setTimeout(() => fail(new Error("AI voice session initialization timed out.")), 15_000);
+          const onOpen = () => { opened = true; finish(); };
+          const onMessage = (event: MessageEvent) => {
+            try {
+              const payload = JSON.parse(String(event.data)) as RealtimeEvent;
+              if (payload.type === "session.created") {
+                sessionCreated = true;
+                finish();
+              } else if (payload.type === "error") {
+                fail(new Error(payload.error?.message || "AI voice session initialization failed."));
+              }
+            } catch { /* ignore non-JSON events */ }
+          };
+          const onError = () => fail(new Error("Could not connect to the AI voice service."));
+          const onClose = () => fail(new Error("AI voice connection closed during initialization."));
+          attemptSocket.addEventListener("open", onOpen, { once: true });
+          attemptSocket.addEventListener("message", onMessage);
+          attemptSocket.addEventListener("error", onError, { once: true });
+          attemptSocket.addEventListener("close", onClose, { once: true });
+        });
+        socket = attemptSocket;
+        break;
+      } catch (error) {
+        attemptSocket.close();
+        if (this.socket === attemptSocket) this.socket = null;
+        lastConnectionError = error instanceof Error ? error : new Error("Could not connect to the AI voice service.");
+        if (attempt < 2) await new Promise(resolve => window.setTimeout(resolve, 300 * (attempt + 1)));
+      }
     }
+
+    if (!socket) throw lastConnectionError || new Error("Could not initialize the AI voice connection.");
 
     if (this.closed) {
       socket.close();
