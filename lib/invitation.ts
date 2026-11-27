@@ -24,6 +24,23 @@ export async function hasValidCandidateInvitation(sessionId: string, token: stri
   return tokenMatches(token, interview.invitationTokenHash);
 }
 
+/** Validate the browser-session cookie for refresh/report recovery, including completed interviews. */
+export async function hasValidCandidateSession(sessionId: string, token: string | null) {
+  if (!token || token.length < 32 || token.length > 256) return false;
+  const interview = await db.interview.findUnique({
+    where: { id: sessionId },
+    select: { invitationTokenHash: true, inviteExpiresAt: true, status: true }
+  });
+  if (
+    !interview?.invitationTokenHash ||
+    !(interview.inviteExpiresAt instanceof Date) ||
+    !Number.isFinite(interview.inviteExpiresAt.getTime()) ||
+    interview.inviteExpiresAt.getTime() <= Date.now() ||
+    !["invited", "in_progress", "completed"].includes(interview.status)
+  ) return false;
+  return tokenMatches(token, interview.invitationTokenHash);
+}
+
 // Atomically consumes the emailed link once and records the use before issuing an HttpOnly cookie.
 export async function exchangeCandidateInvitation(sessionId: string, token: string | null) {
   if (!token || token.length < 32 || token.length > 256) return null;
