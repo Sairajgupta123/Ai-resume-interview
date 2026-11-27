@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { buildCsv } from "@/lib/csv-export.mjs";
 import RecordingPlayer from "./recording-player";
 import { isRestorableInterviewReport } from "@/lib/report-recovery-policy.mjs";
+import { isIceCandidateForDescription } from "@/lib/signalling-policy.mjs";
 
 type Item = { id: string; candidateName: string; role: string; mode: string; status: string; overallScore: number | null; recommendation: string | null; employerDecision: string | null; durationSeconds: number; createdAt: string };
 type Detail = Item & { candidateEmail?: string | null; resumeText: string; jobDescription: string; hasRecording: boolean; reportJson: string | null; employerNotes: string | null; decisionAt: string | null; decisionHistory: { id: string; decision: string; notes: string | null; createdAt: string }[]; messages: { role: string; content: string }[] };
@@ -143,7 +144,9 @@ export default function Dashboard() {
             for (const signal of data.signals || []) {
               if (signal.kind === "offer" && peer!.signalingState === "stable" && signal.id !== answeredOfferId) {
                 await peer!.setRemoteDescription(JSON.parse(signal.payload));
-                for (const candidate of pendingIce.splice(0)) await peer!.addIceCandidate(candidate).catch(() => {});
+                const activeRemoteDescription = peer!.remoteDescription;
+                const readyIce = pendingIce.splice(0).filter(candidate => isIceCandidateForDescription(candidate, activeRemoteDescription));
+                for (const candidate of readyIce) await peer!.addIceCandidate(candidate).catch(() => {});
                 const answer = await peer!.createAnswer();
                 await peer!.setLocalDescription(answer);
                 pendingAnswer = { offerId: signal.id, payload: JSON.stringify(peer!.localDescription) };
@@ -154,8 +157,11 @@ export default function Dashboard() {
                 setLiveCallState("Answer sent · connecting…");
               } else if (signal.kind === "ice") {
                 const candidate = JSON.parse(signal.payload) as RTCIceCandidateInit;
-                if (peer!.remoteDescription) await peer!.addIceCandidate(candidate).catch(() => {});
-                else if (pendingIce.length < 128) pendingIce.push(candidate);
+                if (peer!.remoteDescription && isIceCandidateForDescription(candidate, peer!.remoteDescription)) {
+                  await peer!.addIceCandidate(candidate).catch(() => {});
+                } else if (pendingIce.length < 128) {
+                  pendingIce.push(candidate);
+                }
               } else if (signal.kind === "hangup") {
                 stopLocalCall();
                 setLiveCallState("Candidate ended the call.");
