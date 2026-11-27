@@ -47,7 +47,7 @@ export async function POST(_request: NextRequest, context: Context) {
       );
     }
 
-    const configuredBase = process.env.NEXT_PUBLIC_APP_URL?.trim().replace(/\\/+$/, "");
+    const configuredBase = process.env.NEXT_PUBLIC_APP_URL?.trim().replace(/\/+$/, "");
     const base = configuredBase || new URL(_request.url).origin;
     return NextResponse.json(
       { inviteUrl: `${base}/candidate/${id}?token=${token}`, expiresAt },
