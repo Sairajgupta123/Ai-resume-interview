@@ -140,18 +140,18 @@ test("ambiguous commit reference-check failure enqueues a task that will recheck
   ]]);
 });
 
-test("database commit failure queues cleanup when confirmed-unreferenced object deletion fails", async () => {
+test("ambiguous commit with a negative immediate reference read queues delayed cleanup without deleting", async () => {
   const calls = [];
   await assert.rejects(() => commitRecordingReplacement({
     commit: async () => { throw new Error("database error"); },
     isNewRecordingReferenced: async () => false,
-    cleanupNew: async () => { throw new Error("storage unavailable"); },
+    cleanupNew: async () => assert.fail("must not delete immediately after an ambiguous commit"),
     cleanupNewPath: "data/recordings/123e4567-e89b-12d3-a456-426614174000.webm",
     enqueueCleanup: async (storedPath, reason) => calls.push([storedPath, reason]),
     cleanupPrevious: async () => {}
   }), /database error/);
   assert.deepEqual(calls, [[
     "data/recordings/123e4567-e89b-12d3-a456-426614174000.webm",
-    "new-recording-after-commit-error"
+    "new-recording-after-commit-ambiguous"
   ]]);
 });
