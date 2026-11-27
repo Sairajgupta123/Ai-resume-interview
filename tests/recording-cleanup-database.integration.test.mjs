@@ -86,10 +86,13 @@ test("recording cleanup tasks persist, deduplicate by object path and use atomic
       now
     });
     assert.equal(processed.inspected, 2);
-    assert.equal(processed.completed, 2);
+    assert.equal(processed.completed, 1);
+    assert.equal(processed.retryScheduled, 1);
     assert.deepEqual(deletedPaths, [storedPath]);
     assert.equal((await prisma.recordingCleanupTask.findUnique({ where: { storedPath } })).status, "completed");
-    assert.equal((await prisma.recordingCleanupTask.findUnique({ where: { storedPath: referencedPath } })).status, "completed");
+    const retainedTask = await prisma.recordingCleanupTask.findUnique({ where: { storedPath: referencedPath } });
+    assert.equal(retainedTask.status, "pending");
+    assert.equal(retainedTask.lastErrorCode, "RECORDING_STILL_REFERENCED");
 
     // Run two real worker batches at once against the same due task. The
     // conditional updateMany lease must allow only one worker to delete it.
