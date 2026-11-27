@@ -1,13 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { candidateInvitationCookieName, exchangeCandidateInvitation, getCandidateInvitationToken, hasValidCandidateInvitation } from "@/lib/invitation";
+import { candidateInvitationCookieName, exchangeCandidateInvitation, getCandidateInvitationToken, hasValidCandidateInvitation, hasValidCandidateSession } from "@/lib/invitation";
 import { isRestorableInterviewReport } from "@/lib/report-recovery-policy.mjs";
 
 type Context = { params: Promise<{ id: string }> };
 
 async function candidateResponse(id: string, token: string | null, exchange = false) {
-  // Load the response data before consuming the one-time link. If the database
-  // read fails, the candidate can retry with the original invitation URL.
+  // Authenticate against the narrow invitation record before loading candidate
+  // details. This also keeps unknown IDs and invalid tokens indistinguishable.
+  const authorized = exchange
+    ? await hasValidCandidateInvitation(id, token)
+    : await hasValidCandidateSession(id, token);
+  if (!authorized) {
+    return NextResponse.json({ error: "This interview invitation is invalid or expired. Contact the employer for a new link." }, { status: 401, headers: { "Cache-Control": "private, no-store" } });
+  }
+
+  // Load response data before consuming the one-time link. If this read fails,
+  // the candidate can retry with the original invitation URL.
   const interview = await db.interview.findUnique({
     where: { id },
     select: {
@@ -37,10 +46,7 @@ async function candidateResponse(id: string, token: string | null, exchange = fa
   }
 
   const sessionToken = exchange ? await exchangeCandidateInvitation(id, token) : token;
-  const authorized = exchange
-    ? Boolean(sessionToken)
-    : await hasValidCandidateInvitation(id, sessionToken);
-  if (!authorized || !sessionToken) {
+  if (!sessionToken) {
     return NextResponse.json({ error: "This interview invitation is invalid or expired. Contact the employer for a new link." }, { status: 401, headers: { "Cache-Control": "private, no-store" } });
   }
   let completedReport: unknown = null;
