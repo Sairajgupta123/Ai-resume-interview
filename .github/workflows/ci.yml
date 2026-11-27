@@ -35,6 +35,7 @@ jobs:
           --health-retries 10
     env:
       DATABASE_URL: "postgresql://mzobs:mzobs-ci-password@localhost:5432/mzobs_ci?schema=public"
+      SQLITE_DATABASE_URL: "file:../ci-source.db"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -44,8 +45,10 @@ jobs:
           node-version: 20
       - name: Install dependencies
         run: npm install --no-audit --no-fund
-      - name: Validate Prisma schema
+      - name: Validate PostgreSQL Prisma schema
         run: npm run db:validate
+      - name: Validate SQLite source schema
+        run: npm run db:validate:sqlite
       - name: Apply PostgreSQL migrations
         run: npm run db:migrate
       - name: Unit tests
