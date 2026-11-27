@@ -153,7 +153,7 @@ export async function POST(request: NextRequest, context: Context) {
       where: { interviewId: id, createdAt: { lt: new Date(Date.now() - 60 * 60 * 1000) } }
     });
     const signal = await db.interviewSignal.create({ data: { interviewId: id, sender, kind: body.kind, payload: body.payload } });
-    return NextResponse.json({ ok: true, id: signal.id }, { status: 201, headers });
+    return NextResponse.json({ ok: true, id: signal.id, createdAt: signal.createdAt }, { status: 201, headers });
   } catch {
     return NextResponse.json({ error: "Could not send signalling message." }, { status: 500, headers });
   }
