@@ -212,17 +212,21 @@ export default function Home() {
             });
           }
         };
-        // Ignore employer answers/ICE from an earlier browser connection.
-        // The cursor is advanced before this offer is persisted, so only signals
-        // generated for this negotiation can be applied to the new peer.
-        cursor = new Date().toISOString();
-        cursorId = "";
+        // Anchor the polling cursor to the server timestamp of this offer.
+        // A client clock that is ahead of the server must not skip the employer's
+        // answer or ICE candidates for this negotiation.
         const offer = await peer.createOffer();
         await peer.setLocalDescription(offer);
         const offerResponse = await fetch(`/api/sessions/${sessionId}/signals`, {
           method: "POST", headers, credentials: "same-origin", body: JSON.stringify({ kind: "offer", payload: JSON.stringify(peer.localDescription) })
         });
         if (!offerResponse.ok) throw new Error("Could not start live video call.");
+        const savedOffer = await offerResponse.json();
+        if (typeof savedOffer.createdAt !== "string" || typeof savedOffer.id !== "string") {
+          throw new Error("The live video offer could not establish a reliable signalling cursor. Please retry.");
+        }
+        cursor = savedOffer.createdAt;
+        cursorId = savedOffer.id;
         let polling = false;
         const poll = async () => {
           if (stopped || !peer || polling) return;
