@@ -46,9 +46,13 @@ function openRecordingDatabase(): Promise<IDBDatabase> {
 export async function cacheRecordingChunk(sessionId: string, index: number, blob: Blob, mimeType: string) {
   if (!sessionId || blob.size < 1) return;
   const database = await openRecordingDatabase();
+  if (!Number.isSafeInteger(index) || index < 0 || !(blob instanceof Blob) || typeof mimeType !== "string" || !mimeType) {
+    throw new Error("Recording segment metadata is invalid.");
+  }
   await new Promise<void>((resolve, reject) => {
     const transaction = database.transaction(STORE_NAME, "readwrite");
-    transaction.objectStore(STORE_NAME).put({
+    const store = transaction.objectStore(STORE_NAME);
+    const saveChunk = () => store.put({
       key: sessionId + ":" + String(index).padStart(10, "0"),
       sessionId,
       index,
@@ -56,6 +60,26 @@ export async function cacheRecordingChunk(sessionId: string, index: number, blob
       blob,
       savedAt: Date.now()
     });
+
+    // A new recording starts at index zero. Remove any longer, stale recording
+    // from the same interview in this transaction before saving its first chunk.
+    // This prevents old trailing chunks from being appended during recovery.
+    if (index === 0) {
+      const cursorRequest = store.index("sessionId").openKeyCursor(IDBKeyRange.only(sessionId));
+      cursorRequest.onsuccess = () => {
+        const cursor = cursorRequest.result;
+        if (cursor) {
+          store.delete(cursor.primaryKey);
+          cursor.continue();
+        } else {
+          saveChunk();
+        }
+      };
+      cursorRequest.onerror = () => transaction.abort();
+    } else {
+      saveChunk();
+    }
+
     transaction.oncomplete = () => resolve();
     transaction.onerror = () => reject(transaction.error || new Error("Could not persist a recording segment."));
     transaction.onabort = () => reject(transaction.error || new Error("Recording segment persistence was interrupted."));
