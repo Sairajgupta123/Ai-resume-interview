@@ -4,5 +4,6 @@ export function commitRecordingReplacement(args: {
   cleanupNew: () => Promise<unknown>;
   cleanupPrevious: (path: string) => Promise<unknown>;
   previousPath?: string | null;
+  isNewRecordingReferenced?: () => Promise<boolean>;
   onCleanupError?: (error: unknown, stage: string) => void;
 }): Promise<RecordingReplacementResult>;
