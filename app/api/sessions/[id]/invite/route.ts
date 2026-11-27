@@ -17,11 +17,11 @@ export async function POST(_request: NextRequest, context: Context) {
     }
 
     const { id } = await context.params;
-    const interview = await db.interview.findUnique({ where: { id }, select: { id: true, status: true } });
+    const interview = await db.interview.findUnique({ where: { id }, select: { id: true, status: true, startedAt: true, inviteUsedAt: true } });
     if (!interview) {
       return NextResponse.json({ error: "Interview not found." }, { status: 404, headers: PRIVATE_HEADERS });
     }
-    if (interview.status !== "invited") {
+    if (interview.status !== "invited" || interview.startedAt || interview.inviteUsedAt) {
       return NextResponse.json(
         { error: "Only interviews awaiting candidate activity can receive a replacement invitation." },
         { status: 409, headers: PRIVATE_HEADERS }
@@ -33,7 +33,7 @@ export async function POST(_request: NextRequest, context: Context) {
     // Make the status check and token rotation atomic. A candidate starting
     // concurrently must not have their active browser session invalidated.
     const rotated = await db.interview.updateMany({
-      where: { id, status: "invited" },
+      where: { id, status: "invited", startedAt: null, inviteUsedAt: null },
       data: {
         invitationTokenHash: hashInvitationToken(token),
         inviteExpiresAt: expiresAt,
