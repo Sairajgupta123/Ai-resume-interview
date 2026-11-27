@@ -71,6 +71,7 @@ Open http://localhost:3000/dashboard and sign in with `EMPLOYER_USERNAME` and `E
 
 
 - PostgreSQL migration preparation and release gates are documented in [the database migration runbook](docs/postgres-migration-runbook.md); the application still runs SQLite until the migration is tested end to end.
+- Safe schema/index updates for existing SQLite deployments are documented in [the SQLite schema maintenance guide](docs/sqlite-schema-maintenance.md).
 
 ## Production environment configuration
 
