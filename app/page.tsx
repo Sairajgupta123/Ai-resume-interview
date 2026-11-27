@@ -51,6 +51,7 @@ export default function Home() {
   const [uploadingRecording, setUploadingRecording] = useState(false);
   const [recordingSaved, setRecordingSaved] = useState(false);
   const [recoverableRecording, setRecoverableRecording] = useState(false);
+  const [recordingRecoveryChecked, setRecordingRecoveryChecked] = useState(false);
   const [seconds, setSeconds] = useState(0);
   const [listening, setListening] = useState(false);
   const [voiceStatus, setVoiceStatus] = useState<"off" | "connecting" | "connected" | "unavailable">("off");
@@ -120,12 +121,14 @@ export default function Home() {
         if (interview.recordingSaved) {
           recordingSavedRef.current = true;
           setRecordingSaved(true);
+          setRecordingRecoveryChecked(true);
           void clearCachedRecording(interview.id).catch(() => {});
         } else {
           void getCachedRecording(interview.id).then(cached => {
             if (cached?.chunks.length && cached.complete) setRecoverableRecording(true);
-          else if (cached?.chunks.length) setError("An interrupted partial recording was found on this device. It is not marked complete, so it cannot be uploaded as a full interview recording.");
-          }).catch(() => setError("A locally saved recording could not be checked. Your interview answers remain available."));
+            else if (cached?.chunks.length) setError("An interrupted partial recording was found on this device. It is not marked complete, so it cannot be uploaded as a full interview recording.");
+          }).catch(() => setError("A locally saved recording could not be checked. Your interview answers remain available."))
+            .finally(() => setRecordingRecoveryChecked(true));
         }
         setCandidateName(interview.candidateName);
         setRole(interview.role);
@@ -962,7 +965,7 @@ export default function Home() {
         <div className="report-card"><h3>Role skill assessment</h3><div className="skill-table">{report.skills.map((s,i)=><div className="skill-row" key={i}><b>{s.skill}</b><span>{s.rating}</span><p>{s.evidence}</p></div>)}</div></div>
         <div className="report-card"><h3>Question-by-question evidence</h3>{report.questionFeedback.map((q,i)=><div className="feedback-row" key={i}><b>Q{i+1}. {q.question}</b><p>{q.assessment}</p><small>Evidence: {q.evidence}</small></div>)}</div>
         <p className="report-disclaimer">{report.disclaimer || "This AI-generated report is decision support, not an automated hiring decision. Review the transcript and evidence before taking action."}</p>
-        <button className="outline-btn back-btn" disabled={recoverableRecording || uploadingRecording} onClick={() => { finishStartedRef.current = false; setPhase("setup"); setHistory([]); setReport(null); setSeconds(0); setSessionId(""); setInviteToken(""); setConsent(false); setError(""); setRecording(false); setUploadingRecording(false); setRecordingSaved(false); recordingSavedRef.current = false; recordingUploadInProgressRef.current = false; recorderRef.current = null; recordingCompleteRef.current = null; streamRef.current?.getTracks().forEach(t=>t.stop()); streamRef.current = null; setCameraOn(false); }}>{recoverableRecording ? "Recover your saved recording before starting another interview" : uploadingRecording ? "Recording recovery in progress…" : "＋ Create another interview"}</button>
+        <button className="outline-btn back-btn" disabled={!!sessionId && !recordingRecoveryChecked || recoverableRecording || uploadingRecording} onClick={() => { finishStartedRef.current = false; setPhase("setup"); setHistory([]); setReport(null); setSeconds(0); setSessionId(""); setInviteToken(""); setConsent(false); setError(""); setRecording(false); setUploadingRecording(false); setRecordingSaved(false); recordingSavedRef.current = false; recordingUploadInProgressRef.current = false; recorderRef.current = null; recordingCompleteRef.current = null; streamRef.current?.getTracks().forEach(t=>t.stop()); streamRef.current = null; setCameraOn(false); }}>{!!sessionId && !recordingRecoveryChecked ? "Checking saved recording…" : recoverableRecording ? "Recover your saved recording before starting another interview" : uploadingRecording ? "Recording recovery in progress…" : "＋ Create another interview"}</button>
       </section>}
       <footer className="global-footer"><span>MZOBS · AI Interview Studio</span><span>Thoughtful technology. Better hiring.</span></footer>
     </main>
