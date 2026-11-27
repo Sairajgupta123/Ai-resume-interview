@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { candidateInvitationCookieName, getCandidateInvitationToken, hasValidCandidateInvitation } from "@/lib/invitation";
+import { candidateInvitationCookieName, getCandidateInvitationToken, hasValidCandidateInvitation, hasValidCandidateSession } from "@/lib/invitation";
 import { elapsedInterviewSeconds, INTERVIEW_LIMIT_SECONDS, isVerifiableEvidenceQuote, restoreChronologicalOrder } from "@/lib/interview-policy.mjs";
 import { calculateEvidenceCoverage, deriveRecommendation, hasDuplicateSkills, isRatingEvidenceConsistent } from "@/lib/evaluation-policy.mjs";
 import { isRestorableInterviewReport } from "@/lib/report-recovery-policy.mjs";
@@ -259,6 +259,17 @@ export async function POST(request: NextRequest) {
       return privateJson({ error: "Candidate consent is required before the interview can start." }, { status: 400 });
     }
 
+    // Authenticate before reading candidate/session details. A completed report
+    // retry uses the rotated browser-session cookie, while start/answer require
+    // an active invitation so completed sessions cannot resume AI operations.
+    const candidateToken = getCandidateInvitationToken(request, body.sessionId);
+    const authorized = body.action === "report"
+      ? await hasValidCandidateSession(body.sessionId, candidateToken)
+      : await hasValidCandidateInvitation(body.sessionId, candidateToken);
+    if (!authorized) {
+      return privateJson({ error: "Invalid or expired candidate invitation." }, { status: 401 });
+    }
+
     let startedAt: Date | null = null;
     let invitationExpiresAt: Date | null = null;
     let startLockAt: Date | null = null;
@@ -271,8 +282,8 @@ export async function POST(request: NextRequest) {
         }
       });
       if (!session) return privateJson({ error: "Interview session not found." }, { status: 404 });
-      if (!session.invitationTokenHash || !(await hasValidCandidateInvitation(body.sessionId, getCandidateInvitationToken(request, body.sessionId)))) {
-        return privateJson({ error: "Invalid or expired candidate invitation." }, { status: 401 });
+      if (body.action === "report" && session.status === "invited") {
+        return privateJson({ error: "The interview has not been started." }, { status: 409 });
       }
       if (session.status === "completed" && body.action !== "report") {
         return privateJson({ error: "This interview has already been completed." }, { status: 409 });
