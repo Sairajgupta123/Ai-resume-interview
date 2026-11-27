@@ -5,9 +5,9 @@ import { test } from "node:test";
 
 function modelDefinitions(schema) {
   return schema
-    .replace(/generator\\s+client\\s*\\{[\\s\\S]*?\\}\\s*/, "")
-    .replace(/datasource\\s+db\\s*\\{[\\s\\S]*?\\}\\s*/, "")
-    .replace(/\\r\\n/g, "\\n")
+    .replace(/generator\s+client\s*\{[\s\S]*?\}\s*/, "")
+    .replace(/datasource\s+db\s*\{[\s\S]*?\}\s*/, "")
+    .replace(/\r\n/g, "\n")
     .trim();
 }
 
