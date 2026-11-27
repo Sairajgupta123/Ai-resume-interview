@@ -62,6 +62,7 @@ This checklist is for a staging deployment using the intended browser, xAI accou
 
 - [ ] Candidate ICE credentials are not issued before consent and interview start.
 - [ ] Candidate and employer can connect from separate networks using configured TURN credentials.
+- [ ] Set the candidate device clock several minutes ahead of the server and confirm the live signalling cursor still receives the employer's answer and ICE candidates.
 - [ ] Camera/microphone tracks can be muted and restored.
 - [ ] Reconnection after refresh uses the scoped candidate cookie.
 - [ ] Signalling rejects malformed, oversized or wrong-participant messages.
