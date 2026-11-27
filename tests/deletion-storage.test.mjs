@@ -110,6 +110,38 @@ test("S3 missing objects are treated as already deleted", async () => {
   }
 });
 
+test("S3 endpoint rejects embedded credentials, query strings and fragments", async () => {
+  const originalFetch = globalThis.fetch;
+  const base = {
+    NODE_ENV: "production",
+    S3_BUCKET: "private-recordings",
+    S3_REGION: "auto",
+    S3_ACCESS_KEY_ID: "test-access-key",
+    S3_SECRET_ACCESS_KEY: "test-secret-key"
+  };
+  try {
+    for (const endpoint of [
+      "https://user:password@storage.example.test",
+      "https://storage.example.test?redirect=https://attacker.test",
+      "https://storage.example.test#fragment"
+    ]) {
+      setEnv({ ...base, S3_ENDPOINT: endpoint });
+      await assert.rejects(
+        () => deleteStoredInterviewRecording("s3://recordings/123e4567-e89b-12d3-a456-426614174000.webm"),
+        { message: "STORAGE_INVALID_ENDPOINT" }
+      );
+    }
+    setEnv({ ...base, S3_ENDPOINT: "http://storage.example.test" });
+    await assert.rejects(
+      () => deleteStoredInterviewRecording("s3://recordings/123e4567-e89b-12d3-a456-426614174000.webm"),
+      { message: "STORAGE_INSECURE_ENDPOINT" }
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+    restoreEnv();
+  }
+});
+
 test("S3 configuration and remote failures never silently succeed", async () => {
   const originalFetch = globalThis.fetch;
   setEnv({
