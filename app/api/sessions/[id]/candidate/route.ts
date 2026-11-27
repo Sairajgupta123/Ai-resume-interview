@@ -45,10 +45,8 @@ async function candidateResponse(id: string, token: string | null, exchange = fa
     return NextResponse.json({ error: "This interview invitation has expired." }, { status: 401, headers: { "Cache-Control": "private, no-store" } });
   }
 
-  const sessionToken = exchange ? await exchangeCandidateInvitation(id, token) : token;
-  if (!sessionToken) {
-    return NextResponse.json({ error: "This interview invitation is invalid or expired. Contact the employer for a new link." }, { status: 401, headers: { "Cache-Control": "private, no-store" } });
-  }
+  // Validate every response component before consuming the one-time invitation.
+  // A corrupt saved report must not burn the candidate's only usable link.
   let completedReport: unknown = null;
   if (interview.status === "completed") {
     if (!interview.reportJson) {
@@ -60,6 +58,11 @@ async function candidateResponse(id: string, token: string | null, exchange = fa
     } catch {
       return NextResponse.json({ error: "The completed interview report could not be restored. Contact the hiring team." }, { status: 500, headers: { "Cache-Control": "private, no-store" } });
     }
+  }
+
+  const sessionToken = exchange ? await exchangeCandidateInvitation(id, token) : token;
+  if (!sessionToken) {
+    return NextResponse.json({ error: "This interview invitation is invalid or expired. Contact the employer for a new link." }, { status: 401, headers: { "Cache-Control": "private, no-store" } });
   }
 
   const { recordingPath, messages, reportJson: _reportJson, ...candidateInterview } = interview;
