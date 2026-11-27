@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { cacheRecordingChunk, clearCachedRecording, getCachedRecording, markCachedRecordingComplete } from "@/lib/recording-cache";
 import { GrokRealtimeClient } from "@/lib/grok-realtime-client";
+import { buildRealtimeInterviewInstructions } from "@/lib/realtime-interview-instructions.mjs";
 
 type ChatMessage = { role: "assistant" | "user"; content: string };
 type Report = {
@@ -707,21 +708,15 @@ export default function Home() {
     }
     transcriptPersistenceFailedRef.current = false;
     transcriptWriteRef.current = Promise.resolve();
-    const instructions = [
-      "You are MZOBS, a professional, fair and concise AI interviewer conducting a structured 15-minute job interview.",
-      "Ask one question at a time. Listen carefully and adapt follow-up questions to the candidate's actual answers. Do not repeat questions.",
-      "Use resume and job-description context to validate experience, projects, role skills and problem solving. Never invent candidate facts.",
-      "Evaluate only job-related answer content. Never infer competence, honesty, emotion, age, gender, disability, race, personality or identity from voice, accent or appearance.",
-      "Keep each spoken response natural and concise. In the final 90 seconds ask at most one essential clarification and then close politely.",
-      isReconnect
-        ? "This is a reconnect to an interview already in progress. Do not restart or repeat the introduction. Continue naturally from the recent conversation below and ask the next appropriate question."
-        : "The opening question has already been spoken. Continue from that point; do not repeat the opening.",
-      "Recent saved conversation (oldest to newest):\n" + history.slice(-12).map(message => message.role + ": " + message.content).join("\n").slice(-10000),
-      "Candidate: " + candidateName + ". Target role: " + role + ".",
-      "Candidate resume (private interview context):\n" + resume.slice(0, 14000),
-      "Job description:\n" + jobDescription.slice(0, 10000),
-      "Opening interviewer message already delivered: " + openingMessage
-    ].join("\n\n");
+    const instructions = buildRealtimeInterviewInstructions({
+      isReconnect,
+      history,
+      candidateName,
+      role,
+      resume,
+      jobDescription,
+      openingMessage
+    });
     let client: GrokRealtimeClient;
     client = new GrokRealtimeClient({
       sessionId: targetSessionId,
