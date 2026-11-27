@@ -59,6 +59,7 @@ This checklist is for a staging deployment using the intended browser, xAI accou
 - [ ] Load subsequent pages and confirm there are no duplicate or missing interview IDs, including records with identical creation timestamps.
 - [ ] Confirm newest-first ordering remains stable across page boundaries.
 - [ ] Confirm an invalid or oversized cursor is rejected with a client error and does not expose interview data.
+- [ ] Delete the last-row cursor record between page requests and confirm the next-page request returns a recoverable client error; refreshing the dashboard restarts pagination cleanly.
 - [ ] Confirm candidate search and CSV export clearly apply to currently loaded pages only.
 - [ ] Confirm analytics totals and six-week trends remain consistent with the underlying synthetic dataset.
 
