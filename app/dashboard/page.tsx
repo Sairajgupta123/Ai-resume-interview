@@ -55,6 +55,7 @@ export default function Dashboard() {
   // Ignore older dashboard refreshes when mutations or manual refreshes overlap.
   const dashboardLoadRef = useRef(0);
   const comparisonRequestRef = useRef(0);
+  const pageRequestRef = useRef(0);
 
   useEffect(() => {
     if (!authenticated || !selected || selected.mode !== "live" || selected.status === "completed") {
@@ -221,6 +222,8 @@ export default function Dashboard() {
 
   const load = async () => {
     const requestId = ++dashboardLoadRef.current;
+    pageRequestRef.current += 1;
+    setLoadingMore(false);
     const r = await fetch("/api/sessions", { cache: "no-store" });
     if (requestId !== dashboardLoadRef.current) return;
     if (r.status === 401) { setAuthenticated(false); return; }
@@ -413,7 +416,7 @@ export default function Dashboard() {
     }
   };
 
-  const logout = async () => { dashboardLoadRef.current += 1; detailRequestRef.current += 1; await fetch("/api/auth/logout", { method: "POST" }); setAuthenticated(false); setSelected(null); };
+  const logout = async () => { dashboardLoadRef.current += 1; pageRequestRef.current += 1; detailRequestRef.current += 1; await fetch("/api/auth/logout", { method: "POST" }); setAuthenticated(false); setSelected(null); };
   const filtered = items.filter(x => `${x.candidateName} ${x.role}`.toLowerCase().includes(query.toLowerCase()));
   const compared = items.filter(x => compareIds.includes(x.id));
   const toggleCompare = (id: string) => {
@@ -490,11 +493,14 @@ export default function Dashboard() {
   };
   const loadMore = async () => {
     if (!nextCursor || !hasMore || loadingMore) return;
+    const requestId = ++pageRequestRef.current;
+    const refreshId = dashboardLoadRef.current;
     setLoadingMore(true);
     setError("");
     try {
       const response = await fetch("/api/sessions?cursor=" + encodeURIComponent(nextCursor), { cache: "no-store" });
       const data: unknown = await response.json();
+      if (requestId !== pageRequestRef.current || refreshId !== dashboardLoadRef.current) return;
       if (!response.ok) {
         const message = data && typeof data === "object" && "error" in data && typeof data.error === "string"
           ? data.error
@@ -513,7 +519,7 @@ export default function Dashboard() {
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : "Could not load more interviews.");
     } finally {
-      setLoadingMore(false);
+      if (requestId === pageRequestRef.current) setLoadingMore(false);
     }
   };
 
