@@ -29,8 +29,14 @@ This checklist is for a staging deployment using the intended browser, xAI accou
 - [ ] Candidate can deny either permission and receives a recoverable explanation.
 - [ ] Candidate can complete a recorded interview and submit a report.
 - [ ] Refresh during recording restores recoverable chunks from the same browser profile.
+- [ ] Simulate a browser/tab interruption after several one-second chunks; recovery identifies the recording as partial and does not upload it as complete.
+- [ ] Verify missing chunk indexes and mixed MIME types are rejected rather than silently concatenated.
+- [ ] Verify a new recording starting at chunk zero removes stale trailing chunks from an earlier attempt.
+- [ ] Simulate IndexedDB quota/write failure; the UI warns that local backup failed and does not claim the recording is recoverable.
+- [ ] Abort an upload at the client timeout; local complete chunks remain available for a retry.
 - [ ] A failed upload can be retried without creating a second recording.
 - [ ] A report cannot be finalized while recording upload or recovery is incomplete.
+- [ ] Complete a report after a failed upload, then verify one late recovery is accepted only when no recording was previously committed; subsequent replacement attempts are rejected.
 - [ ] The recording is stored privately in the configured object bucket, not in a public URL or SQLite blob.
 - [ ] Employer can play, seek, pause and resume the recording; unauthorized candidate/session IDs cannot retrieve it.
 
@@ -40,8 +46,11 @@ This checklist is for a staging deployment using the intended browser, xAI accou
 - [ ] Browser network inspection confirms the permanent `XAI_API_KEY` is never sent to the client.
 - [ ] Microphone audio reaches xAI Realtime and interviewer audio plays through the browser.
 - [ ] Candidate interruption, mute/unmute, reconnect and network recovery behave correctly.
+- [ ] Drop the network while a transcript write is pending; reconnect retries the same message IDs before opening a new voice session.
+- [ ] Force a transcript write to fail permanently; voice input becomes unavailable, typing remains usable, and report generation is blocked until queued transcript entries are saved.
 - [ ] Finalized candidate and interviewer transcript turns are saved once, in chronological order.
 - [ ] Retrying a transcript message with the same client message ID is idempotent; changing its content is rejected.
+- [ ] Close an old Realtime socket after reconnect; callbacks from the replaced socket must not append duplicate transcript entries.
 - [ ] Candidate cannot append transcript messages after completion, expiry or the 15-minute limit.
 - [ ] Resume, job-description or transcript text containing prompt-injection instructions is treated as untrusted context.
 
