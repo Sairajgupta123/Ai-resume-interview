@@ -11,6 +11,7 @@ import { MAX_RECORDING_BYTES, inspectRecordingUpload, isSafeRecordingFilename } 
 import { commitRecordingReplacement } from "@/lib/recording-replacement.mjs";
 import { parseByteRange } from "@/lib/recording-range.mjs";
 import { deleteStoredInterviewRecording } from "@/lib/deletion-storage.mjs";
+import { enqueueRecordingCleanupTask } from "@/lib/recording-cleanup-queue.mjs";
 
 export const runtime = "nodejs";
 
@@ -229,14 +230,28 @@ export async function POST(request: NextRequest, context: Context) {
     const filename = randomUUID() + extension;
     const relativePath = await saveRecording(bytes, mimeType, filename);
     const replacement = await commitRecordingReplacement({
-      commit: () => db.interview.updateMany({
-        // Permit one late recovery after completion only when no recording was
-        // saved before the report closed the interview. The status/path predicate
-        // prevents concurrent retries from replacing an already committed file.
-        where: { id, status: interview.status, recordingPath: interview.recordingPath },
-        data: { recordingPath: relativePath }
+      commit: () => db.$transaction(async tx => {
+        // Commit the new recording reference and durable cleanup intent for the
+        // previous object together. A crash after this transaction cannot lose
+        // the old-object cleanup request.
+        const updated = await tx.interview.updateMany({
+          // Permit one late recovery after completion only when no recording was
+          // saved before the report closed the interview. The status/path predicate
+          // prevents concurrent retries from replacing an already committed file.
+          where: { id, status: interview.status, recordingPath: interview.recordingPath },
+          data: { recordingPath: relativePath }
+        });
+        if (updated.count === 1 && interview.recordingPath) {
+          await enqueueRecordingCleanupTask(tx, {
+            storedPath: interview.recordingPath,
+            reason: "recording_replaced"
+          });
+        }
+        return updated;
       }),
       cleanupNew: () => deleteRecording(relativePath),
+      cleanupNewPath: relativePath,
+      enqueueCleanup: (storedPath, reason) => enqueueRecordingCleanupTask(db, { storedPath, reason }),
       // If the DB request times out after committing, a cleanup must not remove
       // the object now referenced by the interview. If this read also fails,
       // preserve the object and let later storage reconciliation handle the orphan.
