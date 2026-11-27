@@ -94,7 +94,12 @@ export async function GET(request: NextRequest) {
     const interviews = hasMore ? rows.slice(0, 100) : rows;
     const nextCursor = hasMore ? interviews[interviews.length - 1]?.id ?? null : null;
     return NextResponse.json({ interviews, nextCursor, hasMore }, { headers: privateHeaders });
-  } catch {
+  } catch (failure) {
+    // A cursor can become stale if its row is deleted between page requests.
+    // Return a recoverable client error rather than exposing a Prisma failure.
+    if (cursorValue && failure && typeof failure === "object" && "code" in failure && failure.code === "P2025") {
+      return NextResponse.json({ error: "This interview page cursor is no longer available. Refresh the dashboard." }, { status: 400, headers: privateHeaders });
+    }
     return NextResponse.json({ error: "Could not load employer interviews." }, { status: 500, headers: privateHeaders });
   }
 }
