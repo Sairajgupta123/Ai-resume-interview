@@ -4,6 +4,7 @@ import {
   resampleFloat32ToPcm16
 } from "@/lib/grok-voice-audio.mjs";
 import { waitForRealtimeSession } from "@/lib/realtime-handshake.mjs";
+import { getFinalRealtimeTranscript } from "@/lib/grok-realtime-events.mjs";
 
 type TranscriptRole = "user" | "assistant";
 
@@ -241,18 +242,18 @@ export class GrokRealtimeClient {
       return;
     }
 
-    if (data.type === "conversation.item.input_audio_transcription.completed" && data.transcript?.trim()) {
-      this.callbacks.onTranscript("user", data.transcript.trim());
-      return;
-    }
-    if (data.type === "response.output_audio_transcript.done" && data.transcript?.trim()) {
-      const transcript = data.transcript.trim();
-      if (this.openingTranscriptPending && normalizeTranscript(transcript) === normalizeTranscript(this.initialMessage)) {
+    const finalTranscript = getFinalRealtimeTranscript(data);
+    if (finalTranscript) {
+      if (
+        finalTranscript.role === "assistant" &&
+        this.openingTranscriptPending &&
+        normalizeTranscript(finalTranscript.text) === normalizeTranscript(this.initialMessage)
+      ) {
         this.openingTranscriptPending = false;
         return;
       }
-      this.openingTranscriptPending = false;
-      this.callbacks.onTranscript("assistant", transcript);
+      if (finalTranscript.role === "assistant") this.openingTranscriptPending = false;
+      this.callbacks.onTranscript(finalTranscript.role, finalTranscript.text);
       return;
     }
     if (data.type === "input_audio_buffer.speech_started") {
