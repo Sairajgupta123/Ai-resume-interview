@@ -61,6 +61,10 @@ This checklist is for a staging deployment using the intended browser, xAI accou
 - [ ] Camera/microphone tracks can be muted and restored.
 - [ ] Reconnection after refresh uses the scoped candidate cookie.
 - [ ] Signalling rejects malformed, oversized or wrong-participant messages.
+- [ ] Employer can prepare ICE settings while an invited live interview is waiting, but candidate ICE settings are rejected until consent and interview start are persisted.
+- [ ] At exactly 15 minutes from the persisted start time, signalling POST rejects new SDP, ICE and hangup messages; polling returns no further signals.
+- [ ] At the 15-minute boundary, the ICE configuration endpoint rejects both candidate and employer requests; before the boundary, active live sessions remain usable.
+- [ ] Verify the candidate can still submit the final report after the signalling/ICE time limit is reached, and that the employer dashboard receives the completed report.
 
 ## Employer dashboard pagination and analytics
 
