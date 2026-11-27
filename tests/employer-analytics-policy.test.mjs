@@ -79,3 +79,32 @@ test("handles an empty dataset without division errors", () => {
   assert.deepEqual(result.roles, []);
   assert.deepEqual(result.decisions, { shortlist: 0, review: 0, reject: 0, pending: 0 });
 });
+
+import { buildEmployerAnalyticsFromAggregates, buildEmployerAnalyticsWeekWindows } from "../lib/employer-analytics-policy.mjs";
+
+test("aggregate database inputs produce the same analytics as row-based calculation", () => {
+  const windows = buildEmployerAnalyticsWeekWindows(now);
+  const weeklyCounts = windows.map(window => {
+    const matches = rows.filter(row => {
+      const createdAt = new Date(row.createdAt);
+      return createdAt >= window.start && (createdAt < window.end || (window === windows[5] && createdAt <= now));
+    });
+    return { total: matches.length, completed: matches.filter(row => row.status === "completed").length };
+  });
+  const statusCounts = {};
+  const decisionCounts = {};
+  const roleCounts = new Map();
+  for (const row of rows) {
+    statusCounts[row.status] = (statusCounts[row.status] || 0) + 1;
+    decisionCounts[row.employerDecision ?? "pending"] = (decisionCounts[row.employerDecision ?? "pending"] || 0) + 1;
+    roleCounts.set(row.role, (roleCounts.get(row.role) || 0) + 1);
+  }
+  const aggregateResult = buildEmployerAnalyticsFromAggregates({
+    statusCounts,
+    decisionCounts,
+    roleCounts: [...roleCounts].map(([role, count]) => ({ role, count })),
+    weeklyCounts,
+    completedReports: rows.filter(row => row.status === "completed" && row.reportJson).map(row => ({ reportJson: row.reportJson }))
+  }, now);
+  assert.deepEqual(aggregateResult, buildEmployerAnalytics(rows, now));
+});
