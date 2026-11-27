@@ -70,3 +70,16 @@ test("matches punctuation-bearing skill names without substring false positives"
   assert.equal(plan.questionCounts.find(item => item.skill === "C++").questions, 1);
   assert.equal(plan.questionCounts.find(item => item.skill === "Java").questions, 0);
 });
+
+test("counts common skill aliases toward the correct question cap", () => {
+  const history = [
+    { role: "assistant", content: "How have you used JS and TS in your projects?" },
+    { role: "user", content: "I use JS and TS daily." },
+    { role: "assistant", content: "Explain JavaScript closures and TypeScript types." },
+    { role: "user", content: "Closures capture scope; types improve safety." }
+  ];
+  const plan = buildInterviewFairnessPlan(["JavaScript", "TypeScript"], history, 300);
+  assert.equal(plan.questionCounts.find(item => item.skill === "JavaScript").questions, 2);
+  assert.equal(plan.questionCounts.find(item => item.skill === "TypeScript").questions, 2);
+  assert.deepEqual(plan.cappedSkills, ["JavaScript", "TypeScript"]);
+});
