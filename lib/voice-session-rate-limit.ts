@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { db } from "@/lib/db";
 import {
   getVoiceSessionLimit,
+  getVoiceSessionAttemptDecision,
   isVoiceSessionWindowExpired,
   VOICE_SESSION_BLOCK_MS,
   VOICE_SESSION_MAX_ATTEMPTS,
@@ -43,13 +44,14 @@ export async function recordVoiceSessionAttempt(key: string) {
     create: { key, attempts: 1, windowStartedAt: now },
     update: { attempts: { increment: 1 } }
   });
-  if (updated.attempts >= VOICE_SESSION_MAX_ATTEMPTS && !updated.blockedUntil) {
+  const decision = getVoiceSessionAttemptDecision(updated.attempts);
+  if (decision.shouldBlock && !updated.blockedUntil) {
     await db.loginAttempt.update({
       where: { key },
       data: { blockedUntil: new Date(now.getTime() + VOICE_SESSION_BLOCK_MS) }
     });
   }
-  if (updated.attempts > VOICE_SESSION_MAX_ATTEMPTS) {
+  if (decision.limited) {
     return { limited: true, retryAfterSeconds: Math.ceil(VOICE_SESSION_BLOCK_MS / 1000) };
   }
   return { limited: false, retryAfterSeconds: 0 };
