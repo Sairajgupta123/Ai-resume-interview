@@ -106,3 +106,52 @@ test("cleanup error reporter throwing cannot hide the original database error", 
     onCleanupError: () => { throw new Error("logger unavailable"); }
   }), /database error/);
 });
+
+test("failed conflict cleanup is persisted for retry with the exact uploaded path", async () => {
+  const calls = [];
+  const result = await commitRecordingReplacement({
+    commit: async () => ({ count: 0 }),
+    cleanupNew: async () => { throw new Error("storage unavailable"); },
+    cleanupNewPath: "s3://recordings/123e4567-e89b-12d3-a456-426614174000.webm",
+    enqueueCleanup: async (storedPath, reason) => calls.push([storedPath, reason]),
+    cleanupPrevious: async () => {},
+    onCleanupError: () => {}
+  });
+  assert.deepEqual(result, { ok: false, conflict: true });
+  assert.deepEqual(calls, [[
+    "s3://recordings/123e4567-e89b-12d3-a456-426614174000.webm",
+    "new-recording-after-conflict"
+  ]]);
+});
+
+test("ambiguous commit reference-check failure enqueues a task that will recheck before deletion", async () => {
+  const calls = [];
+  await assert.rejects(() => commitRecordingReplacement({
+    commit: async () => { throw new Error("database response lost"); },
+    isNewRecordingReferenced: async () => { throw new Error("database read unavailable"); },
+    cleanupNew: async () => assert.fail("must preserve object until reference can be checked"),
+    cleanupNewPath: "data/recordings/123e4567-e89b-12d3-a456-426614174000.webm",
+    enqueueCleanup: async (storedPath, reason) => calls.push([storedPath, reason]),
+    cleanupPrevious: async () => {}
+  }), /database response lost/);
+  assert.deepEqual(calls, [[
+    "data/recordings/123e4567-e89b-12d3-a456-426614174000.webm",
+    "new-recording-after-commit-reference-check-failed"
+  ]]);
+});
+
+test("database commit failure queues cleanup when confirmed-unreferenced object deletion fails", async () => {
+  const calls = [];
+  await assert.rejects(() => commitRecordingReplacement({
+    commit: async () => { throw new Error("database error"); },
+    isNewRecordingReferenced: async () => false,
+    cleanupNew: async () => { throw new Error("storage unavailable"); },
+    cleanupNewPath: "data/recordings/123e4567-e89b-12d3-a456-426614174000.webm",
+    enqueueCleanup: async (storedPath, reason) => calls.push([storedPath, reason]),
+    cleanupPrevious: async () => {}
+  }), /database error/);
+  assert.deepEqual(calls, [[
+    "data/recordings/123e4567-e89b-12d3-a456-426614174000.webm",
+    "new-recording-after-commit-error"
+  ]]);
+});
