@@ -71,7 +71,13 @@ export async function POST(request: NextRequest, context: Context) {
 
     // Count every provider credential request, including provider failures, to
     // prevent a valid candidate session from being used to mint credentials in a loop.
-    await recordVoiceSessionAttempt(rateLimit.key);
+    const attemptLimit = await recordVoiceSessionAttempt(rateLimit.key);
+    if (attemptLimit.limited) {
+      return privateJson(
+        { error: "Too many AI voice connection attempts. Please wait before reconnecting." },
+        { status: 429, headers: { "Retry-After": String(attemptLimit.retryAfterSeconds) } }
+      );
+    }
 
     const apiKey = process.env.XAI_API_KEY;
     if (!apiKey) {
