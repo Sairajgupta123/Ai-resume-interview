@@ -43,6 +43,8 @@ export default function Dashboard() {
   const [liveCallAttempt, setLiveCallAttempt] = useState(0);
   const employerPeerRef = useRef<RTCPeerConnection | null>(null);
   const employerStopCallRef = useRef<(() => void) | null>(null);
+  // Prevent slower detail requests from replacing a newer candidate selection.
+  const detailRequestRef = useRef(0);
 
   useEffect(() => {
     if (!authenticated || !selected || selected.mode !== "live" || selected.status === "completed") {
@@ -258,6 +260,8 @@ export default function Dashboard() {
   };
 
   const openDetail = async (id: string) => {
+    const requestId = ++detailRequestRef.current;
+    setSelected(null);
     setError("");
     try {
       const response = await fetch(`/api/sessions/${encodeURIComponent(id)}`, { cache: "no-store" });
@@ -274,12 +278,20 @@ export default function Dashboard() {
           !("decisionHistory" in data.interview) || !Array.isArray(data.interview.decisionHistory)) {
         throw new Error("The interview response was incomplete. Refresh the dashboard and try again.");
       }
+      if (requestId !== detailRequestRef.current) return;
       const interview = data.interview as Detail;
       setSelected(interview);
       setDecisionNotes(typeof interview.employerNotes === "string" ? interview.employerNotes : "");
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : "Could not load interview.");
+      if (requestId === detailRequestRef.current) {
+        setError(failure instanceof Error ? failure.message : "Could not load interview.");
+      }
     }
+  };
+
+  const closeDetail = () => {
+    detailRequestRef.current += 1;
+    setSelected(null);
   };
 
   const saveDecision = async (decision: "shortlist" | "review" | "reject") => {
@@ -321,7 +333,7 @@ export default function Dashboard() {
     }
   };
 
-  const logout = async () => { await fetch("/api/auth/logout", { method: "POST" }); setAuthenticated(false); setSelected(null); };
+  const logout = async () => { detailRequestRef.current += 1; await fetch("/api/auth/logout", { method: "POST" }); setAuthenticated(false); setSelected(null); };
   const filtered = items.filter(x => `${x.candidateName} ${x.role}`.toLowerCase().includes(query.toLowerCase()));
   const compared = items.filter(x => compareIds.includes(x.id));
   const toggleCompare = (id: string) => {
@@ -537,7 +549,7 @@ export default function Dashboard() {
       {!filtered.length && <tr><td colSpan={7} className="empty-cell">No interviews found yet. Create your first interview from the New interview button.</td></tr>}
       </tbody></table></div>
     </section>
-    {selected && <div className="detail-backdrop" onClick={()=>setSelected(null)}><section className="detail-drawer" onClick={e=>e.stopPropagation()}><button className="drawer-close" onClick={()=>setSelected(null)}>×</button><div className="eyebrow">CANDIDATE REVIEW</div><h2>{selected.candidateName}</h2><p className="drawer-sub">{selected.role} · {selected.mode} interview</p>{selected.status === "completed" && selected.reportJson ? <a className="outline-btn" href={`/api/sessions/${selected.id}/export`}>Download full interview report CSV ↓</a> : <p className="drawer-sub">CSV export is available after the interview report is completed.</p>}
+    {selected && <div className="detail-backdrop" onClick={closeDetail}><section className="detail-drawer" onClick={e=>e.stopPropagation()}><button className="drawer-close" onClick={closeDetail}>×</button><div className="eyebrow">CANDIDATE REVIEW</div><h2>{selected.candidateName}</h2><p className="drawer-sub">{selected.role} · {selected.mode} interview</p>{selected.status === "completed" && selected.reportJson ? <a className="outline-btn" href={`/api/sessions/${selected.id}/export`}>Download full interview report CSV ↓</a> : <p className="drawer-sub">CSV export is available after the interview report is completed.</p>}
       {selected.reportJson ? <ReportView json={selected.reportJson}/> : <p className="drawer-sub">No completed report is available for this interview.</p>}
       <div className="employer-decision"><div className="eyebrow">EMPLOYER DECISION</div><p>AI recommendation is advisory. Record your independent hiring decision.</p>{selected.status === "completed" ? <><textarea rows={3} maxLength={3000} value={decisionNotes} onChange={e=>setDecisionNotes(e.target.value)} placeholder="Optional notes for the hiring team…" /><div className="decision-actions"><button disabled={decisionBusy} onClick={()=>saveDecision("shortlist")}>Shortlist</button><button disabled={decisionBusy} onClick={()=>saveDecision("review")}>Needs review</button><button disabled={decisionBusy} onClick={()=>saveDecision("reject")}>Reject</button></div></> : <p className="drawer-sub">Hiring decisions become available after the interview is completed.</p>}{selected.employerDecision && <small>Current decision: <b>{selected.employerDecision}</b>{selected.decisionAt ? ` · ${date(selected.decisionAt)}` : ""}</small>}{selected.decisionHistory?.length > 0 && <div className="decision-history"><b>Decision history</b>{selected.decisionHistory.map(item=><div key={item.id}><span>{item.decision}</span><small>{date(item.createdAt)}</small>{item.notes && <p>{item.notes}</p>}</div>)}</div>}</div>
       {selected.status === "completed" && <div className="privacy-deletion-request">
