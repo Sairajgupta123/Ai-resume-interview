@@ -87,7 +87,7 @@ test("SQLite importer preserves all seven models and their relationships in Post
     assert.equal(copiedInterview.resumeText, "Unicode résumé fixture");
     assert.equal(copiedInterview.messages[0].content, "A transcript answer with Unicode ✓");
     assert.equal(copiedInterview.decisionHistory[0].notes, "Keep this decision note");
-    assert.equal(copiedInterview.signals[0].payload, "{\\"candidate\\":true}");
+    assert.equal(copiedInterview.signals[0].payload, '{"candidate":true}');
     assert.equal(await postgres.loginAttempt.count(), 1);
     const copiedDeletion = await postgres.privacyDeletionRequest.findUnique({
       where: { id: deletionRequest.id },
