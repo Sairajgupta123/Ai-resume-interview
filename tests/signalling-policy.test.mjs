@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { validateSignalPayload } from "../lib/signalling-policy.mjs";
 
 test("accepts valid offer and answer descriptions from their assigned participants", () => {
-  assert.deepEqual(validateSignalPayload("offer", JSON.stringify({ type: "offer", sdp: "v=0\\r\\n" }), "candidate"), { ok: true });
-  assert.deepEqual(validateSignalPayload("answer", JSON.stringify({ type: "answer", sdp: "v=0\\r\\n" }), "employer"), { ok: true });
+  assert.deepEqual(validateSignalPayload("offer", JSON.stringify({ type: "offer", sdp: "v=0\r\n" }), "candidate"), { ok: true });
+  assert.deepEqual(validateSignalPayload("answer", JSON.stringify({ type: "answer", sdp: "v=0\r\n" }), "employer"), { ok: true });
 });
 
 test("rejects session descriptions sent by the wrong participant", () => {
@@ -75,8 +75,8 @@ test("cursor comparison includes signals with newer timestamps", async () => {
 
 test("matches trickled ICE candidates to the active SDP ICE generation", async () => {
   const { isIceCandidateForDescription } = await import("../lib/signalling-policy.mjs");
-  const oldDescription = { type: "offer", sdp: "v=0\\r\\na=ice-ufrag:old-generation\\r\\n" };
-  const newDescription = { type: "offer", sdp: "v=0\\r\\na=ice-ufrag:new-generation\\r\\n" };
+  const oldDescription = { type: "offer", sdp: "v=0\r\na=ice-ufrag:old-generation\r\n" };
+  const newDescription = { type: "offer", sdp: "v=0\r\na=ice-ufrag:new-generation\r\n" };
   const restartCandidate = { candidate: "candidate:1", usernameFragment: "new-generation" };
   assert.equal(isIceCandidateForDescription(restartCandidate, oldDescription), false);
   assert.equal(isIceCandidateForDescription(restartCandidate, newDescription), true);
@@ -85,5 +85,5 @@ test("matches trickled ICE candidates to the active SDP ICE generation", async (
 
 test("accepts legacy ICE candidates without username fragments", async () => {
   const { isIceCandidateForDescription } = await import("../lib/signalling-policy.mjs");
-  assert.equal(isIceCandidateForDescription({ candidate: "candidate:1" }, { sdp: "v=0\\r\\na=ice-ufrag:current\\r\\n" }), true);
+  assert.equal(isIceCandidateForDescription({ candidate: "candidate:1" }, { sdp: "v=0\r\na=ice-ufrag:current\r\n" }), true);
 });
