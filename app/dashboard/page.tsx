@@ -464,12 +464,14 @@ export default function Dashboard() {
     } finally { setDeletionActionBusy(""); }
   };
   const createDeletionRequest = async () => {
-    if (!selected) return;
+    if (!selected || deletionBusy) return;
+    const targetInterviewId = selected.id;
+    const detailRequestId = detailRequestRef.current;
     setDeletionBusy(true);
     setDeletionMessage("");
     setDeletionError("");
     try {
-      const response = await fetch("/api/employer/privacy/deletion-requests/" + encodeURIComponent(selected.id), {
+      const response = await fetch("/api/employer/privacy/deletion-requests/" + encodeURIComponent(targetInterviewId), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -481,12 +483,16 @@ export default function Dashboard() {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Could not create deletion request.");
-      setDeletionMessage("Request recorded. Candidate verification and separate approval are still required. No data has been deleted.");
-      setDeletionReason("");
-      setDeletionConfirmation("");
+      if (detailRequestRef.current === detailRequestId) {
+        setDeletionMessage("Request recorded. Candidate verification and separate approval are still required. No data has been deleted.");
+        setDeletionReason("");
+        setDeletionConfirmation("");
+      }
       await load();
     } catch (failure) {
-      setDeletionError(failure instanceof Error ? failure.message : "Could not create deletion request.");
+      if (detailRequestRef.current === detailRequestId) {
+        setDeletionError(failure instanceof Error ? failure.message : "Could not create deletion request.");
+      }
     } finally {
       setDeletionBusy(false);
     }
