@@ -98,6 +98,8 @@ This checklist is for a staging deployment using the intended browser, xAI accou
 - [ ] Simulate an AI report response being lost after the database commit; refresh the candidate page and verify the same saved report is restored without generating a second report.
 - [ ] Simulate a report provider failure; verify the report lock is released and the candidate can safely retry without losing the transcript.
 - [ ] Report evidence quotes match candidate answers verbatim.
+- [ ] Give a candidate with a strong resume but weak or unsupported interview answers a score that reflects the answers, not the resume; verify the overall score is directionally consistent with the skill ratings.
+- [ ] Confirm evidence coverage is interpreted as assessment support, not as proof of candidate competence.
 - [ ] Missing evidence is not represented as a positive skill rating.
 - [ ] Report generation can recover the same committed report after a lost response or refresh.
 - [ ] Employer can review transcript, report and private recording.
