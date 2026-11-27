@@ -42,7 +42,7 @@ test("deletes an unreferenced object and finalizes only the owned lease", async 
   assert.equal(db.updates[1].where.leaseToken, db.updates[0].data.leaseToken);
 });
 
-test("does not delete an object that is still referenced by an interview", async () => {
+test("defers a referenced object without completing its unique cleanup task", async () => {
   const db = mockDb({ referenced: { id: "interview-1" } });
   let deleteCalls = 0;
   const result = await processRecordingCleanupBatch({
@@ -51,7 +51,12 @@ test("does not delete an object that is still referenced by an interview", async
     now: new Date("2026-11-27T10:00:00.000Z")
   });
   assert.equal(deleteCalls, 0);
-  assert.equal(result.completed, 1);
+  assert.equal(result.completed, 0);
+  assert.equal(result.retryScheduled, 1);
+  assert.equal(db.updates[1].data.status, "pending");
+  assert.equal(db.updates[1].data.attempts, task.attempts);
+  assert.equal(db.updates[1].data.lastErrorCode, "RECORDING_STILL_REFERENCED");
+  assert.equal(db.updates[1].data.nextAttemptAt.toISOString(), "2026-11-27T10:05:00.000Z");
 });
 
 test("schedules retry with a bounded error code when storage deletion fails", async () => {
