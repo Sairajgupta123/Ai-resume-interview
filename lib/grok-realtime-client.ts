@@ -3,8 +3,7 @@ import {
   pcm16ToBase64,
   resampleFloat32ToPcm16
 } from "@/lib/grok-voice-audio.mjs";
-import { waitForRealtimeSession } from "@/lib/realtime-handshake.mjs";
-import { getFinalRealtimeTranscript } from "@/lib/grok-realtime-events.mjs";
+import { getFinalRealtimeTranscript, waitForRealtimeSession } from "@/lib/realtime-handshake.mjs";
 
 type TranscriptRole = "user" | "assistant";
 
