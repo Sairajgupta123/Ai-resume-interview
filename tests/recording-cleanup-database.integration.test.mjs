@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
 import { enqueueRecordingCleanupTask } from "../lib/recording-cleanup-queue.mjs";
+import { processRecordingCleanupBatch } from "../lib/recording-cleanup-worker.mjs";
 
 test("recording cleanup tasks persist, deduplicate by object path and use atomic leases", async () => {
   const tempDir = await mkdtemp(join(tmpdir(), "ai-interview-recording-cleanup-"));
@@ -53,7 +54,42 @@ test("recording cleanup tasks persist, deduplicate by object path and use atomic
     const claimed = await prisma.recordingCleanupTask.findUnique({ where: { id: task.id } });
     assert.equal(claimed.status, "in_progress");
     assert.equal(claimed.attempts, 1);
+
     assert.ok(["worker-one", "worker-two"].includes(claimed.leaseToken));
+
+    // Exercise the actual worker against SQLite: an unreferenced object is
+    // deleted, while an object still referenced by an interview is preserved.
+    await prisma.recordingCleanupTask.update({
+      where: { id: task.id },
+      data: { status: "pending", leaseStartedAt: null, leaseToken: null, nextAttemptAt: now }
+    });
+    const referencedPath = "data/recordings/123e4567-e89b-12d3-a456-426614174000.webm";
+    await prisma.interview.create({
+      data: {
+        candidateName: "Synthetic Candidate",
+        role: "QA Engineer",
+        resumeText: "Synthetic resume",
+        jobDescription: "Synthetic job description",
+        recordingPath: referencedPath
+      }
+    });
+    await enqueueRecordingCleanupTask(prisma, {
+      storedPath: referencedPath,
+      reason: "reference_guard_test",
+      now
+    });
+
+    const deletedPaths = [];
+    const processed = await processRecordingCleanupBatch({
+      db: prisma,
+      deleteRecording: async storedPath => { deletedPaths.push(storedPath); },
+      now
+    });
+    assert.equal(processed.inspected, 2);
+    assert.equal(processed.completed, 2);
+    assert.deepEqual(deletedPaths, [storedPath]);
+    assert.equal((await prisma.recordingCleanupTask.findUnique({ where: { storedPath } })).status, "completed");
+    assert.equal((await prisma.recordingCleanupTask.findUnique({ where: { storedPath: referencedPath } })).status, "completed");
   } finally {
     if (prisma) await prisma.$disconnect();
     await rm(tempDir, { recursive: true, force: true });
