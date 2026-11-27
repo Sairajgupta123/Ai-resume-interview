@@ -19,7 +19,7 @@ export async function GET(_request: Request, context: Context) {
         recommendation: true, employerDecision: true, employerNotes: true,
         reportJson: true,
         messages: {
-          orderBy: { createdAt: "asc" },
+          orderBy: [{ createdAt: "asc" }, { id: "asc" }],
           take: 200,
           select: { role: true, content: true, createdAt: true }
         },
