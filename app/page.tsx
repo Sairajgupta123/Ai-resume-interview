@@ -644,7 +644,7 @@ export default function Home() {
   };
 
 
-  const startGrokVoice = async (targetSessionId: string, openingMessage: string) => {
+  const startGrokVoice = async (targetSessionId: string, openingMessage: string, resume = false) => {
     const mediaStream = streamRef.current;
     if (!mediaStream || !targetSessionId) return;
 
@@ -698,7 +698,10 @@ export default function Home() {
       "Use resume and job-description context to validate experience, projects, role skills and problem solving. Never invent candidate facts.",
       "Evaluate only job-related answer content. Never infer competence, honesty, emotion, age, gender, disability, race, personality or identity from voice, accent or appearance.",
       "Keep each spoken response natural and concise. In the final 90 seconds ask at most one essential clarification and then close politely.",
-      "The opening question has already been spoken. Continue from that point; do not repeat the opening.",
+      resume
+        ? "This is a reconnect to an interview already in progress. Do not restart or repeat the introduction. Continue naturally from the recent conversation below and ask the next appropriate question."
+        : "The opening question has already been spoken. Continue from that point; do not repeat the opening.",
+      "Recent saved conversation (oldest to newest):\n" + history.slice(-12).map(message => message.role + ": " + message.content).join("\n").slice(-10000),
       "Candidate: " + candidateName + ". Target role: " + role + ".",
       "Candidate resume (private interview context):\n" + resume.slice(0, 14000),
       "Job description:\n" + jobDescription.slice(0, 10000),
@@ -708,7 +711,7 @@ export default function Home() {
       sessionId: targetSessionId,
       stream: mediaStream,
       instructions,
-      initialMessage: openingMessage,
+      initialMessage: resume ? "" : openingMessage,
       callbacks: {
         onStatus: status => setVoiceStatus(status === "closed" ? "off" : status),
         onMicrophoneState: state => {
@@ -774,6 +777,19 @@ export default function Home() {
       setVoiceStatus("unavailable");
       setError(error instanceof Error ? error.message : "Could not start Grok voice.");
     }
+  };
+
+  const reconnectLiveVoice = async () => {
+    if (!sessionId || mode !== "live" || voiceStatus === "connecting" || voiceStatus === "connected") return;
+    setError("");
+    if (!streamRef.current) await enableCamera(sessionId);
+    const mediaStream = streamRef.current;
+    if (!mediaStream) {
+      setError("Camera and microphone access is required to reconnect live voice. You can continue by typing.");
+      return;
+    }
+    const latestAssistantMessage = [...history].reverse().find(message => message.role === "assistant")?.content || "";
+    await startGrokVoice(sessionId, latestAssistantMessage, true);
   };
 
   const enableCamera = async (targetSessionId = sessionId) => {
@@ -896,7 +912,7 @@ export default function Home() {
           <div className="session-footer"><span>✳ AI-generated questions · Job-related evaluation only</span><button onClick={() => finishInterview() } disabled={busy}>End interview & generate report</button></div>
         </div>
         <aside className="side-panel">
-          <div className="side-card"><div className="side-card-head"><b>Candidate camera</b><span className={cameraOn ? "live-tag" : "muted-tag"}>{cameraOn ? "CAMERA ON" : "NOT CONNECTED"}</span></div><div className="video-wrap">{cameraOn ? <video ref={videoRef} autoPlay muted playsInline /> : <div className="camera-placeholder">◉<small>Camera preview</small></div>}</div>{mode === "live" && <div className="video-wrap remote-video-wrap"><video ref={remoteVideoRef} autoPlay playsInline /><small>Employer live video · connects when employer joins</small></div>}<button className="outline-btn" onClick={() => void enableCamera()} disabled={voiceStatus === "connected" || voiceStatus === "connecting"}>{cameraOn ? "Reconnect camera" : "Enable camera & mic"}</button>{recoverableRecording && !recordingSaved && <div className="privacy-note"><b>Unfinished recording found on this device.</b><p>Your saved video segments can be uploaded to this interview.</p><button className="outline-btn" onClick={() => void recoverSavedRecording()} disabled={uploadingRecording}>Recover saved recording</button></div>}<button className={recording ? "record-btn recording" : "record-btn"} onClick={toggleRecording} disabled={uploadingRecording || recordingSaved || recoverableRecording}>{recording ? "■ Stop & save recording" : recordingSaved ? "✓ Recording saved" : "● Start video recording"}</button>{uploadingRecording && <p className="privacy-note">Saving recording to the interview server…</p>}{recordingSaved && <p className="privacy-note">✓ Recording saved for employer review.</p>}</div>
+          <div className="side-card"><div className="side-card-head"><b>Candidate camera</b><span className={cameraOn ? "live-tag" : "muted-tag"}>{cameraOn ? "CAMERA ON" : "NOT CONNECTED"}</span></div><div className="video-wrap">{cameraOn ? <video ref={videoRef} autoPlay muted playsInline /> : <div className="camera-placeholder">◉<small>Camera preview</small></div>}</div>{mode === "live" && <div className="video-wrap remote-video-wrap"><video ref={remoteVideoRef} autoPlay playsInline /><small>Employer live video · connects when employer joins</small></div>}{mode === "live" && <button className="outline-btn" onClick={() => void reconnectLiveVoice()} disabled={voiceStatus === "connected" || voiceStatus === "connecting"}>{voiceStatus === "connecting" ? "Reconnecting live voice…" : "Reconnect live voice"}</button>}<button className="outline-btn" onClick={() => void enableCamera()} disabled={voiceStatus === "connected" || voiceStatus === "connecting"}>{cameraOn ? "Reconnect camera" : "Enable camera & mic"}</button>{recoverableRecording && !recordingSaved && <div className="privacy-note"><b>Unfinished recording found on this device.</b><p>Your saved video segments can be uploaded to this interview.</p><button className="outline-btn" onClick={() => void recoverSavedRecording()} disabled={uploadingRecording}>Recover saved recording</button></div>}<button className={recording ? "record-btn recording" : "record-btn"} onClick={toggleRecording} disabled={uploadingRecording || recordingSaved || recoverableRecording}>{recording ? "■ Stop & save recording" : recordingSaved ? "✓ Recording saved" : "● Start video recording"}</button>{uploadingRecording && <p className="privacy-note">Saving recording to the interview server…</p>}{recordingSaved && <p className="privacy-note">✓ Recording saved for employer review.</p>}</div>
           <div className="side-card"><b>Interview structure</b><div className="timeline"><div className="timeline-item done"><i />Introduction & background<small>Getting to know the candidate</small></div><div className="timeline-item current"><i />Resume & project deep dive<small>Validating experience and ownership</small></div><div className="timeline-item"><i />Technical & problem solving<small>Role-specific knowledge</small></div><div className="timeline-item"><i />Wrap-up<small>Candidate questions and closing</small></div></div></div>
           <div className="fairness-note"><b>Fair evaluation</b><p>Assessment is based on answer content and job-related evidence—not facial appearance, accent or voice characteristics.</p></div>
         </aside>
