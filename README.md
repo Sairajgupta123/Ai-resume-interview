@@ -81,6 +81,10 @@ Set `NEXT_PUBLIC_APP_URL` to the application's canonical public HTTPS origin (fo
 
 The live voice credential endpoint keys its abuse limit using the client IP plus interview ID. In production, the trusted ingress proxy or hosting platform must **overwrite** the `X-Real-IP` header (or provide a trusted `X-Forwarded-For` chain) from the actual TCP peer. It must not pass through client-supplied IP headers unchanged. The application does not independently know the original peer address behind a proxy, so an incorrectly configured ingress can let callers rotate spoofed IP values and weaken per-IP throttling. Verify this at the deployed edge before enabling public live interviews; do not treat a browser-supplied forwarding header as trusted identity.
 
+## xAI Realtime integration notes
+
+The browser token flow, WebSocket event order, audio configuration and manual staging checks are documented in [the xAI Realtime integration notes](docs/xai-realtime-integration.md).
+
 ## Recording cleanup retry worker
 
 Recording replacement now stores cleanup intent for the previous object in the same SQLite transaction that changes the interview's recording reference. Failed cleanup of a losing or ambiguous upload is also queued when the database is reachable. The worker rechecks that no interview references an object before deleting it, uses a two-minute lease, retries with exponential backoff (30 seconds up to 24 hours), and stops automatically after 12 attempts for manual investigation.
