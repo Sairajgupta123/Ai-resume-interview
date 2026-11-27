@@ -60,3 +60,41 @@ test("rejects a close after session.created but before the open event", async ()
   socket.emit("close");
   await assert.rejects(ready, /closed during initialization/);
 });
+
+import { getFinalRealtimeTranscript } from "../lib/realtime-handshake.mjs";
+
+test("extracts the completed candidate transcription event", () => {
+  assert.deepEqual(
+    getFinalRealtimeTranscript({
+      type: "conversation.item.input_audio_transcription.completed",
+      transcript: "  I built a REST API.  "
+    }),
+    { role: "user", text: "I built a REST API." }
+  );
+});
+
+test("extracts the completed Grok audio transcript event", () => {
+  assert.deepEqual(
+    getFinalRealtimeTranscript({
+      type: "response.output_audio_transcript.done",
+      transcript: "  Tell me about the project. "
+    }),
+    { role: "assistant", text: "Tell me about the project." }
+  );
+});
+
+test("does not persist xAI cumulative interim transcription updates", () => {
+  assert.equal(
+    getFinalRealtimeTranscript({
+      type: "conversation.item.input_audio_transcription.updated",
+      transcript: "I built a REST API"
+    }),
+    null
+  );
+});
+
+test("ignores empty and unrelated transcript events", () => {
+  assert.equal(getFinalRealtimeTranscript({ type: "response.done" }), null);
+  assert.equal(getFinalRealtimeTranscript({ type: "conversation.item.input_audio_transcription.completed", transcript: "  " }), null);
+  assert.equal(getFinalRealtimeTranscript(null), null);
+});
