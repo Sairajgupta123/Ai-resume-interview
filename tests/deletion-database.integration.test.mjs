@@ -11,7 +11,7 @@ import { finalizeDeletionExecution, markDeletionExecutionFailed } from "../lib/d
 
 test("privacy deletion transaction removes interview data and retains an anonymized receipt", async () => {
   const baseDatabaseUrl = process.env.DATABASE_URL || "";
-  assert.match(baseDatabaseUrl, /^postgres(?:ql)?:\\/\\//i, "PostgreSQL DATABASE_URL is required for database integration tests");
+  assert.ok(/^postgres(?:ql)?:\/\//i.test(baseDatabaseUrl), "PostgreSQL DATABASE_URL is required for database integration tests");
   const schemaName = `deletion_test_${randomUUID().replaceAll("-", "")}`;
   const isolatedUrl = new URL(baseDatabaseUrl);
   isolatedUrl.searchParams.set("schema", schemaName);
