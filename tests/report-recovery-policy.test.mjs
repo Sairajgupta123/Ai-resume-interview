@@ -46,6 +46,21 @@ test("rejects reports whose recommendation is inconsistent with score and eviden
   assert.equal(isRestorableInterviewReport({ ...validReport(), overallScore: 59 }), false);
 });
 
+test("does not let question feedback mask missing assessed-skill evidence", () => {
+  const report = {
+    ...validReport(),
+    overallScore: 95,
+    recommendation: "Needs review",
+    skills: [{ skill: "System Design", rating: "Insufficient evidence", evidence: "Insufficient evidence" }],
+    questionFeedback: [
+      { question: "What is an API?", assessment: "Clear answer.", evidence: "I built a REST API for the project." },
+      { question: "How did you test it?", assessment: "Detailed answer.", evidence: "I wrote integration tests for the service." }
+    ]
+  };
+  assert.equal(isRestorableInterviewReport(report), true);
+  assert.equal(isRestorableInterviewReport({ ...report, recommendation: "Strong match" }), false);
+});
+
 test("rejects weak evidence paired with a positive skill rating", () => {
   assert.equal(isRestorableInterviewReport({
     ...validReport(),
