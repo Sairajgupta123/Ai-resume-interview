@@ -39,6 +39,9 @@ This checklist is for a staging deployment using the intended browser, xAI accou
 - [ ] Complete a report after a failed upload, then verify one late recovery is accepted only when no recording was previously committed; subsequent replacement attempts are rejected.
 - [ ] The recording is stored privately in the configured object bucket, not in a public URL or SQLite blob.
 - [ ] Employer can play, seek, pause and resume the recording; unauthorized candidate/session IDs cannot retrieve it.
+- [ ] Verify an authenticated HEAD request returns recording metadata without a response body, and an unauthenticated HEAD request is rejected.
+- [ ] Seek to multiple positions and confirm the recording endpoint returns valid HTTP 206 byte ranges with matching Content-Range and Content-Length; malformed and unsatisfiable ranges return HTTP 416.
+- [ ] Run two recording uploads concurrently against the same interview; exactly one database reference is committed, the losing upload returns HTTP 409, and its newly uploaded object is cleaned up without deleting the winning recording.
 
 ## Live AI interview
 
