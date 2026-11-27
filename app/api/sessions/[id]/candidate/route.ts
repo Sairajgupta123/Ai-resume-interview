@@ -35,7 +35,7 @@ async function candidateResponse(id: string, token: string | null, exchange = fa
         // Keep the newest turns available for candidate refresh recovery.
         orderBy: [{ createdAt: "desc" }, { id: "desc" }],
         take: 100,
-        select: { role: true, content: true }
+        select: { role: true, content: true, isTerminal: true }
       }
     }
   });
