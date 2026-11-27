@@ -41,7 +41,7 @@ test("SQLite importer preserves all seven models and their relationships in Post
         invitationTokenHash: "fixture-invitation-hash",
         messages: { create: [{ role: "user", content: "A transcript answer with Unicode ✓" }] },
         decisionHistory: { create: [{ decision: "review", notes: "Keep this decision note" }] },
-        signals: { create: [{ sender: "candidate", kind: "ice", payload: "{\\"candidate\\":true}" }] }
+        signals: { create: [{ sender: "candidate", kind: "ice", payload: '{"candidate":true}' }] }
       }
     });
     await sqlite.loginAttempt.create({
