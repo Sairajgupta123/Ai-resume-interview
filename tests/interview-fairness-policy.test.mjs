@@ -46,3 +46,27 @@ test("guidance explicitly prohibits sensitive personal inference", () => {
   const plan = buildInterviewFairnessPlan(["Python"], [], 0);
   assert.match(buildFairnessGuidance(plan), /protected or sensitive personal characteristics/);
 });
+
+test("does not count JavaScript questions toward the Java question cap", () => {
+  const history = [
+    { role: "assistant", content: "How have you used JavaScript in your project?" },
+    { role: "user", content: "I built a frontend using JavaScript." },
+    { role: "assistant", content: "Explain JavaScript closures." },
+    { role: "user", content: "They capture lexical scope." }
+  ];
+  const plan = buildInterviewFairnessPlan(["Java", "JavaScript"], history, 300);
+  assert.equal(plan.questionCounts.find(item => item.skill === "Java").questions, 0);
+  assert.equal(plan.questionCounts.find(item => item.skill === "JavaScript").questions, 2);
+  assert.deepEqual(plan.cappedSkills, ["JavaScript"]);
+});
+
+test("matches punctuation-bearing skill names without substring false positives", () => {
+  const history = [
+    { role: "assistant", content: "Describe your experience with Node.js and C++." },
+    { role: "user", content: "I used Node.js and C++." }
+  ];
+  const plan = buildInterviewFairnessPlan(["Node.js", "C++", "Java"], history, 300);
+  assert.equal(plan.questionCounts.find(item => item.skill === "Node.js").questions, 1);
+  assert.equal(plan.questionCounts.find(item => item.skill === "C++").questions, 1);
+  assert.equal(plan.questionCounts.find(item => item.skill === "Java").questions, 0);
+});
