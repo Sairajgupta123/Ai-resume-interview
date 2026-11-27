@@ -69,8 +69,10 @@ Also perform a staging smoke test using the production build, private object sto
 2. Run the full verification checklist again against the final import.
 3. Update the production `DATABASE_URL` and deploy the PostgreSQL-enabled application together.
 4. Keep the source SQLite database and snapshot read-only for the agreed rollback window.
-5. Do not simply point the application back to SQLite after PostgreSQL has accepted writes; that would lose post-cutover data. A rollback after writes requires a tested reverse data transfer or a restore plan that explicitly accepts the loss window.
-6. Resume candidate traffic only after database, auth, invitation, transcript, deletion and recording smoke tests pass.
+5. Treat application rollback and database rollback separately. If a release bug appears after PostgreSQL has accepted writes, roll back the application artifact while keeping PostgreSQL as the database.
+6. If PostgreSQL data is damaged, restore the managed PostgreSQL service using its tested point-in-time recovery or backup procedure; do not change `DATABASE_URL` to the old SQLite snapshot.
+7. Do not simply point the application back to SQLite after PostgreSQL has accepted writes; that would lose post-cutover data. This repository does not currently ship a PostgreSQL-to-SQLite reverse importer. If returning writes to SQLite is a hard requirement, keep maintenance mode active and build/rehearse that reverse transfer before cutover.
+8. Resume candidate traffic only after database, auth, invitation, transcript, deletion and recording smoke tests pass.
 
 ## Release gates
 
@@ -84,6 +86,8 @@ The migration is not complete until all of these are true:
 - [ ] Transcript, invitation, decision and privacy-deletion workflows pass on PostgreSQL.
 - [ ] Production connection pooling, backups and restore are tested.
 - [ ] Private S3-compatible recording upload, playback and deletion are tested against the intended provider.
-- [ ] A rollback plan accounts for writes accepted after cutover.
+- [ ] A rollback drill proves application rollback keeps PostgreSQL as the source of truth.
+- [ ] Managed PostgreSQL point-in-time restore or backup recovery is rehearsed.
+- [ ] If SQLite rollback is required, a reverse importer is implemented and tested before cutover.
 
 Until every gate is checked, do not merge this draft branch or point production traffic at PostgreSQL.
