@@ -2,7 +2,7 @@
 
 ## Current state
 
-The application currently uses Prisma with the SQLite provider. The production startup guard intentionally rejects non-`file:` database URLs. This runbook is a preparation and verification plan; it does not switch the provider or claim that PostgreSQL is supported.
+The migration branch uses Prisma with the PostgreSQL provider and contains a separate SQLite Prisma schema solely for reading a frozen source snapshot. The importer is one-way and verifies every copied record. This branch is still a draft: production cutover is not authorized until PostgreSQL CI, a real SQLite snapshot import, staging workflow tests and managed-database restore rehearsal pass.
 
 The schema currently contains these models:
 
@@ -28,11 +28,11 @@ The migration must preserve every primary key, unique constraint, relation, time
 
 ### 2. Create and validate the PostgreSQL schema
 
-1. Change the Prisma datasource provider only in a dedicated migration branch.
-2. Generate a reviewed initial migration from the complete Prisma schema; do not use `db push` as the production migration mechanism.
-3. Run migrations against a disposable PostgreSQL instance using the same major version and extensions as the intended managed database.
+1. The dedicated branch changes the Prisma provider and keeps `prisma/schema.sqlite.prisma` as a source-only client schema.
+2. The initial migration is committed under `prisma/migrations`; do not use `db push` as the production migration mechanism.
+3. CI runs PostgreSQL 16, validates both Prisma schemas and applies the committed migration before tests and build.
 4. Verify all seven models, foreign keys, cascade behavior, unique constraints and indexes.
-5. Run Prisma schema validation, unit tests, type checking, production build and database integration tests against PostgreSQL in CI.
+5. Run database integration tests and a production build against PostgreSQL in CI.
 6. Verify connection pooling and transaction behavior with the deployment's actual connection limits.
 
 ### 3. Copy data without changing identity
@@ -44,7 +44,7 @@ Import in foreign-key order:
 3. `InterviewMessage`, `EmployerDecisionHistory`, `InterviewSignal`, `PrivacyDeletionRequest`
 4. `PrivacyDeletionEvent`
 
-Preserve every existing ID and timestamp exactly. Do not re-hash, rotate or otherwise rewrite invitation/deletion tokens as part of a storage-engine migration. Use a migration-only process with no application API exposure, bounded batches, explicit transaction boundaries and resumable checkpoints. Keep candidate text, transcripts and deletion metadata out of logs.
+Preserve every existing ID and timestamp exactly. Do not re-hash, rotate or otherwise rewrite invitation/deletion tokens as part of a storage-engine migration. The repository importer is `npm run db:import-sqlite`; set `SQLITE_DATABASE_URL` to a frozen SQLite backup and `DATABASE_URL` to the PostgreSQL destination. It copies in bounded batches of 500, rejects a non-empty destination unless `--resume` is explicit, checks every copied record for exact value equality, and verifies row counts. Generate both clients with `npm run db:generate`. Keep candidate text, transcripts and deletion metadata out of logs. Never use `--resume` with a different source snapshot.
 
 After import, compare source and destination row counts for every table, compare primary-key sets, check all foreign keys, verify unique constraints and compare representative records including nulls, Unicode, long text and timestamp precision. Reset PostgreSQL sequences only if the generated schema uses sequences; current Prisma string IDs should not need them.
 
@@ -86,4 +86,4 @@ The migration is not complete until all of these are true:
 - [ ] Private S3-compatible recording upload, playback and deletion are tested against the intended provider.
 - [ ] A rollback plan accounts for writes accepted after cutover.
 
-Until every gate is checked, keep the SQLite provider and production URL guard unchanged. Do not direct a production deployment to PostgreSQL prematurely.
+Until every gate is checked, do not merge this draft branch or point production traffic at PostgreSQL.
