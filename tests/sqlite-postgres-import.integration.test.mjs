@@ -77,6 +77,14 @@ test("SQLite importer preserves all seven models and their relationships in Post
     );
 
     const importEnv = { ...process.env, SQLITE_DATABASE_URL: sqliteUrl, DATABASE_URL: targetDatabaseUrl };
+    const implicitResume = spawnSync(
+      process.execPath,
+      [resolve(projectRoot, "scripts/import-sqlite-to-postgres.cjs")],
+      { cwd: projectRoot, env: importEnv, encoding: "utf8" }
+    );
+    assert.notEqual(implicitResume.status, 0);
+    assert.match(implicitResume.stderr, /import state already exists/i);
+
     const safeResume = spawnSync(
       process.execPath,
       [resolve(projectRoot, "scripts/import-sqlite-to-postgres.cjs"), "--resume"],
