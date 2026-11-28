@@ -3,7 +3,7 @@ import {
   pcm16ToBase64,
   resampleFloat32ToPcm16
 } from "@/lib/grok-voice-audio.mjs";
-import { getFinalRealtimeTranscript, waitForRealtimeSession } from "@/lib/realtime-handshake.mjs";
+import { getFinalRealtimeTranscript, isRetryableRealtimeTokenStatus, waitForRealtimeSession } from "@/lib/realtime-handshake.mjs";
 
 type TranscriptRole = "user" | "assistant";
 
@@ -76,33 +76,40 @@ export class GrokRealtimeClient {
     let socket: WebSocket | null = null;
     let lastConnectionError: Error | null = null;
 
-    // Retry transient provider handshakes with a fresh short-lived token.
+    // Retry transient token-endpoint failures and provider handshakes with a
+    // fresh short-lived token. Permanent authorization/validation errors fail fast.
     for (let attempt = 0; attempt < 3; attempt += 1) {
       if (this.closed) return;
-      const tokenResponse = await fetch(`/api/sessions/${encodeURIComponent(this.sessionId)}/voice-session`, {
-        method: "POST",
-        credentials: "same-origin",
-        cache: "no-store",
-        signal: AbortSignal.timeout(15_000)
-      });
-      const tokenData = await tokenResponse.json();
-      if (!tokenResponse.ok || typeof tokenData.token !== "string") {
-        throw new Error(tokenData.error || "Could not obtain a secure AI voice session.");
-      }
-      if (this.closed) return;
-
-      const attemptSocket = new WebSocket(REALTIME_URL, [`xai-client-secret.${tokenData.token}`]);
-      this.socket = attemptSocket;
+      let attemptSocket: WebSocket | null = null;
+      let retryable = true;
       try {
+        const tokenResponse = await fetch(`/api/sessions/${encodeURIComponent(this.sessionId)}/voice-session`, {
+          method: "POST",
+          credentials: "same-origin",
+          cache: "no-store",
+          signal: AbortSignal.timeout(15_000)
+        });
+        const tokenData = await tokenResponse.json().catch(() => null) as { token?: unknown; error?: unknown } | null;
+        if (!tokenResponse.ok || typeof tokenData?.token !== "string") {
+          retryable = !tokenResponse.ok && isRetryableRealtimeTokenStatus(tokenResponse.status);
+          throw new Error(typeof tokenData?.error === "string"
+            ? tokenData.error
+            : "Could not obtain a secure AI voice session.");
+        }
+        if (this.closed) return;
+
+        attemptSocket = new WebSocket(REALTIME_URL, [`xai-client-secret.${tokenData.token}`]);
+        this.socket = attemptSocket;
         await waitForRealtimeSession(attemptSocket, 15_000);
         socket = attemptSocket;
         break;
       } catch (error) {
-        attemptSocket.close();
-        if (this.socket === attemptSocket) this.socket = null;
+        attemptSocket?.close();
+        if (attemptSocket && this.socket === attemptSocket) this.socket = null;
         lastConnectionError = error instanceof Error ? error : new Error("Could not connect to the AI voice service.");
         if (this.closed) return;
-        if (attempt < 2) await new Promise(resolve => window.setTimeout(resolve, 300 * (attempt + 1)));
+        if (!retryable || attempt >= 2) break;
+        await new Promise(resolve => window.setTimeout(resolve, 300 * (attempt + 1)));
       }
     }
 
