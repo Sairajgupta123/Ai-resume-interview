@@ -161,6 +161,9 @@ export default function Home() {
     let cursor = "";
     let cursorId = "";
     const pendingIce: RTCIceCandidateInit[] = [];
+    // ICE events are emitted once; retain each candidate until the server
+    // acknowledges it so transient POST failures cannot silently break ICE.
+    const pendingLocalIce: string[] = [];
     // Keep the exact ICE-restart offer until the signalling server confirms it.
     // A failed response may be ambiguous: the server may have stored the offer
     // even though the browser never received the acknowledgement.
@@ -218,14 +221,8 @@ export default function Home() {
         });
         streamRef.current!.getTracks().forEach(track => peer!.addTrack(track, streamRef.current!));
         peer.onicecandidate = event => {
-          if (event.candidate && !stopped) {
-            void fetch(`/api/sessions/${sessionId}/signals`, {
-              method: "POST", headers, credentials: "same-origin", body: JSON.stringify({ kind: "ice", payload: JSON.stringify(event.candidate.toJSON()) })
-            }).then(response => {
-              if (!response.ok && !stopped) setError("Live video network setup was interrupted. Please check your connection.");
-            }).catch(() => {
-              if (!stopped) setError("Could not send live video network information. Check your connection.");
-            });
+          if (event.candidate && !stopped && pendingLocalIce.length < 128) {
+            pendingLocalIce.push(JSON.stringify(event.candidate.toJSON()));
           }
         };
         // Anchor the polling cursor to the server timestamp of this offer.
@@ -266,6 +263,14 @@ export default function Home() {
           if (stopped || !peer || polling) return;
           polling = true;
           try {
+            while (pendingLocalIce.length > 0 && !stopped) {
+              const iceResponse = await fetch(`/api/sessions/${sessionId}/signals`, {
+                method: "POST", headers, credentials: "same-origin",
+                body: JSON.stringify({ kind: "ice", payload: pendingLocalIce[0] })
+              });
+              if (!iceResponse.ok) throw new Error("Live video network signalling is pending; retrying.");
+              pendingLocalIce.shift();
+            }
             if (pendingRestartOffer) {
               const retryResponse = await fetch(`/api/sessions/${sessionId}/signals`, {
                 method: "POST", headers, credentials: "same-origin",
