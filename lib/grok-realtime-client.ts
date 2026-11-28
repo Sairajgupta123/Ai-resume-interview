@@ -146,6 +146,7 @@ export class GrokRealtimeClient {
     try {
       this.audioContext = new AudioContext();
       await this.audioContext.resume();
+      if (!isCurrentConnection() || this.socket !== socket) return;
       const sessionReady = new Promise<void>((resolve, reject) => {
         const cleanup = () => {
           window.clearTimeout(timeout);
@@ -174,22 +175,30 @@ export class GrokRealtimeClient {
         };
         socket.addEventListener("message", onMessage);
         socket.addEventListener("close", onClose, { once: true });
-      });
-      socket.send(JSON.stringify({
-        type: "session.update",
-        session: {
-          instructions: this.instructions,
-          voice: "eve",
-          turn_detection: { type: "server_vad" },
-          audio: {
-            input: {
-              format: { type: "audio/pcm", rate: SAMPLE_RATE },
-              transcription: { model: "grok-transcribe", language_hint: "en" }
-            },
-            output: { format: { type: "audio/pcm", rate: SAMPLE_RATE } }
+        try {
+          if (!isCurrentConnection() || this.socket !== socket || socket.readyState !== WebSocket.OPEN) {
+            throw new Error("AI voice connection closed before session setup.");
           }
+          socket.send(JSON.stringify({
+            type: "session.update",
+            session: {
+              instructions: this.instructions,
+              voice: "eve",
+              turn_detection: { type: "server_vad" },
+              audio: {
+                input: {
+                  format: { type: "audio/pcm", rate: SAMPLE_RATE },
+                  transcription: { model: "grok-transcribe", language_hint: "en" }
+                },
+                output: { format: { type: "audio/pcm", rate: SAMPLE_RATE } }
+              }
+            }
+          }));
+        } catch (error) {
+          cleanup();
+          reject(error instanceof Error ? error : new Error("AI voice session setup failed."));
         }
-      }));
+      });
       await sessionReady;
       if (!isCurrentConnection() || this.socket !== socket) return;
       this.startAudioGraph();
