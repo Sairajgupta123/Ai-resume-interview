@@ -535,7 +535,9 @@ export default function Home() {
       const form = new FormData();
       form.append("recording", blob, `mzobs-recovered-${Date.now()}.${extension}`);
       const uploadController = new AbortController();
-      const uploadTimeout = window.setTimeout(() => uploadController.abort(), 45_000);
+      // Allow a bounded 3-minute window for slower candidate uplinks and the
+          // server's bounded private-storage write; do not discard a valid 100 MB upload at 45 seconds.
+          const uploadTimeout = window.setTimeout(() => uploadController.abort(), 180_000);
       let response: Response;
       let data: { error?: string };
       try {
@@ -643,7 +645,9 @@ export default function Home() {
           const form = new FormData();
           form.append("recording", blob, filename);
           const uploadController = new AbortController();
-          const uploadTimeout = window.setTimeout(() => uploadController.abort(), 45_000);
+          // Allow a bounded 3-minute window for slower candidate uplinks and the
+          // server's bounded private-storage write; do not discard a valid 100 MB upload at 45 seconds.
+          const uploadTimeout = window.setTimeout(() => uploadController.abort(), 180_000);
           let response: Response;
           let data: { error?: string };
           try {
