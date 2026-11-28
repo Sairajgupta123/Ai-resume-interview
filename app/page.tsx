@@ -550,7 +550,7 @@ export default function Home() {
         data = await response.json();
       } catch (uploadError) {
         if (uploadController.signal.aborted) {
-          throw new Error("Recording recovery timed out after 45 seconds. Your local recording segments have been kept; you can retry.");
+          throw new Error("Recording recovery timed out after 3 minutes. Your local recording segments have been kept; you can retry.");
         }
         throw uploadError;
       } finally {
@@ -669,7 +669,7 @@ export default function Home() {
             data = await response.json();
           } catch (uploadError) {
             if (uploadController.signal.aborted) {
-              throw new Error("Recording upload timed out after 45 seconds. Your locally saved segments will be kept for recovery.");
+              throw new Error("Recording upload timed out after 3 minutes. Your locally saved segments will be kept for recovery.");
             }
             throw uploadError;
           } finally {
