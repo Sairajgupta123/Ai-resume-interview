@@ -99,7 +99,9 @@ export default function Dashboard() {
         peer = new RTCPeerConnection({ iceServers });
         employerPeerRef.current = peer;
         peer.ontrack = event => {
-          if (stopped) return;
+          // Ignore delayed media events from an employer peer that was replaced
+          // after reconnect or when switching the selected interview.
+          if (stopped || employerPeerRef.current !== peer) return;
           if (employerVideoRef.current) employerVideoRef.current.srcObject = event.streams[0];
           setLiveCallState("Connected · live video and audio");
         };
