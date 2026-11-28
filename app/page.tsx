@@ -714,6 +714,10 @@ export default function Home() {
 
     // Never discard transcript entries from a previous voice connection.
     // Retry them with their original IDs before accepting a new live session.
+    // Keep a local transcript snapshot as well as updating React state: state
+    // setters are asynchronous, and the reconnect instructions below must
+    // include every entry recovered during this pass.
+    let reconnectHistory = [...history];
     await transcriptWriteRef.current;
     if (pendingTranscriptRef.current.length > 0) {
       const pendingEntries = [...pendingTranscriptRef.current];
@@ -740,7 +744,8 @@ export default function Home() {
             pendingTranscriptRef.current = pendingTranscriptRef.current.filter(item => item.clientMessageId !== entry.clientMessageId);
             // Restore the recovered turn into the visible and future Grok
             // context; it was deliberately not added while persistence failed.
-            setHistory(previous => [...previous, { role: entry.role, content: entry.content }]);
+            reconnectHistory = [...reconnectHistory, { role: entry.role, content: entry.content }];
+            setHistory(reconnectHistory);
             saved = true;
             break;
           } catch (error) {
@@ -762,7 +767,7 @@ export default function Home() {
     transcriptWriteRef.current = Promise.resolve();
     const instructions = buildRealtimeInterviewInstructions({
       isReconnect,
-      history,
+      history: reconnectHistory,
       candidateName,
       role,
       resume,
