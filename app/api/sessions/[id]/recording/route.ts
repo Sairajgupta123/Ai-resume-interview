@@ -67,17 +67,24 @@ async function s3Request(method: "PUT" | "GET" | "HEAD", key: string, body?: Buf
   headers.authorization = "AWS4-HMAC-SHA256 Credential=" + config.accessKey + "/" + scope + ", SignedHeaders=" + signedHeaders + ", Signature=" + signature;
   // Storage endpoints are external dependencies: fail closed on redirects and
   // cap request time so uploads/playback cannot hold a server worker forever.
-  const response = await fetch(url, {
-    method,
-    headers,
-    body: method === "PUT" ? new Uint8Array(body || Buffer.alloc(0)) : undefined,
-    cache: "no-store",
-    redirect: "error",
-    // A 100 MiB recording can legitimately take longer than 30 seconds on
-    // slower uplinks. Keep playback metadata/range requests short, but allow
-    // bounded time for the upload itself to reach private object storage.
-    signal: AbortSignal.timeout(method === "PUT" ? 120_000 : 30_000)
-  });
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method,
+      headers,
+      body: method === "PUT" ? new Uint8Array(body || Buffer.alloc(0)) : undefined,
+      cache: "no-store",
+      redirect: "error",
+      // A 100 MiB recording can legitimately take longer than 30 seconds on
+      // slower uplinks. Keep playback metadata/range requests short, but allow
+      // bounded time for the upload itself to reach private object storage.
+      signal: AbortSignal.timeout(method === "PUT" ? 120_000 : 30_000)
+    });
+  } catch {
+    // Normalize DNS, TLS, timeout and connection failures so callers return a
+    // retryable 502 rather than misreporting an upstream outage as app failure.
+    throw new Error("Private recording storage request failed.");
+  }
   if (!response.ok) throw new Error("Private recording storage returned " + response.status + ": " + (await response.text()).slice(0, 500));
   return response;
 }
@@ -284,7 +291,7 @@ export async function POST(request: NextRequest, context: Context) {
   } catch (error) {
     const message = error instanceof Error ? error.message : "";
     const missingConfiguration = message.includes("Configure S3_ENDPOINT") || message.includes("Private cloud recording storage is not configured");
-    const storageUnavailable = message.includes("Private recording storage returned");
+    const storageUnavailable = message.includes("Private recording storage");
     return NextResponse.json({
       error: missingConfiguration
         ? "Production recording storage is not configured. Contact the hiring team."
