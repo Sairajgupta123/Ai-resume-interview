@@ -98,3 +98,14 @@ test("ignores empty and unrelated transcript events", () => {
   assert.equal(getFinalRealtimeTranscript({ type: "conversation.item.input_audio_transcription.completed", transcript: "  " }), null);
   assert.equal(getFinalRealtimeTranscript(null), null);
 });
+
+
+test("retries transient voice-token endpoint responses only", async () => {
+  const { isRetryableRealtimeTokenStatus } = await import("../lib/realtime-handshake.mjs");
+  for (const status of [408, 429, 500, 502, 503]) {
+    assert.equal(isRetryableRealtimeTokenStatus(status), true, String(status));
+  }
+  for (const status of [200, 400, 401, 403, 404]) {
+    assert.equal(isRetryableRealtimeTokenStatus(status), false, String(status));
+  }
+});
