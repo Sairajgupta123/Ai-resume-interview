@@ -213,9 +213,12 @@ export async function POST(request: NextRequest, context: Context) {
   try {
     const interview = await db.interview.findUnique({
       where: { id },
-      select: { id: true, recordingPath: true, status: true, consentAcceptedAt: true, startedAt: true }
+      select: { id: true, recordingPath: true, status: true, consentAcceptedAt: true, startedAt: true, deletionInProgress: true }
     });
     if (!interview) return NextResponse.json({ error: "Interview not found." }, { status: 404, headers: privateHeaders });
+    if (interview.deletionInProgress) {
+      return NextResponse.json({ error: "Recording uploads are closed because this interview is being deleted." }, { status: 409, headers: privateHeaders });
+    }
     const completedRecovery = interview.status === "completed" && !interview.recordingPath;
     if (interview.status === "completed" && !completedRecovery) {
       return NextResponse.json({ error: "A recording is already saved or uploads are closed for this interview." }, { status: 409, headers: privateHeaders });
@@ -252,7 +255,7 @@ export async function POST(request: NextRequest, context: Context) {
           // Permit one late recovery after completion only when no recording was
           // saved before the report closed the interview. The status/path predicate
           // prevents concurrent retries from replacing an already committed file.
-          where: { id, status: interview.status, recordingPath: interview.recordingPath },
+          where: { id, status: interview.status, recordingPath: interview.recordingPath, deletionInProgress: false },
           data: { recordingPath: relativePath }
         });
         if (updated.count === 1 && interview.recordingPath) {
