@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { isEmployerAuthenticated } from "@/lib/auth";
 import { getCandidateInvitationToken, hasValidCandidateInvitation } from "@/lib/invitation";
-import { validateSignalPayload, isSignalOlderThanDescription } from "@/lib/signalling-policy.mjs";
+import { validateSignalPayload } from "@/lib/signalling-policy.mjs";
 import { isInterviewTimeLimitReached } from "@/lib/interview-policy.mjs";
 
 export const runtime = "nodejs";
@@ -87,7 +87,7 @@ export async function GET(request: NextRequest, context: Context) {
   // before applying the 50-row page limit. Filtering after pagination could
   // return an empty page whose cursor never advances, trapping the peer on
   // the same 50 obsolete rows forever.
-  const currentSignalFilters: Record<string, unknown>[] = [
+  const currentSignalFilters = [
     { OR: [{ kind: { not: descriptionKind } }, ...(latestDescription ? [{ id: latestDescription.id }] : [])] }
   ];
   if (latestDescription) {
