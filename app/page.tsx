@@ -233,13 +233,31 @@ export default function Home() {
         // answer or ICE candidates for this negotiation.
         const offer = await peer.createOffer();
         await peer.setLocalDescription(offer);
-        const offerResponse = await fetch(`/api/sessions/${sessionId}/signals`, {
-          method: "POST", headers, credentials: "same-origin", body: JSON.stringify({ kind: "offer", payload: JSON.stringify(peer.localDescription) })
-        });
-        if (!offerResponse.ok) throw new Error("Could not start live video call.");
-        const savedOffer = await offerResponse.json();
-        if (typeof savedOffer.createdAt !== "string" || typeof savedOffer.id !== "string") {
-          throw new Error("The live video offer could not establish a reliable signalling cursor. Please retry.");
+        const initialOfferPayload = JSON.stringify(peer.localDescription);
+        let savedOffer: { createdAt?: string; id?: string } | null = null;
+        let lastOfferError: Error | null = null;
+        // Retry the exact same SDP if the first POST fails or its acknowledgement
+        // is lost. Recreating an offer here could desynchronize the peer's local SDP.
+        for (let attempt = 0; attempt < 3 && !stopped; attempt += 1) {
+          try {
+            const offerResponse = await fetch(`/api/sessions/${sessionId}/signals`, {
+              method: "POST", headers, credentials: "same-origin",
+              body: JSON.stringify({ kind: "offer", payload: initialOfferPayload })
+            });
+            if (!offerResponse.ok) throw new Error("Could not start live video call.");
+            savedOffer = await offerResponse.json();
+            if (typeof savedOffer?.createdAt === "string" && typeof savedOffer?.id === "string") break;
+            throw new Error("The live video offer could not establish a reliable signalling cursor.");
+          } catch (error) {
+            lastOfferError = error instanceof Error ? error : new Error("Could not start live video call.");
+            if (attempt < 2 && !stopped) {
+              await new Promise(resolve => window.setTimeout(resolve, 300 * (attempt + 1)));
+            }
+          }
+        }
+        if (stopped) return;
+        if (!savedOffer || typeof savedOffer.createdAt !== "string" || typeof savedOffer.id !== "string") {
+          throw lastOfferError ?? new Error("Could not start live video call. Please retry.");
         }
         cursor = savedOffer.createdAt;
         cursorId = savedOffer.id;
