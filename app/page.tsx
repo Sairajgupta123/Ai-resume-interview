@@ -211,6 +211,9 @@ export default function Home() {
           })();
         };
         peer.addEventListener("track", event => {
+          // Ignore late media events from a peer that was closed or replaced
+          // during camera toggles, reconnects, or React effect cleanup.
+          if (stopped || peerConnectionRef.current !== peer) return;
           if (remoteVideoRef.current) remoteVideoRef.current.srcObject = event.streams[0];
         });
         streamRef.current!.getTracks().forEach(track => peer!.addTrack(track, streamRef.current!));
