@@ -123,10 +123,10 @@ async function readBoundedRecordingForm(request: NextRequest, maxBytes: number):
     // Build the Blob directly from the bounded chunks instead of allocating
     // another contiguous 100 MiB Uint8Array first. Blob snapshots its parts, so
     // release the chunk references before multipart parsing continues.
-    const blobParts: BlobPart[] = chunks.map(chunk =>
-      chunk.buffer.slice(chunk.byteOffset, chunk.byteOffset + chunk.byteLength) as ArrayBuffer
-    );
-    const body = new Blob(blobParts);
+    // The runtime accepts Uint8Array parts; the assertion bridges the
+    // TypeScript ArrayBufferLike/BlobPart generic mismatch without copying
+    // every chunk into another full-size set of ArrayBuffers.
+    const body = new Blob(chunks as unknown as BlobPart[]);
     chunks.length = 0;
     const boundedRequest = new Request(request.url, {
       method: "POST",
