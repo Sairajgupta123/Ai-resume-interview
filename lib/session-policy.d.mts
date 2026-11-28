@@ -4,3 +4,8 @@ export function isSessionTimestampValid(
   nowMs?: number,
   maxAgeSeconds?: number
 ): boolean;
+export function parseEmployerSessionToken(token: string): {
+  username: string;
+  timestamp: string;
+  signature: string;
+} | null;
