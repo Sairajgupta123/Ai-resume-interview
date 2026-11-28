@@ -10,6 +10,7 @@ import { getCandidateInvitationToken, hasValidCandidateSession } from "@/lib/inv
 import { MAX_RECORDING_BYTES, inspectRecordingUpload, isSafeRecordingFilename } from "@/lib/recording-policy.mjs";
 import { commitRecordingReplacement } from "@/lib/recording-replacement.mjs";
 import { parseByteRange } from "@/lib/recording-range.mjs";
+import { isExpectedRecordingStorageResponse, parseRecordingContentLength } from "@/lib/recording-storage-response.mjs";
 import { deleteStoredInterviewRecording } from "@/lib/deletion-storage.mjs";
 import { enqueueRecordingCleanupTask } from "@/lib/recording-cleanup-queue.mjs";
 
@@ -170,8 +171,8 @@ function localRecordingPath(storedPath: string) {
 async function recordingSize(storedPath: string) {
   if (isRemoteRecordingPath(storedPath)) {
     const response = await s3Request("HEAD", recordingObjectKey(storedPath));
-    const size = Number(response.headers.get("content-length"));
-    if (!Number.isSafeInteger(size) || size < 0) throw new Error("Recording storage returned invalid metadata.");
+    const size = parseRecordingContentLength(response.headers.get("content-length"));
+    if (size === null) throw new Error("Recording storage returned invalid metadata.");
     return size;
   }
   const metadata = await stat(localRecordingPath(storedPath));
@@ -341,7 +342,17 @@ export async function GET(request: NextRequest, context: Context) {
 
     if (remote) {
       const response = await s3Request("GET", recordingObjectKey(storedPath), undefined, undefined, range?.ok ? rangeHeader || undefined : undefined);
-      if (range?.ok && response.status !== 206) throw new Error("Recording storage did not honor the requested byte range.");
+      const expectedContentRange = range?.ok ? "bytes " + start + "-" + end + "/" + size : null;
+      if (!isExpectedRecordingStorageResponse({
+        status: response.status,
+        contentLength: response.headers.get("content-length"),
+        contentRange: response.headers.get("content-range"),
+        expectedStatus: status,
+        expectedLength: length,
+        expectedContentRange
+      })) {
+        throw new Error("Recording storage returned inconsistent playback metadata.");
+      }
       return new NextResponse(response.body, { status, headers: baseHeaders });
     }
 
