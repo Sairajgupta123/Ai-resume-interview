@@ -641,8 +641,15 @@ export default function Home() {
           if (blob.size < 1) throw new Error("The browser did not produce a video recording. Please retry.");
           // Never mark a zero-byte recording complete in IndexedDB: a metadata-
           // only cache is invalid and would prevent a clean retry on this device.
+          // A local-cache finalization failure must not block the primary server
+          // upload when the complete recording is still available in memory.
           if (!recordingPersistenceFailedRef.current) {
-            await markCachedRecordingComplete(targetSessionId, type);
+            try {
+              await markCachedRecordingComplete(targetSessionId, type);
+            } catch {
+              recordingPersistenceFailedRef.current = true;
+              setError("Local recording backup could not be finalized. The video will still be uploaded, but local recovery may be unavailable if the upload fails.");
+            }
           }
           const form = new FormData();
           form.append("recording", blob, filename);
