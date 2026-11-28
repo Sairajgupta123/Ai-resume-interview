@@ -89,7 +89,7 @@ test("development may use the local public app URL", () => {
 });
 
 
-test("rejects a weak optional recording cleanup worker secret", () => {
+test("rejects a weak recording cleanup worker secret", () => {
   const errors = getProductionConfigErrors({
     ...validProductionEnv,
     CRON_SECRET: "too-short"
@@ -97,10 +97,14 @@ test("rejects a weak optional recording cleanup worker secret", () => {
   assert.ok(errors.some(error => error.includes("CRON_SECRET")));
 });
 
-test("allows production without the optional recording cleanup worker enabled", () => {
+test("requires a recording cleanup worker secret in production", () => {
   const errors = getProductionConfigErrors({
     ...validProductionEnv,
     CRON_SECRET: ""
   });
-  assert.equal(errors.some(error => error.includes("CRON_SECRET")), false);
+  assert.ok(errors.some(error => error.includes("CRON_SECRET")));
+  assert.throws(
+    () => assertProductionConfig({ ...validProductionEnv, CRON_SECRET: "" }),
+    /CRON_SECRET must be configured/
+  );
 });
