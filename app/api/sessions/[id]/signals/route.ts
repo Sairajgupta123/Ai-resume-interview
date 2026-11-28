@@ -116,10 +116,10 @@ export async function GET(request: NextRequest, context: Context) {
   // Do not append a newer SDP description outside the ordered 50-row page:
   // doing so would advance the client's cursor past older, unreturned ICE rows.
   // The next poll will reach the description naturally after draining prior rows.
-  currentSignals.sort((left, right) =>
+  signals.sort((left, right) =>
     left.createdAt.getTime() - right.createdAt.getTime() || left.id.localeCompare(right.id)
   );
-  return NextResponse.json({ signals: currentSignals }, { headers });
+  return NextResponse.json({ signals }, { headers });
 }
 export async function POST(request: NextRequest, context: Context) {
   const { id } = await context.params;
