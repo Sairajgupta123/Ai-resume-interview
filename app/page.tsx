@@ -161,6 +161,10 @@ export default function Home() {
     let cursor = "";
     let cursorId = "";
     const pendingIce: RTCIceCandidateInit[] = [];
+    // Keep the exact ICE-restart offer until the signalling server confirms it.
+    // A failed response may be ambiguous: the server may have stored the offer
+    // even though the browser never received the acknowledgement.
+    let pendingRestartOffer: string | null = null;
     const headers = { "Content-Type": "application/json" };
     const init = async () => {
       try {
@@ -191,11 +195,13 @@ export default function Home() {
             try {
               const restartOffer = await peer!.createOffer({ iceRestart: true });
               await peer!.setLocalDescription(restartOffer);
+              pendingRestartOffer = JSON.stringify(peer!.localDescription);
               const restartResponse = await fetch(`/api/sessions/${sessionId}/signals`, {
                 method: "POST", headers, credentials: "same-origin",
-                body: JSON.stringify({ kind: "offer", payload: JSON.stringify(peer!.localDescription) })
+                body: JSON.stringify({ kind: "offer", payload: pendingRestartOffer })
               });
-              if (!restartResponse.ok) throw new Error("The live video reconnect request was rejected.");
+              if (!restartResponse.ok) throw new Error("The live video reconnect request was rejected; the same offer will be retried.");
+              pendingRestartOffer = null;
               setError(current => current.startsWith("Live video") ? "" : current);
             } catch (error) {
               if (!stopped) setError(error instanceof Error ? error.message : "Could not restart live video.");
@@ -239,6 +245,14 @@ export default function Home() {
           if (stopped || !peer || polling) return;
           polling = true;
           try {
+            if (pendingRestartOffer) {
+              const retryResponse = await fetch(`/api/sessions/${sessionId}/signals`, {
+                method: "POST", headers, credentials: "same-origin",
+                body: JSON.stringify({ kind: "offer", payload: pendingRestartOffer })
+              });
+              if (!retryResponse.ok) throw new Error("The live video reconnect request is still pending.");
+              pendingRestartOffer = null;
+            }
             const response = await fetch(`/api/sessions/${sessionId}/signals?since=${encodeURIComponent(cursor)}&afterId=${encodeURIComponent(cursorId)}`, { headers: {}, credentials: "same-origin", cache: "no-store" });
             if (!response.ok) return;
             const data = await response.json();
