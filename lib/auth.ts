@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
-import { EMPLOYER_SESSION_MAX_AGE_SECONDS, isSessionTimestampValid } from "./session-policy.mjs";
+import { EMPLOYER_SESSION_MAX_AGE_SECONDS, isSessionTimestampValid, parseEmployerSessionToken } from "./session-policy.mjs";
 
 const COOKIE = "mzobs_employer_session";
 const MAX_AGE = EMPLOYER_SESSION_MAX_AGE_SECONDS;
@@ -22,9 +22,9 @@ export function createSessionToken(username: string) {
 
 export function verifySessionToken(token: string | undefined) {
   if (!token) return false;
-  const parts = token.split(".");
-  if (parts.length !== 3) return false;
-  const [username, timestamp, signature] = parts;
+  const parsed = parseEmployerSessionToken(token);
+  if (!parsed) return false;
+  const { username, timestamp, signature } = parsed;
   const payload = `${username}.${timestamp}`;
   const expected = sign(payload);
   const a = Buffer.from(signature);
