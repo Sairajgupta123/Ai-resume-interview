@@ -440,6 +440,7 @@ export async function POST(request: NextRequest) {
               current.startedAt ||
               current.startLockAt?.getTime() !== startLockAt!.getTime() ||
               current.status === "completed" ||
+              !current.inviteExpiresAt ||
               current.inviteExpiresAt.getTime() <= Date.now()
             ) {
               throw new Error("Interview start request expired. Please retry.");
