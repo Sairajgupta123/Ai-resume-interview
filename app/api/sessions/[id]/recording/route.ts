@@ -72,7 +72,9 @@ async function s3Request(method: "PUT" | "GET" | "HEAD", key: string, body?: Buf
     response = await fetch(url, {
       method,
       headers,
-      body: method === "PUT" ? new Uint8Array(body || Buffer.alloc(0)) : undefined,
+      // Node fetch accepts Buffer as a byte body. Keep the existing Buffer
+      // view instead of cloning another full-size Uint8Array for large uploads.
+      body: method === "PUT" ? (body || Buffer.alloc(0)) as unknown as BodyInit : undefined,
       cache: "no-store",
       redirect: "error",
       // A 100 MiB recording can legitimately take longer than 30 seconds on
