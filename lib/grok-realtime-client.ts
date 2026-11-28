@@ -36,6 +36,7 @@ export class GrokRealtimeClient {
   private playbackCursor = 0;
   private playbackSources = new Set<AudioBufferSourceNode>();
   private closed = false;
+  private connectionGeneration = 0;
   private callbacks: GrokRealtimeCallbacks;
   private sessionId: string;
   private stream: MediaStream;
@@ -71,6 +72,8 @@ export class GrokRealtimeClient {
   async connect() {
     if (this.socket) throw new Error("Grok voice is already initialized.");
     this.closed = false;
+    const generation = ++this.connectionGeneration;
+    const isCurrentConnection = () => generation === this.connectionGeneration && !this.closed;
     this.callbacks.onStatus?.("connecting");
 
     let socket: WebSocket | null = null;
@@ -79,7 +82,7 @@ export class GrokRealtimeClient {
     // Retry transient token-endpoint failures and provider handshakes with a
     // fresh short-lived token. Permanent authorization/validation errors fail fast.
     for (let attempt = 0; attempt < 3; attempt += 1) {
-      if (this.closed) return;
+      if (!isCurrentConnection()) return;
       let attemptSocket: WebSocket | null = null;
       let retryable = true;
       try {
@@ -96,18 +99,22 @@ export class GrokRealtimeClient {
             ? tokenData.error
             : "Could not obtain a secure AI voice session.");
         }
-        if (this.closed) return;
+        if (!isCurrentConnection()) return;
 
         attemptSocket = new WebSocket(REALTIME_URL, [`xai-client-secret.${tokenData.token}`]);
         this.socket = attemptSocket;
         await waitForRealtimeSession(attemptSocket, 15_000);
+        if (!isCurrentConnection() || this.socket !== attemptSocket) {
+          attemptSocket.close();
+          return;
+        }
         socket = attemptSocket;
         break;
       } catch (error) {
         attemptSocket?.close();
         if (attemptSocket && this.socket === attemptSocket) this.socket = null;
         lastConnectionError = error instanceof Error ? error : new Error("Could not connect to the AI voice service.");
-        if (this.closed) return;
+        if (!isCurrentConnection()) return;
         if (!retryable || attempt >= 2) break;
         await new Promise(resolve => window.setTimeout(resolve, 300 * (attempt + 1)));
       }
@@ -115,19 +122,25 @@ export class GrokRealtimeClient {
 
     if (!socket) throw lastConnectionError || new Error("Could not initialize the AI voice connection.");
 
-    if (this.closed) {
+    if (!isCurrentConnection() || this.socket !== socket) {
       socket.close();
       return;
     }
 
-    socket.addEventListener("message", event => this.handleMessage(event));
+    socket.addEventListener("message", event => {
+      if (isCurrentConnection() && this.socket === socket) this.handleMessage(event);
+    });
     socket.addEventListener("close", () => {
+      if (this.socket !== socket || generation !== this.connectionGeneration) return;
+      this.socket = null;
       this.stopAudioGraph();
       this.callbacks.onStatus?.("closed");
       if (!this.closed) this.callbacks.onError?.("The AI voice connection was closed. You can continue by typing.");
     });
     socket.addEventListener("error", () => {
-      if (!this.closed) this.callbacks.onError?.("The AI voice connection encountered an error.");
+      if (isCurrentConnection() && this.socket === socket) {
+        this.callbacks.onError?.("The AI voice connection encountered an error.");
+      }
     });
 
     try {
@@ -178,7 +191,7 @@ export class GrokRealtimeClient {
         }
       }));
       await sessionReady;
-      if (this.closed) return;
+      if (!isCurrentConnection() || this.socket !== socket) return;
       this.startAudioGraph();
       if (this.initialMessage.trim()) {
         socket.send(JSON.stringify({
@@ -194,9 +207,12 @@ export class GrokRealtimeClient {
       this.callbacks.onStatus?.("connected");
   
     } catch (error) {
-      this.stopAudioGraph();
+      if (this.socket === socket && generation === this.connectionGeneration) {
+        this.stopAudioGraph();
+        this.socket = null;
+      }
       if (socket.readyState < WebSocket.CLOSING) socket.close();
-      this.socket = null;
+      if (!isCurrentConnection()) return;
       throw error;
     }
   }
@@ -322,6 +338,7 @@ export class GrokRealtimeClient {
 
   close() {
     this.closed = true;
+    this.connectionGeneration += 1;
     this.stopAudioGraph();
     if (this.socket && this.socket.readyState < WebSocket.CLOSING) this.socket.close();
     this.socket = null;
