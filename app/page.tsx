@@ -485,7 +485,7 @@ export default function Home() {
             new Promise<boolean>((_, reject) => {
               recordingWaitTimer = window.setTimeout(
                 () => reject(new Error("Recording upload is taking too long. Your interview report has not been generated yet. Wait for the recording status or recover the saved segments, then try again.")),
-                60_000
+                190_000
               );
             })
           ]);
