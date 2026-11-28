@@ -433,9 +433,15 @@ export async function POST(request: NextRequest) {
           await db.$transaction(async (tx) => {
             const current = await tx.interview.findUnique({
               where: { id: body.sessionId },
-              select: { startLockAt: true, startedAt: true, status: true }
+              select: { startLockAt: true, startedAt: true, status: true, inviteExpiresAt: true }
             });
-            if (!current || current.startedAt || current.startLockAt?.getTime() !== startLockAt!.getTime() || current.status === "completed") {
+            if (
+              !current ||
+              current.startedAt ||
+              current.startLockAt?.getTime() !== startLockAt!.getTime() ||
+              current.status === "completed" ||
+              current.inviteExpiresAt.getTime() <= Date.now()
+            ) {
               throw new Error("Interview start request expired. Please retry.");
             }
             await tx.interviewMessage.create({
