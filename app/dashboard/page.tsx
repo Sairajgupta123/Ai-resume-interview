@@ -80,6 +80,8 @@ export default function Dashboard() {
     };
     employerStopCallRef.current = stopLocalCall;
     const pendingIce: RTCIceCandidateInit[] = [];
+    // Retain locally generated ICE until the signalling API acknowledges it.
+    const pendingLocalIce: string[] = [];
     // Keep a generated answer until the server confirms it. If the POST fails
     // after setLocalDescription(), retry the same answer instead of losing the offer.
     let pendingAnswer: { offerId: string; payload: string } | null = null;
@@ -119,12 +121,8 @@ export default function Dashboard() {
           }
         };
         peer.onicecandidate = event => {
-          if (event.candidate && !stopped) {
-            void postSignal("ice", JSON.stringify(event.candidate.toJSON())).then(response => {
-              if (!response.ok && !stopped) setLiveCallState("Could not exchange live network information. Check the connection and retry.");
-            }).catch(() => {
-              if (!stopped) setLiveCallState("Live network signalling failed. Check the connection.");
-            });
+          if (event.candidate && !stopped && pendingLocalIce.length < 128) {
+            pendingLocalIce.push(JSON.stringify(event.candidate.toJSON()));
           }
         };
         setLiveCallState("Requesting employer camera and microphone…");
@@ -138,6 +136,11 @@ export default function Dashboard() {
           if (stopped || !peer || polling) return;
           polling = true;
           try {
+            while (pendingLocalIce.length > 0 && !stopped) {
+              const iceResponse = await postSignal("ice", pendingLocalIce[0]);
+              if (!iceResponse.ok) throw new Error("Live network signalling is pending; retrying…");
+              pendingLocalIce.shift();
+            }
             const response = await fetch(`/api/sessions/${selected.id}/signals?since=${encodeURIComponent(cursor)}&afterId=${encodeURIComponent(cursorId)}`, { cache: "no-store" });
             if (!response.ok) return;
             const data = await response.json();
