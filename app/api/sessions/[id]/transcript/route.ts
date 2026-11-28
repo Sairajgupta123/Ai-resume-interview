@@ -102,7 +102,7 @@ export async function POST(request: NextRequest, context: Context) {
       await db.$transaction(async (tx) => {
       const current = await tx.interview.findUnique({
         where: { id },
-        select: { status: true, mode: true, consentAcceptedAt: true, startedAt: true, reportLockAt: true }
+        select: { status: true, mode: true, consentAcceptedAt: true, startedAt: true, inviteExpiresAt: true, reportLockAt: true }
       });
       if (
         !current ||
@@ -110,6 +110,8 @@ export async function POST(request: NextRequest, context: Context) {
         current.mode !== "live" ||
         !current.consentAcceptedAt ||
         !current.startedAt ||
+        !current.inviteExpiresAt ||
+        current.inviteExpiresAt.getTime() <= Date.now() ||
         current.reportLockAt !== null ||
         elapsedInterviewSeconds(current.startedAt) >= INTERVIEW_LIMIT_SECONDS
       ) {
