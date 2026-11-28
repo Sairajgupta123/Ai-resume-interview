@@ -256,8 +256,12 @@ export default function Home() {
         if (!savedOffer || typeof savedOffer.createdAt !== "string" || typeof savedOffer.id !== "string") {
           throw lastOfferError ?? new Error("Could not start live video call. Please retry.");
         }
-        cursor = savedOffer.createdAt;
-        cursorId = savedOffer.id;
+        // Poll remote signals from the beginning of this session. The employer
+        // can gather ICE candidates before the candidate creates this offer;
+        // anchoring the cursor to our own offer timestamp would skip those
+        // already-persisted candidates and can break TURN-only connections.
+        cursor = "";
+        cursorId = "";
         let polling = false;
         const poll = async () => {
           if (stopped || !peer || polling) return;
