@@ -4,3 +4,6 @@ export function waitForRealtimeSession(
 ): Promise<void>;
 
 export function getFinalRealtimeTranscript(data: unknown): { role: "user" | "assistant"; text: string } | null;
+
+
+export function isRetryableRealtimeTokenStatus(status: number): boolean;
