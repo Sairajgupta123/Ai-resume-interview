@@ -634,14 +634,16 @@ export default function Home() {
             throw new Error("Recording stopped after a browser error. The video was not uploaded; recover saved segments or continue without video.");
           }
           const type = recorder.mimeType || "video/webm";
-          if (targetSessionId && !recordingPersistenceFailedRef.current) {
-            await markCachedRecordingComplete(targetSessionId, type);
-          }
           const extension = type.includes("quicktime") ? "mov" : type.includes("mp4") ? "mp4" : "webm";
           const filename = `mzobs-interview-${Date.now()}.${extension}`;
           const blob = new Blob(chunks, { type });
           if (!targetSessionId) throw new Error("Interview session is not available for recording upload.");
           if (blob.size < 1) throw new Error("The browser did not produce a video recording. Please retry.");
+          // Never mark a zero-byte recording complete in IndexedDB: a metadata-
+          // only cache is invalid and would prevent a clean retry on this device.
+          if (!recordingPersistenceFailedRef.current) {
+            await markCachedRecordingComplete(targetSessionId, type);
+          }
           const form = new FormData();
           form.append("recording", blob, filename);
           const uploadController = new AbortController();
