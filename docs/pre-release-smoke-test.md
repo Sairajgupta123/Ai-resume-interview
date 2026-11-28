@@ -53,6 +53,8 @@ This checklist is for a staging deployment using the intended browser, xAI accou
 - [ ] Verify an authenticated HEAD request returns recording metadata without a response body, and an unauthenticated HEAD request is rejected.
 - [ ] Seek to multiple positions and confirm the recording endpoint returns valid HTTP 206 byte ranges with matching Content-Range and Content-Length; malformed and unsatisfiable ranges return HTTP 416.
 - [ ] Run two recording uploads concurrently against the same interview; exactly one database reference is committed, the losing upload returns HTTP 409, and its newly uploaded object is cleaned up without deleting the winning recording.
+- [ ] At the trusted ingress/runtime, enforce a hard request-body limit that allows the 100 MiB recording plus the documented multipart overhead, and cap concurrent recording uploads to a value derived from measured instance memory; do not rely on an in-process semaphore for a multi-instance deployment.
+- [ ] Load-test one, two and the maximum admitted number of simultaneous near-limit uploads on the actual staging instance size. Measure peak resident memory, request duration and temporary storage; confirm the instance remains healthy, excess requests are bounded by ingress capacity controls, and failed/aborted uploads leave no referenced or untracked recording objects.
 
 ## Live AI interview
 
