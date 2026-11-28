@@ -495,9 +495,16 @@ export default function Home() {
       }
       if (!recordingSavedOk && sessionId) {
         const cached = await getCachedRecording(sessionId).catch(() => null);
-        if (cached?.chunks.length) {
+        if (cached?.chunks.length && cached.complete) {
           setRecoverableRecording(true);
-          throw new Error("Your recording is still saved on this device but has not uploaded. Recover it from the camera panel, then end the interview again.");
+          throw new Error("Your complete recording is still saved on this device but has not uploaded. Recover it from the camera panel, then end the interview again.");
+        }
+        if (cached?.chunks.length && !cached.complete) {
+          // An interrupted partial cache is intentionally not uploadable. It
+          // must not deadlock report generation behind a recovery action that
+          // will always reject the incomplete recording.
+          setRecoverableRecording(false);
+          setError("Only an incomplete video segment was saved. It cannot be recovered as a full recording; the interview report can still be generated without video.");
         }
       }
       const data = await callApi({ action: "report", sessionId }) as Report;
@@ -579,7 +586,16 @@ export default function Home() {
     try {
       const preferredTypes = ["video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm", "video/mp4"];
       const mimeType = preferredTypes.find(type => MediaRecorder.isTypeSupported(type));
-      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+      // Keep a 15-minute interview comfortably below the server's 100 MiB
+      // upload ceiling: 650 kbps video + 96 kbps audio is about 84 MB total.
+      // Browsers may vary their encoder output, so the server limit remains
+      // authoritative; this is a conservative target, not a hard guarantee.
+      const recorderOptions: MediaRecorderOptions = {
+        ...(mimeType ? { mimeType } : {}),
+        videoBitsPerSecond: 650_000,
+        audioBitsPerSecond: 96_000
+      };
+      const recorder = new MediaRecorder(stream, recorderOptions);
       recorderRef.current = recorder;
       const chunks: BlobPart[] = [];
       recordingChunkIndexRef.current = 0;
