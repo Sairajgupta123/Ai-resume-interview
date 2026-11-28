@@ -879,9 +879,21 @@ export default function Home() {
       streamRef.current = acquiredStream;
       if (videoRef.current) videoRef.current.srcObject = acquiredStream;
       setCameraOn(true);
-      checkingRecordingBackup = Boolean(targetSessionId);
-      const cached = targetSessionId ? await getCachedRecording(targetSessionId) : null;
-      checkingRecordingBackup = false;
+      let cached = null as Awaited<ReturnType<typeof getCachedRecording>>;
+      if (targetSessionId) {
+        checkingRecordingBackup = true;
+        try {
+          cached = await getCachedRecording(targetSessionId);
+        } catch {
+          // IndexedDB is a recovery aid, not a prerequisite for recording.
+          // Continue with the in-memory MediaRecorder upload when local storage
+          // is blocked or unavailable, while warning that offline recovery may
+          // not be possible if the server upload also fails.
+          setError("Local recording recovery storage is unavailable. Video can still upload, but may not be recoverable if the upload fails.");
+        } finally {
+          checkingRecordingBackup = false;
+        }
+      }
       if (streamRef.current !== acquiredStream || acquiredStream.getTracks().every(track => track.readyState !== "live")) return;
       if (cached?.chunks.length && cached.complete) {
         setRecoverableRecording(true);
