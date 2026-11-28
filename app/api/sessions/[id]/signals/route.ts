@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { isEmployerAuthenticated } from "@/lib/auth";
 import { getCandidateInvitationToken, hasValidCandidateInvitation } from "@/lib/invitation";
-import { validateSignalPayload, isSignalOlderThanDescription, isSignalAfterCursor } from "@/lib/signalling-policy.mjs";
+import { validateSignalPayload, isSignalOlderThanDescription } from "@/lib/signalling-policy.mjs";
 import { isInterviewTimeLimitReached } from "@/lib/interview-policy.mjs";
 
 export const runtime = "nodejs";
@@ -106,13 +106,9 @@ export async function GET(request: NextRequest, context: Context) {
       isSignalOlderThanDescription(signal.createdAt, signal.id, latestDescription.createdAt, latestDescription.id)) return false;
     return true;
   });
-  // The cursor query is capped at 50 rows. Always include a newer SDP
-  // description even when a burst of ICE candidates pushed it past that page.
-  if (latestDescription &&
-    isSignalAfterCursor(latestDescription.createdAt, latestDescription.id, since, afterId) &&
-    !currentSignals.some(signal => signal.id === latestDescription.id)) {
-    currentSignals.push(latestDescription);
-  }
+  // Do not append a newer SDP description outside the ordered 50-row page:
+  // doing so would advance the client's cursor past older, unreturned ICE rows.
+  // The next poll will reach the description naturally after draining prior rows.
   currentSignals.sort((left, right) =>
     left.createdAt.getTime() - right.createdAt.getTime() || left.id.localeCompare(right.id)
   );
