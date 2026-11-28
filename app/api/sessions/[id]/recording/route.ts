@@ -73,7 +73,10 @@ async function s3Request(method: "PUT" | "GET" | "HEAD", key: string, body?: Buf
     body: method === "PUT" ? new Uint8Array(body || Buffer.alloc(0)) : undefined,
     cache: "no-store",
     redirect: "error",
-    signal: AbortSignal.timeout(30_000)
+    // A 100 MiB recording can legitimately take longer than 30 seconds on
+    // slower uplinks. Keep playback metadata/range requests short, but allow
+    // bounded time for the upload itself to reach private object storage.
+    signal: AbortSignal.timeout(method === "PUT" ? 120_000 : 30_000)
   });
   if (!response.ok) throw new Error("Private recording storage returned " + response.status + ": " + (await response.text()).slice(0, 500));
   return response;
