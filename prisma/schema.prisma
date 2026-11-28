@@ -19,6 +19,7 @@ model Interview {
   overallScore    Int?
   recommendation  String?
   recordingPath   String?
+  deletionInProgress Boolean @default(false)
   candidateEmail  String?
   invitationTokenHash String? @unique
   inviteExpiresAt DateTime?
