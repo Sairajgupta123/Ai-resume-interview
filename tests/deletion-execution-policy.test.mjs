@@ -45,3 +45,10 @@ test("tombstone clears candidate-identifying fields but preserves workflow ident
     lastErrorCode: null
   });
 });
+
+test("recording recovery is blocked once deletion has atomically locked the interview", async () => {
+  const { isInterviewDeletionLocked } = await import("../lib/deletion-execution-policy.mjs");
+  assert.equal(isInterviewDeletionLocked({ status: "completed", recordingPath: null, deletionInProgress: false }), false);
+  assert.equal(isInterviewDeletionLocked({ status: "completed", recordingPath: null, deletionInProgress: true }), true);
+  assert.equal(isInterviewDeletionLocked(null), false);
+});
