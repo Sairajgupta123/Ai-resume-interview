@@ -13,6 +13,7 @@ import { parseByteRange } from "@/lib/recording-range.mjs";
 import { isExpectedRecordingStorageResponse, parseRecordingContentLength } from "@/lib/recording-storage-response.mjs";
 import { deleteStoredInterviewRecording } from "@/lib/deletion-storage.mjs";
 import { enqueueRecordingCleanupTask } from "@/lib/recording-cleanup-queue.mjs";
+import { isInterviewDeletionLocked } from "@/lib/deletion-execution-policy.mjs";
 
 export const runtime = "nodejs";
 
@@ -216,7 +217,7 @@ export async function POST(request: NextRequest, context: Context) {
       select: { id: true, recordingPath: true, status: true, consentAcceptedAt: true, startedAt: true, deletionInProgress: true }
     });
     if (!interview) return NextResponse.json({ error: "Interview not found." }, { status: 404, headers: privateHeaders });
-    if (interview.deletionInProgress) {
+    if (isInterviewDeletionLocked(interview)) {
       return NextResponse.json({ error: "Recording uploads are closed because this interview is being deleted." }, { status: 409, headers: privateHeaders });
     }
     const completedRecovery = interview.status === "completed" && !interview.recordingPath;
