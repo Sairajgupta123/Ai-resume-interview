@@ -120,7 +120,10 @@ async function readBoundedRecordingForm(request: NextRequest, maxBytes: number):
     // Build the Blob directly from the bounded chunks instead of allocating
     // another contiguous 100 MiB Uint8Array first. Blob snapshots its parts, so
     // release the chunk references before multipart parsing continues.
-    const body = new Blob(chunks);
+    const blobParts: BlobPart[] = chunks.map(chunk =>
+      chunk.buffer.slice(chunk.byteOffset, chunk.byteOffset + chunk.byteLength) as ArrayBuffer
+    );
+    const body = new Blob(blobParts);
     chunks.length = 0;
     const boundedRequest = new Request(request.url, {
       method: "POST",
