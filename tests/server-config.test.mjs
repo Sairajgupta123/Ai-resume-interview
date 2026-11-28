@@ -13,7 +13,8 @@ const validProductionEnv = {
   S3_ENDPOINT: "https://storage.example.com",
   S3_BUCKET: "private-recordings",
   S3_ACCESS_KEY_ID: "storage-access-key",
-  S3_SECRET_ACCESS_KEY: "storage-secret-key"
+  S3_SECRET_ACCESS_KEY: "storage-secret-key",
+  CRON_SECRET: "a-unique-recording-cleanup-secret-with-at-least-32-chars"
 };
 
 test("development and test environments do not require production secrets", () => {
@@ -85,4 +86,25 @@ test("development may use the local public app URL", () => {
     NODE_ENV: "development",
     NEXT_PUBLIC_APP_URL: "http://localhost:3000"
   }), []);
+});
+
+
+test("rejects a weak recording cleanup worker secret", () => {
+  const errors = getProductionConfigErrors({
+    ...validProductionEnv,
+    CRON_SECRET: "too-short"
+  });
+  assert.ok(errors.some(error => error.includes("CRON_SECRET")));
+});
+
+test("requires a recording cleanup worker secret in production", () => {
+  const errors = getProductionConfigErrors({
+    ...validProductionEnv,
+    CRON_SECRET: ""
+  });
+  assert.ok(errors.some(error => error.includes("CRON_SECRET")));
+  assert.throws(
+    () => assertProductionConfig({ ...validProductionEnv, CRON_SECRET: "" }),
+    /CRON_SECRET must be configured/
+  );
 });

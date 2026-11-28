@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { buildCsv } from "@/lib/csv-export.mjs";
 import RecordingPlayer from "./recording-player";
 import { isRestorableInterviewReport } from "@/lib/report-recovery-policy.mjs";
+import { isIceCandidateForDescription } from "@/lib/signalling-policy.mjs";
 
 type Item = { id: string; candidateName: string; role: string; mode: string; status: string; overallScore: number | null; recommendation: string | null; employerDecision: string | null; durationSeconds: number; createdAt: string };
 type Detail = Item & { candidateEmail?: string | null; resumeText: string; jobDescription: string; hasRecording: boolean; reportJson: string | null; employerNotes: string | null; decisionAt: string | null; decisionHistory: { id: string; decision: string; notes: string | null; createdAt: string }[]; messages: { role: string; content: string }[] };
@@ -51,6 +52,10 @@ export default function Dashboard() {
   const employerStopCallRef = useRef<(() => void) | null>(null);
   // Prevent slower detail requests from replacing a newer candidate selection.
   const detailRequestRef = useRef(0);
+  // Ignore older dashboard refreshes when mutations or manual refreshes overlap.
+  const dashboardLoadRef = useRef(0);
+  const comparisonRequestRef = useRef(0);
+  const pageRequestRef = useRef(0);
 
   useEffect(() => {
     if (!authenticated || !selected || selected.mode !== "live" || selected.status === "completed") {
@@ -75,6 +80,8 @@ export default function Dashboard() {
     };
     employerStopCallRef.current = stopLocalCall;
     const pendingIce: RTCIceCandidateInit[] = [];
+    // Retain locally generated ICE until the signalling API acknowledges it.
+    const pendingLocalIce: string[] = [];
     // Keep a generated answer until the server confirms it. If the POST fails
     // after setLocalDescription(), retry the same answer instead of losing the offer.
     let pendingAnswer: { offerId: string; payload: string } | null = null;
@@ -92,16 +99,21 @@ export default function Dashboard() {
         peer = new RTCPeerConnection({ iceServers });
         employerPeerRef.current = peer;
         peer.ontrack = event => {
+          // Ignore delayed media events from an employer peer that was replaced
+          // after reconnect or when switching the selected interview.
+          if (stopped || employerPeerRef.current !== peer) return;
           if (employerVideoRef.current) employerVideoRef.current.srcObject = event.streams[0];
           setLiveCallState("Connected · live video and audio");
         };
         peer.onconnectionstatechange = () => {
+          if (stopped) return;
           if (peer?.connectionState === "connecting") setLiveCallState("Connecting to candidate…");
           if (peer?.connectionState === "connected") setLiveCallState("Connected · live video and audio");
           if (peer?.connectionState === "failed") setLiveCallState("Connection failed. Waiting for the candidate to restart live video…");
           if (peer?.connectionState === "disconnected") setLiveCallState("Candidate connection interrupted. Waiting for automatic recovery…");
         };
         peer.oniceconnectionstatechange = () => {
+          if (stopped) return;
           if (peer?.iceConnectionState === "connected" || peer?.iceConnectionState === "completed") {
             setLiveCallState("Connected · live video and audio");
           } else if (peer?.iceConnectionState === "failed") {
@@ -111,12 +123,8 @@ export default function Dashboard() {
           }
         };
         peer.onicecandidate = event => {
-          if (event.candidate && !stopped) {
-            void postSignal("ice", JSON.stringify(event.candidate.toJSON())).then(response => {
-              if (!response.ok && !stopped) setLiveCallState("Could not exchange live network information. Check the connection and retry.");
-            }).catch(() => {
-              if (!stopped) setLiveCallState("Live network signalling failed. Check the connection.");
-            });
+          if (event.candidate && !stopped && pendingLocalIce.length < 128) {
+            pendingLocalIce.push(JSON.stringify(event.candidate.toJSON()));
           }
         };
         setLiveCallState("Requesting employer camera and microphone…");
@@ -130,6 +138,11 @@ export default function Dashboard() {
           if (stopped || !peer || polling) return;
           polling = true;
           try {
+            while (pendingLocalIce.length > 0 && !stopped) {
+              const iceResponse = await postSignal("ice", pendingLocalIce[0]);
+              if (!iceResponse.ok) throw new Error("Live network signalling is pending; retrying…");
+              pendingLocalIce.shift();
+            }
             const response = await fetch(`/api/sessions/${selected.id}/signals?since=${encodeURIComponent(cursor)}&afterId=${encodeURIComponent(cursorId)}`, { cache: "no-store" });
             if (!response.ok) return;
             const data = await response.json();
@@ -143,7 +156,9 @@ export default function Dashboard() {
             for (const signal of data.signals || []) {
               if (signal.kind === "offer" && peer!.signalingState === "stable" && signal.id !== answeredOfferId) {
                 await peer!.setRemoteDescription(JSON.parse(signal.payload));
-                for (const candidate of pendingIce.splice(0)) await peer!.addIceCandidate(candidate).catch(() => {});
+                const activeRemoteDescription = peer!.remoteDescription;
+                const readyIce = pendingIce.splice(0).filter(candidate => isIceCandidateForDescription(candidate, activeRemoteDescription));
+                for (const candidate of readyIce) await peer!.addIceCandidate(candidate).catch(() => {});
                 const answer = await peer!.createAnswer();
                 await peer!.setLocalDescription(answer);
                 pendingAnswer = { offerId: signal.id, payload: JSON.stringify(peer!.localDescription) };
@@ -154,8 +169,11 @@ export default function Dashboard() {
                 setLiveCallState("Answer sent · connecting…");
               } else if (signal.kind === "ice") {
                 const candidate = JSON.parse(signal.payload) as RTCIceCandidateInit;
-                if (peer!.remoteDescription) await peer!.addIceCandidate(candidate).catch(() => {});
-                else if (pendingIce.length < 128) pendingIce.push(candidate);
+                if (peer!.remoteDescription && isIceCandidateForDescription(candidate, peer!.remoteDescription)) {
+                  await peer!.addIceCandidate(candidate).catch(() => {});
+                } else if (pendingIce.length < 128) {
+                  pendingIce.push(candidate);
+                }
               } else if (signal.kind === "hangup") {
                 stopLocalCall();
                 setLiveCallState("Candidate ended the call.");
@@ -211,9 +229,14 @@ export default function Dashboard() {
   };
 
   const load = async () => {
+    const requestId = ++dashboardLoadRef.current;
+    pageRequestRef.current += 1;
+    setLoadingMore(false);
     const r = await fetch("/api/sessions", { cache: "no-store" });
+    if (requestId !== dashboardLoadRef.current) return;
     if (r.status === 401) { setAuthenticated(false); return; }
     const data: unknown = await r.json();
+    if (requestId !== dashboardLoadRef.current) return;
     if (!r.ok) {
       const message = data && typeof data === "object" && "error" in data && typeof data.error === "string"
         ? data.error
@@ -239,6 +262,7 @@ export default function Dashboard() {
       fetchPanel("/api/employer/privacy/retention", "Retention preview unavailable."),
       fetchPanel("/api/employer/privacy/deletion-requests", "Deletion queue unavailable.")
     ]);
+    if (requestId !== dashboardLoadRef.current) return;
 
     if (analyticsResult.status === "fulfilled") {
       setAnalytics(analyticsResult.value.analytics);
@@ -287,6 +311,10 @@ export default function Dashboard() {
     const requestId = ++detailRequestRef.current;
     setSelected(null);
     setError("");
+    setDeletionReason("");
+    setDeletionConfirmation("");
+    setDeletionMessage("");
+    setDeletionError("");
     try {
       const response = await fetch(`/api/sessions/${encodeURIComponent(id)}`, { cache: "no-store" });
       const data: unknown = await response.json();
@@ -320,6 +348,10 @@ export default function Dashboard() {
     setSelected(null);
     setReplacementInviteUrl("");
     setInviteReissueError("");
+    setDeletionReason("");
+    setDeletionConfirmation("");
+    setDeletionMessage("");
+    setDeletionError("");
   };
 
   const reissueInvitation = async () => {
@@ -391,35 +423,44 @@ export default function Dashboard() {
       try {
         await load();
       } catch {
-        setError("Decision saved, but the dashboard list could not refresh. Refresh the page to see the latest data.");
+        if (detailRequestRef.current === detailRequestId) {
+          setError("Decision saved, but the dashboard list could not refresh. Refresh the page to see the latest data.");
+        }
       }
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : "Could not save decision.");
+      if (detailRequestRef.current === detailRequestId) {
+        setError(failure instanceof Error ? failure.message : "Could not save decision.");
+      }
     } finally {
       setDecisionBusy(false);
     }
   };
 
-  const logout = async () => { detailRequestRef.current += 1; await fetch("/api/auth/logout", { method: "POST" }); setAuthenticated(false); setSelected(null); };
+  const logout = async () => { dashboardLoadRef.current += 1; pageRequestRef.current += 1; detailRequestRef.current += 1; await fetch("/api/auth/logout", { method: "POST" }); setAuthenticated(false); setSelected(null); };
   const filtered = items.filter(x => `${x.candidateName} ${x.role}`.toLowerCase().includes(query.toLowerCase()));
   const compared = items.filter(x => compareIds.includes(x.id));
   const toggleCompare = (id: string) => {
+    comparisonRequestRef.current += 1;
     setComparison(null);
     setCompareIds(current => current.includes(id) ? current.filter(value => value !== id) : current.length < 3 ? [...current, id] : current);
   };
   const runEvidenceComparison = async () => {
     if (compareIds.length < 2 || comparisonBusy) return;
+    const requestId = ++comparisonRequestRef.current;
+    const requestedIds = [...compareIds];
     setComparisonBusy(true); setError("");
     try {
       const response = await fetch("/api/employer/compare", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ interviewIds: compareIds })
+        body: JSON.stringify({ interviewIds: requestedIds })
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Could not compare candidates.");
-      setComparison(data.comparison);
+      if (requestId === comparisonRequestRef.current) setComparison(data.comparison);
     } catch (error) {
-      setError(error instanceof Error ? error.message : "Could not compare candidates.");
+      if (requestId === comparisonRequestRef.current) {
+        setError(error instanceof Error ? error.message : "Could not compare candidates.");
+      }
     } finally {
       setComparisonBusy(false);
     }
@@ -443,12 +484,14 @@ export default function Dashboard() {
     } finally { setDeletionActionBusy(""); }
   };
   const createDeletionRequest = async () => {
-    if (!selected) return;
+    if (!selected || deletionBusy) return;
+    const targetInterviewId = selected.id;
+    const detailRequestId = detailRequestRef.current;
     setDeletionBusy(true);
     setDeletionMessage("");
     setDeletionError("");
     try {
-      const response = await fetch("/api/employer/privacy/deletion-requests/" + encodeURIComponent(selected.id), {
+      const response = await fetch("/api/employer/privacy/deletion-requests/" + encodeURIComponent(targetInterviewId), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -460,23 +503,30 @@ export default function Dashboard() {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Could not create deletion request.");
-      setDeletionMessage("Request recorded. Candidate verification and separate approval are still required. No data has been deleted.");
-      setDeletionReason("");
-      setDeletionConfirmation("");
+      if (detailRequestRef.current === detailRequestId) {
+        setDeletionMessage("Request recorded. Candidate verification and separate approval are still required. No data has been deleted.");
+        setDeletionReason("");
+        setDeletionConfirmation("");
+      }
       await load();
     } catch (failure) {
-      setDeletionError(failure instanceof Error ? failure.message : "Could not create deletion request.");
+      if (detailRequestRef.current === detailRequestId) {
+        setDeletionError(failure instanceof Error ? failure.message : "Could not create deletion request.");
+      }
     } finally {
       setDeletionBusy(false);
     }
   };
   const loadMore = async () => {
     if (!nextCursor || !hasMore || loadingMore) return;
+    const requestId = ++pageRequestRef.current;
+    const refreshId = dashboardLoadRef.current;
     setLoadingMore(true);
     setError("");
     try {
       const response = await fetch("/api/sessions?cursor=" + encodeURIComponent(nextCursor), { cache: "no-store" });
       const data: unknown = await response.json();
+      if (requestId !== pageRequestRef.current || refreshId !== dashboardLoadRef.current) return;
       if (!response.ok) {
         const message = data && typeof data === "object" && "error" in data && typeof data.error === "string"
           ? data.error
@@ -495,7 +545,7 @@ export default function Dashboard() {
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : "Could not load more interviews.");
     } finally {
-      setLoadingMore(false);
+      if (requestId === pageRequestRef.current) setLoadingMore(false);
     }
   };
 
@@ -635,7 +685,7 @@ export default function Dashboard() {
       </tbody></table></div>}
       <p className="analytics-disclaimer">This feed records hiring decisions and notes. It is not a complete security access log and does not record every page view or data access.</p>
     </section>
-    {compared.length > 0 && <section className="dashboard-table-card"><div className="table-heading"><div><h2>Candidate comparison</h2><p>Compare up to three candidates side by side. AI scores are advisory, not hiring decisions.</p></div><button className="outline-btn" onClick={runEvidenceComparison} disabled={compareIds.length < 2 || comparisonBusy}>{comparisonBusy ? "Comparing…" : "Compare skill evidence"}</button><button className="outline-btn" onClick={() => { setCompareIds([]); setComparison(null); }}>Clear comparison</button></div><div className="table-scroll"><table><thead><tr><th>Measure</th>{compared.map(item=><th key={item.id}>{item.candidateName}<small> · {item.role}</small></th>)}</tr></thead><tbody>{([{label:"AI score",value:(item:Item)=>item.overallScore === null ? "—" : `${item.overallScore}/100`},{label:"AI recommendation",value:(item:Item)=>item.recommendation || "—"},{label:"Employer decision",value:(item:Item)=>item.employerDecision || "Pending"},{label:"Interview status",value:(item:Item)=>item.status},{label:"Interview mode",value:(item:Item)=>item.mode},{label:"Duration",value:(item:Item)=>`${Math.floor(item.durationSeconds/60)}m ${item.durationSeconds%60}s`}]).map(metric=><tr key={metric.label}><th>{metric.label}</th>{compared.map(item=><td key={item.id}>{metric.value(item)}</td>)}</tr>)}</tbody></table></div>
+    {compared.length > 0 && <section className="dashboard-table-card"><div className="table-heading"><div><h2>Candidate comparison</h2><p>Compare up to three candidates side by side. AI scores are advisory, not hiring decisions.</p></div><button className="outline-btn" onClick={runEvidenceComparison} disabled={compareIds.length < 2 || comparisonBusy}>{comparisonBusy ? "Comparing…" : "Compare skill evidence"}</button><button className="outline-btn" onClick={() => { comparisonRequestRef.current += 1; setCompareIds([]); setComparison(null); }}>Clear comparison</button></div><div className="table-scroll"><table><thead><tr><th>Measure</th>{compared.map(item=><th key={item.id}>{item.candidateName}<small> · {item.role}</small></th>)}</tr></thead><tbody>{([{label:"AI score",value:(item:Item)=>item.overallScore === null ? "—" : `${item.overallScore}/100`},{label:"AI recommendation",value:(item:Item)=>item.recommendation || "—"},{label:"Employer decision",value:(item:Item)=>item.employerDecision || "Pending"},{label:"Interview status",value:(item:Item)=>item.status},{label:"Interview mode",value:(item:Item)=>item.mode},{label:"Duration",value:(item:Item)=>`${Math.floor(item.durationSeconds/60)}m ${item.durationSeconds%60}s`}]).map(metric=><tr key={metric.label}><th>{metric.label}</th>{compared.map(item=><td key={item.id}>{metric.value(item)}</td>)}</tr>)}</tbody></table></div>
       {comparison && <div className="evidence-comparison">
         <h3>Skill evidence comparison</h3>
         <p>{comparison.comparisonNote}</p>

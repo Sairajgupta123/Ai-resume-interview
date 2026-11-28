@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { isEmployerAuthenticated } from "@/lib/auth";
 import { getCandidateInvitationToken, hasValidCandidateInvitation } from "@/lib/invitation";
-import { validateSignalPayload, isSignalOlderThanDescription, isSignalAfterCursor } from "@/lib/signalling-policy.mjs";
+import { validateSignalPayload } from "@/lib/signalling-policy.mjs";
 import { isInterviewTimeLimitReached } from "@/lib/interview-policy.mjs";
 
 export const runtime = "nodejs";
@@ -77,46 +78,49 @@ export async function GET(request: NextRequest, context: Context) {
   if (Number.isNaN(since.getTime()) || afterId.length > 64) return NextResponse.json({ error: "Invalid cursor." }, { status: 400, headers });
   const remoteSender = sender === "employer" ? "candidate" : "employer";
   const descriptionKind = sender === "employer" ? "offer" : "answer";
-  const [signals, latestDescription] = await Promise.all([
-    db.interviewSignal.findMany({
-      where: {
-        interviewId: id,
-        sender: remoteSender,
-        OR: [{ createdAt: { gt: since } }, ...(rawSince && afterId ? [{ createdAt: since, id: { gt: afterId } }] : [])]
-      },
-      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-      take: 50,
-      select: { id: true, kind: true, payload: true, createdAt: true }
-    }),
-    db.interviewSignal.findFirst({
-      where: { interviewId: id, sender: remoteSender, kind: descriptionKind },
-      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-      select: { id: true, kind: true, payload: true, createdAt: true }
-    })
-  ]);
-
-  // A refreshed peer must negotiate against the newest SDP description, not
-  // replay an older offer/answer from a connection that no longer exists.
-  // ICE and hangup signals remain available because they are not SDP revisions.
-  const currentSignals = signals.filter(signal => {
-    if (signal.kind === descriptionKind && signal.id !== latestDescription?.id) return false;
-    // A fresh SDP negotiation supersedes old call-ending signals. Keep a
-    // hangup only when it happened after the latest remote offer/answer.
-    if (signal.kind === "hangup" && latestDescription &&
-      isSignalOlderThanDescription(signal.createdAt, signal.id, latestDescription.createdAt, latestDescription.id)) return false;
-    return true;
+  const latestDescription = await db.interviewSignal.findFirst({
+    where: { interviewId: id, sender: remoteSender, kind: descriptionKind },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    select: { id: true, kind: true, payload: true, createdAt: true }
   });
-  // The cursor query is capped at 50 rows. Always include a newer SDP
-  // description even when a burst of ICE candidates pushed it past that page.
-  if (latestDescription &&
-    isSignalAfterCursor(latestDescription.createdAt, latestDescription.id, since, afterId) &&
-    !currentSignals.some(signal => signal.id === latestDescription.id)) {
-    currentSignals.push(latestDescription);
+
+  // Filter superseded descriptions and stale hangups in the database query,
+  // before applying the 50-row page limit. Filtering after pagination could
+  // return an empty page whose cursor never advances, trapping the peer on
+  // the same 50 obsolete rows forever.
+  const currentSignalFilters: Prisma.InterviewSignalWhereInput[] = [
+    { OR: [{ kind: { not: descriptionKind } }, ...(latestDescription ? [{ id: latestDescription.id }] : [])] }
+  ];
+  if (latestDescription) {
+    currentSignalFilters.push({
+      OR: [
+        { kind: { not: "hangup" } },
+        { createdAt: { gt: latestDescription.createdAt } },
+        { createdAt: latestDescription.createdAt, id: { gt: latestDescription.id } }
+      ]
+    });
   }
-  currentSignals.sort((left, right) =>
+  const signals = await db.interviewSignal.findMany({
+    where: {
+      interviewId: id,
+      sender: remoteSender,
+      AND: currentSignalFilters,
+      OR: [{ createdAt: { gt: since } }, ...(rawSince && afterId ? [{ createdAt: since, id: { gt: afterId } }] : [])]
+    },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    take: 50,
+    select: { id: true, kind: true, payload: true, createdAt: true }
+  });
+
+  // The database has already excluded older SDP revisions and hangups that
+  // belong to a superseded negotiation, so every paged row is actionable.
+  // Do not append a newer SDP description outside the ordered 50-row page:
+  // doing so would advance the client's cursor past older, unreturned ICE rows.
+  // The next poll will reach the description naturally after draining prior rows.
+  signals.sort((left, right) =>
     left.createdAt.getTime() - right.createdAt.getTime() || left.id.localeCompare(right.id)
   );
-  return NextResponse.json({ signals: currentSignals }, { headers });
+  return NextResponse.json({ signals }, { headers });
 }
 export async function POST(request: NextRequest, context: Context) {
   const { id } = await context.params;

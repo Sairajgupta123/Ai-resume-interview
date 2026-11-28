@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { EMPLOYER_SESSION_MAX_AGE_SECONDS, isSessionTimestampValid } from "../lib/session-policy.mjs";
+import { EMPLOYER_SESSION_MAX_AGE_SECONDS, isSessionTimestampValid, parseEmployerSessionToken } from "../lib/session-policy.mjs";
 
 const now = Date.UTC(2026, 10, 20, 12, 0, 0);
 
@@ -30,4 +30,17 @@ test("malformed timestamps are rejected", () => {
 
 test("unsafe integer timestamps are rejected", () => {
   assert.equal(isSessionTimestampValid("999999999999999999999", now), false);
+});
+
+test("session token parsing supports employer usernames containing periods", () => {
+  assert.deepEqual(
+    parseEmployerSessionToken("hiring.ops.admin.1795003200000.signature"),
+    { username: "hiring.ops.admin", timestamp: "1795003200000", signature: "signature" }
+  );
+});
+
+test("session token parsing rejects missing or empty components", () => {
+  for (const token of ["", ".100.signature", "admin..signature", "admin.100.", "admin.signature"]) {
+    assert.equal(parseEmployerSessionToken(token), null, token);
+  }
 });

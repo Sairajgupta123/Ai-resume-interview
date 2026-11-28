@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { isEmployerAuthenticated } from "@/lib/auth";
 import { createInvitationToken, hashInvitationToken } from "@/lib/invitation";
+import { replacePendingCandidateInvitation } from "@/lib/invitation-service.mjs";
 
 type Context = { params: Promise<{ id: string }> };
 
@@ -17,11 +18,14 @@ export async function POST(_request: NextRequest, context: Context) {
     }
 
     const { id } = await context.params;
-    const interview = await db.interview.findUnique({ where: { id }, select: { id: true, status: true, startedAt: true, inviteUsedAt: true } });
+    const interview = await db.interview.findUnique({
+      where: { id },
+      select: { id: true, status: true, startedAt: true, inviteUsedAt: true, invitationTokenHash: true }
+    });
     if (!interview) {
       return NextResponse.json({ error: "Interview not found." }, { status: 404, headers: PRIVATE_HEADERS });
     }
-    if (interview.status !== "invited" || interview.startedAt || interview.inviteUsedAt) {
+    if (interview.status !== "invited" || interview.startedAt || interview.inviteUsedAt || !interview.invitationTokenHash) {
       return NextResponse.json(
         { error: "Only interviews awaiting candidate activity can receive a replacement invitation." },
         { status: 409, headers: PRIVATE_HEADERS }
@@ -30,19 +34,17 @@ export async function POST(_request: NextRequest, context: Context) {
 
     const token = createInvitationToken();
     const expiresAt = new Date(Date.now() + 72 * 60 * 60 * 1000);
-    // Make the status check and token rotation atomic. A candidate starting
-    // concurrently must not have their active browser session invalidated.
-    const rotated = await db.interview.updateMany({
-      where: { id, status: "invited", startedAt: null, inviteUsedAt: null },
-      data: {
-        invitationTokenHash: hashInvitationToken(token),
-        inviteExpiresAt: expiresAt,
-        inviteUsedAt: null
-      }
+    // Compare-and-swap the old hash as well as the lifecycle fields. If two
+    // employer requests rotate simultaneously, only one link can be issued.
+    const rotated = await replacePendingCandidateInvitation(db, {
+      sessionId: id,
+      currentTokenHash: interview.invitationTokenHash,
+      nextTokenHash: hashInvitationToken(token),
+      expiresAt
     });
-    if (rotated.count !== 1) {
+    if (!rotated) {
       return NextResponse.json(
-        { error: "This interview is no longer awaiting a candidate. Refresh before issuing another invitation." },
+        { error: "This interview changed while the invitation was being replaced. Refresh before trying again." },
         { status: 409, headers: PRIVATE_HEADERS }
       );
     }

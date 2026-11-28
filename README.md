@@ -40,7 +40,7 @@ A resume- and job-description-aware interview application powered by xAI Grok.
 - xAI Chat Completions API and xAI Realtime Speech-to-Speech API
 
 ## Requirements
-- Node.js 20+
+- Node.js 22 or 24 (CI is validated on Node.js 24)
 - npm
 - An xAI API key with access to the configured model
 
@@ -77,6 +77,20 @@ Open http://localhost:3000/dashboard and sign in with `EMPLOYER_USERNAME` and `E
 
 Set `NEXT_PUBLIC_APP_URL` to the application's canonical public HTTPS origin (for example, `https://interviews.example.com`). It must not include a path, credentials, query string or fragment, and localhost is rejected in production. This origin is used to build candidate invitation and privacy verification links; production startup fails when it is missing or invalid. The `.env.example` localhost value is for local development only.
 
+## Reverse-proxy requirement for voice rate limiting
+
+The live voice credential endpoint keys its abuse limit using the client IP plus interview ID. In production, the trusted ingress proxy or hosting platform must **overwrite** the `X-Real-IP` header (or provide a trusted `X-Forwarded-For` chain) from the actual TCP peer. It must not pass through client-supplied IP headers unchanged. The application does not independently know the original peer address behind a proxy, so an incorrectly configured ingress can let callers rotate spoofed IP values and weaken per-IP throttling. Verify this at the deployed edge before enabling public live interviews; do not treat a browser-supplied forwarding header as trusted identity.
+
+## xAI Realtime integration notes
+
+The browser token flow, WebSocket event order, audio configuration and manual staging checks are documented in [the xAI Realtime integration notes](docs/xai-realtime-integration.md).
+
+## Recording cleanup retry worker
+
+Recording replacement now stores cleanup intent for the previous object in the same SQLite transaction that changes the interview's recording reference. Failed cleanup of a losing or ambiguous upload is also queued when the database is reachable. The worker rechecks that no interview references an object before deleting it, uses a two-minute lease, retries with exponential backoff (30 seconds up to 24 hours), and stops automatically after 12 attempts for manual investigation.
+
+Configure a long random `CRON_SECRET` in the server environment and invoke `POST /api/internal/recording-cleanup` from a trusted scheduler (for example, once per minute) with `Authorization: Bearer $CRON_SECRET`. Do not call this endpoint from browser code or expose the secret. It processes at most 10 tasks per invocation. Production startup rejects a missing or short `CRON_SECRET`, so configure it before deployment; local development may leave it unset. Failed tasks remain visible in `RecordingCleanupTask`; add operational alerting for tasks that reach the 12-attempt limit. This queue is additive SQLite schema and must be applied using the backup/maintenance procedure in [the SQLite schema maintenance guide](docs/sqlite-schema-maintenance.md). It is not a substitute for object-storage inventory/reconciliation if the database itself is unavailable while an orphan is created.
+
 ## Important current boundaries
 - After candidate consent and camera/microphone permission, audio-video recording starts automatically in both live and recorded modes. Candidates can stop recording; the recording is uploaded over an authenticated endpoint before the report screen is shown. The app warns before leaving while recording or upload is active, but recording segments are also temporarily stored in browser IndexedDB until server upload succeeds. If an upload is interrupted, the candidate can recover locally saved segments from the same browser/device before completing the interview. Browser storage can still be cleared by the user, browser policy or device cleanup, so this is a recovery aid rather than a guaranteed backup. The recording bytes are not stored in SQLite. Local development uses `data/recordings`; production requires private S3-compatible object storage configured with `S3_ENDPOINT`, `S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY_ID` and `S3_SECRET_ACCESS_KEY`. The bucket must remain private; never expose object credentials to the browser. Browser recording support and upload size limits apply (100 MB maximum).
 - Live AI voice uses xAI Realtime over a browser WebSocket authenticated with a short-lived ephemeral token; the permanent xAI API key remains server-side. The microphone stream is sent to xAI for real-time speech processing, and finalized candidate/interviewer transcripts are saved to the interview record. Recorded interviews and text fallback continue to use browser speech APIs, whose availability and language quality vary by browser/device. Text entry remains available. The Realtime client is implemented but still needs end-to-end testing with an authorized xAI account and supported browser before production use.
@@ -84,7 +98,7 @@ Set `NEXT_PUBLIC_APP_URL` to the application's canonical public HTTPS origin (fo
 - Candidate invitations are generated as expiring private links, but the app does not send emails automatically; employers copy and send the link themselves.
 - Employer dashboard supports filtering, comparing up to three candidates, exporting the interview list to CSV, and downloading a per-candidate report CSV with skill evidence, question feedback, decision history and transcript. Export endpoints require an authenticated employer session.
 - Grok Realtime is used for the live candidate-to-AI spoken interview; the turn-based Chat Completions path remains available for text fallback and recorded mode. WebRTC provides a separate candidate-to-employer audio/video room and is not the AI voice transport. A coturn-compatible TURN REST API service can be configured using TURN_URL and TURN_SHARED_SECRET in the server environment. The server issues time-limited HMAC credentials after validating the candidate invite token or employer session; the shared secret is never sent to the browser. Without TURN settings, the app uses public STUN only and peer connectivity may fail on restrictive NAT/firewall networks.
-- Before production deployment, add organisation-level multi-tenant access control, password reset, stronger operational monitoring, secure cloud recording storage, retention/deletion jobs, audit logging and a complete privacy notice.
+- Before production deployment, add organisation-level multi-tenant access control, password reset, stronger operational monitoring, complete security/audit logging and a complete privacy notice. Recording cleanup retries are implemented, but the trusted scheduler and production S3 lifecycle/backup settings must still be configured and tested.
 - This is not a certified hiring assessment. AI reports can be wrong or incomplete; employers must review evidence and make final decisions.
 
 ## Privacy

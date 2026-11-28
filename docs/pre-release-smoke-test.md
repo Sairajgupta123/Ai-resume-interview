@@ -12,6 +12,8 @@ This checklist is for a staging deployment using the intended browser, xAI accou
 - [ ] Confirm the xAI account has access to the configured chat and Realtime models.
 - [ ] Confirm TURN credentials are configured if cross-network candidate/employer video is required.
 
+- [ ] At the production ingress, send a forged `X-Real-IP` and `X-Forwarded-For` value; confirm the proxy overwrites/normalizes the trusted client address and the voice-session rate limit cannot be bypassed by caller-controlled forwarding headers.
+
 ## Employer and invitation
 
 - [ ] Employer can log in with the configured credentials.
@@ -24,6 +26,14 @@ This checklist is for a staging deployment using the intended browser, xAI accou
 - [ ] An expired or unknown invitation receives a generic authorization failure.
 
 ## Recorded interview
+- [ ] Configure a long random `CRON_SECRET` and verify the recording-cleanup worker rejects missing/incorrect bearer credentials.
+- [ ] Queue an unreferenced synthetic recording object and verify the scheduled worker deletes it and marks its task completed.
+- [ ] Queue a path still referenced by an interview and verify the worker preserves the object, leaves the task pending with `RECORDING_STILL_REFERENCED`, does not consume a retry attempt, and schedules a recheck about five minutes later.
+- [ ] Replace the interview's recording so the old path is no longer referenced; verify the pending cleanup task is later reclaimed and the old object is deleted exactly once.
+- [ ] Simulate a transient storage failure; verify the task is retried after backoff, an expired lease can be reclaimed, and the 12-attempt ceiling prevents endless retries.
+- [ ] Trigger two authenticated cleanup-worker requests concurrently while multiple synthetic tasks are due; verify no object is deleted twice, each task has one final state, and both invocations return bounded batch results.
+- [ ] Verify scheduler monitoring alerts after two consecutive failed invocations, and that overdue tasks, leases older than five minutes and tasks at the 12-attempt ceiling are visible to operators.
+- [ ] Replace a recording; verify the old-object cleanup task is created in the same database transaction as the new recording reference.
 
 - [ ] Candidate sees and accepts the consent notice before camera/microphone capture begins.
 - [ ] Candidate can deny either permission and receives a recoverable explanation.
@@ -43,6 +53,8 @@ This checklist is for a staging deployment using the intended browser, xAI accou
 - [ ] Verify an authenticated HEAD request returns recording metadata without a response body, and an unauthenticated HEAD request is rejected.
 - [ ] Seek to multiple positions and confirm the recording endpoint returns valid HTTP 206 byte ranges with matching Content-Range and Content-Length; malformed and unsatisfiable ranges return HTTP 416.
 - [ ] Run two recording uploads concurrently against the same interview; exactly one database reference is committed, the losing upload returns HTTP 409, and its newly uploaded object is cleaned up without deleting the winning recording.
+- [ ] At the trusted ingress/runtime, enforce a hard request-body limit that allows the 100 MiB recording plus the documented multipart overhead, and cap concurrent recording uploads to a value derived from measured instance memory; do not rely on an in-process semaphore for a multi-instance deployment.
+- [ ] Load-test one, two and the maximum admitted number of simultaneous near-limit uploads on the actual staging instance size. Measure peak resident memory, request duration and temporary storage; confirm the instance remains healthy, excess requests are bounded by ingress capacity controls, and failed/aborted uploads leave no referenced or untracked recording objects.
 
 ## Live AI interview
 
@@ -71,6 +83,12 @@ This checklist is for a staging deployment using the intended browser, xAI accou
 - [ ] Reconnection after refresh uses the scoped candidate cookie.
 - [ ] Force the employer's answer-signalling POST to fail once after the local answer is created; confirm the same answer is retried and the candidate offer is not lost.
 - [ ] Force a transient browser error while applying a remote SDP signal; confirm the polling cursor does not skip the signal and the next poll retries it.
+- [ ] After an initial candidate/employer connection succeeds, force the candidate ICE connection into `failed`; verify the candidate creates an ICE-restart offer, the employer applies that newer offer while its peer is stable, and the employer returns a fresh answer.
+- [ ] Confirm the candidate applies the restart answer only while it has a local offer outstanding, and both peers return to `connected`/ `completed` without creating a second peer connection or losing media tracks.
+- [ ] During ICE restart, delay or reorder candidate ICE messages around the restart offer; verify queued candidates are applied after the matching remote description and stale candidates do not prevent the fresh candidates from connecting.
+- [ ] Simulate a failed restart-offer POST after the server accepted it; verify the next signalling poll negotiates against the latest stored candidate offer and the employer does not answer an older SDP revision.
+- [ ] Force a temporary `disconnected` state that later recovers without an ICE restart; confirm the UI reports interruption and returns to connected without consuming the two failed-restart attempts.
+- [ ] Force two consecutive ICE failures; confirm the candidate retries at most twice and displays a clear recovery failure instead of silently claiming the video is connected.
 - [ ] Signalling rejects malformed, oversized or wrong-participant messages.
 - [ ] Employer can prepare ICE settings while an invited live interview is waiting, but candidate ICE settings are rejected until consent and interview start are persisted.
 - [ ] At exactly 15 minutes from the persisted start time, signalling POST rejects new SDP, ICE and hangup messages; polling returns no further signals.

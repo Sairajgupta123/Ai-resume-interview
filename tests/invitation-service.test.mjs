@@ -62,3 +62,48 @@ test("rejects incomplete or invalid rotation input without touching the database
   }), false);
   assert.equal(called, false);
 });
+
+
+test("replacement invitation uses compare-and-swap so concurrent rotations cannot invalidate the winner", async () => {
+  let call;
+  const db = {
+    interview: {
+      async updateMany(args) {
+        call = args;
+        return { count: 1 };
+      }
+    }
+  };
+  const expiresAt = new Date("2026-11-23T12:00:00.000Z");
+  const { replacePendingCandidateInvitation } = await import("../lib/invitation-service.mjs");
+  const result = await replacePendingCandidateInvitation(db, {
+    sessionId: "interview-1",
+    currentTokenHash: "old-link-hash",
+    nextTokenHash: "replacement-link-hash",
+    expiresAt
+  });
+  assert.equal(result, true);
+  assert.deepEqual(call.where, {
+    id: "interview-1",
+    invitationTokenHash: "old-link-hash",
+    status: "invited",
+    startedAt: null,
+    inviteUsedAt: null
+  });
+  assert.deepEqual(call.data, {
+    invitationTokenHash: "replacement-link-hash",
+    inviteExpiresAt: expiresAt,
+    inviteUsedAt: null
+  });
+});
+
+test("losing concurrent invitation replacement returns false and does not issue another usable link", async () => {
+  const db = { interview: { async updateMany() { return { count: 0 }; } } };
+  const { replacePendingCandidateInvitation } = await import("../lib/invitation-service.mjs");
+  assert.equal(await replacePendingCandidateInvitation(db, {
+    sessionId: "interview-1",
+    currentTokenHash: "already-rotated-hash",
+    nextTokenHash: "losing-link-hash",
+    expiresAt: new Date("2026-11-23T12:00:00.000Z")
+  }), false);
+});

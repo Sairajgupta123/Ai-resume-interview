@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { cacheRecordingChunk, clearCachedRecording, getCachedRecording, markCachedRecordingComplete } from "@/lib/recording-cache";
 import { GrokRealtimeClient } from "@/lib/grok-realtime-client";
 import { buildRealtimeInterviewInstructions } from "@/lib/realtime-interview-instructions.mjs";
+import { isIceCandidateForDescription } from "@/lib/signalling-policy.mjs";
 
 type ChatMessage = { role: "assistant" | "user"; content: string };
 type Report = {
@@ -160,6 +161,13 @@ export default function Home() {
     let cursor = "";
     let cursorId = "";
     const pendingIce: RTCIceCandidateInit[] = [];
+    // ICE events are emitted once; retain each candidate until the server
+    // acknowledges it so transient POST failures cannot silently break ICE.
+    const pendingLocalIce: string[] = [];
+    // Keep the exact ICE-restart offer until the signalling server confirms it.
+    // A failed response may be ambiguous: the server may have stored the offer
+    // even though the browser never received the acknowledgement.
+    let pendingRestartOffer: string | null = null;
     const headers = { "Content-Type": "application/json" };
     const init = async () => {
       try {
@@ -190,11 +198,13 @@ export default function Home() {
             try {
               const restartOffer = await peer!.createOffer({ iceRestart: true });
               await peer!.setLocalDescription(restartOffer);
+              pendingRestartOffer = JSON.stringify(peer!.localDescription);
               const restartResponse = await fetch(`/api/sessions/${sessionId}/signals`, {
                 method: "POST", headers, credentials: "same-origin",
-                body: JSON.stringify({ kind: "offer", payload: JSON.stringify(peer!.localDescription) })
+                body: JSON.stringify({ kind: "offer", payload: pendingRestartOffer })
               });
-              if (!restartResponse.ok) throw new Error("The live video reconnect request was rejected.");
+              if (!restartResponse.ok) throw new Error("The live video reconnect request was rejected; the same offer will be retried.");
+              pendingRestartOffer = null;
               setError(current => current.startsWith("Live video") ? "" : current);
             } catch (error) {
               if (!stopped) setError(error instanceof Error ? error.message : "Could not restart live video.");
@@ -204,18 +214,15 @@ export default function Home() {
           })();
         };
         peer.addEventListener("track", event => {
+          // Ignore late media events from a peer that was closed or replaced
+          // during camera toggles, reconnects, or React effect cleanup.
+          if (stopped || peerConnectionRef.current !== peer) return;
           if (remoteVideoRef.current) remoteVideoRef.current.srcObject = event.streams[0];
         });
         streamRef.current!.getTracks().forEach(track => peer!.addTrack(track, streamRef.current!));
         peer.onicecandidate = event => {
-          if (event.candidate && !stopped) {
-            void fetch(`/api/sessions/${sessionId}/signals`, {
-              method: "POST", headers, credentials: "same-origin", body: JSON.stringify({ kind: "ice", payload: JSON.stringify(event.candidate.toJSON()) })
-            }).then(response => {
-              if (!response.ok && !stopped) setError("Live video network setup was interrupted. Please check your connection.");
-            }).catch(() => {
-              if (!stopped) setError("Could not send live video network information. Check your connection.");
-            });
+          if (event.candidate && !stopped && pendingLocalIce.length < 128) {
+            pendingLocalIce.push(JSON.stringify(event.candidate.toJSON()));
           }
         };
         // Anchor the polling cursor to the server timestamp of this offer.
@@ -223,33 +230,76 @@ export default function Home() {
         // answer or ICE candidates for this negotiation.
         const offer = await peer.createOffer();
         await peer.setLocalDescription(offer);
-        const offerResponse = await fetch(`/api/sessions/${sessionId}/signals`, {
-          method: "POST", headers, credentials: "same-origin", body: JSON.stringify({ kind: "offer", payload: JSON.stringify(peer.localDescription) })
-        });
-        if (!offerResponse.ok) throw new Error("Could not start live video call.");
-        const savedOffer = await offerResponse.json();
-        if (typeof savedOffer.createdAt !== "string" || typeof savedOffer.id !== "string") {
-          throw new Error("The live video offer could not establish a reliable signalling cursor. Please retry.");
+        const initialOfferPayload = JSON.stringify(peer.localDescription);
+        let savedOffer: { createdAt?: string; id?: string } | null = null;
+        let lastOfferError: Error | null = null;
+        // Retry the exact same SDP if the first POST fails or its acknowledgement
+        // is lost. Recreating an offer here could desynchronize the peer's local SDP.
+        for (let attempt = 0; attempt < 3 && !stopped; attempt += 1) {
+          try {
+            const offerResponse = await fetch(`/api/sessions/${sessionId}/signals`, {
+              method: "POST", headers, credentials: "same-origin",
+              body: JSON.stringify({ kind: "offer", payload: initialOfferPayload })
+            });
+            if (!offerResponse.ok) throw new Error("Could not start live video call.");
+            savedOffer = await offerResponse.json();
+            if (typeof savedOffer?.createdAt === "string" && typeof savedOffer?.id === "string") break;
+            throw new Error("The live video offer could not establish a reliable signalling cursor.");
+          } catch (error) {
+            lastOfferError = error instanceof Error ? error : new Error("Could not start live video call.");
+            if (attempt < 2 && !stopped) {
+              await new Promise(resolve => window.setTimeout(resolve, 300 * (attempt + 1)));
+            }
+          }
         }
-        cursor = savedOffer.createdAt;
-        cursorId = savedOffer.id;
+        if (stopped) return;
+        if (!savedOffer || typeof savedOffer.createdAt !== "string" || typeof savedOffer.id !== "string") {
+          throw lastOfferError ?? new Error("Could not start live video call. Please retry.");
+        }
+        // Poll remote signals from the beginning of this session. The employer
+        // can gather ICE candidates before the candidate creates this offer;
+        // anchoring the cursor to our own offer timestamp would skip those
+        // already-persisted candidates and can break TURN-only connections.
+        cursor = "";
+        cursorId = "";
         let polling = false;
         const poll = async () => {
           if (stopped || !peer || polling) return;
           polling = true;
           try {
+            while (pendingLocalIce.length > 0 && !stopped) {
+              const iceResponse = await fetch(`/api/sessions/${sessionId}/signals`, {
+                method: "POST", headers, credentials: "same-origin",
+                body: JSON.stringify({ kind: "ice", payload: pendingLocalIce[0] })
+              });
+              if (!iceResponse.ok) throw new Error("Live video network signalling is pending; retrying.");
+              pendingLocalIce.shift();
+            }
+            if (pendingRestartOffer) {
+              const retryResponse = await fetch(`/api/sessions/${sessionId}/signals`, {
+                method: "POST", headers, credentials: "same-origin",
+                body: JSON.stringify({ kind: "offer", payload: pendingRestartOffer })
+              });
+              if (!retryResponse.ok) throw new Error("The live video reconnect request is still pending.");
+              pendingRestartOffer = null;
+            }
             const response = await fetch(`/api/sessions/${sessionId}/signals?since=${encodeURIComponent(cursor)}&afterId=${encodeURIComponent(cursorId)}`, { headers: {}, credentials: "same-origin", cache: "no-store" });
             if (!response.ok) return;
             const data = await response.json();
             for (const signal of data.signals || []) {
               if (signal.kind === "answer" && peer!.signalingState === "have-local-offer") {
                 await peer!.setRemoteDescription(JSON.parse(signal.payload));
-                for (const candidate of pendingIce.splice(0)) await peer!.addIceCandidate(candidate).catch(() => {});
+                const activeRemoteDescription = peer!.remoteDescription;
+                const readyIce = pendingIce.splice(0).filter(candidate => isIceCandidateForDescription(candidate, activeRemoteDescription));
+                for (const candidate of readyIce) await peer!.addIceCandidate(candidate).catch(() => {});
               }
               if (signal.kind === "ice") {
                 const candidate = JSON.parse(signal.payload) as RTCIceCandidateInit;
-                if (peer!.remoteDescription) await peer!.addIceCandidate(candidate).catch(() => {});
-                else if (pendingIce.length < 128) pendingIce.push(candidate);
+                if (peer!.remoteDescription && isIceCandidateForDescription(candidate, peer!.remoteDescription)) {
+                  await peer!.addIceCandidate(candidate).catch(() => {});
+                } else if (pendingIce.length < 128) {
+                  pendingIce.push(candidate);
+                }
               }
               if (signal.kind === "hangup") { stopped = true; if (timer !== undefined) window.clearInterval(timer); peer!.close(); setError("Employer ended the live video connection."); }
               // Keep the last successfully handled cursor if applying a signal
@@ -479,7 +529,7 @@ export default function Home() {
             new Promise<boolean>((_, reject) => {
               recordingWaitTimer = window.setTimeout(
                 () => reject(new Error("Recording upload is taking too long. Your interview report has not been generated yet. Wait for the recording status or recover the saved segments, then try again.")),
-                60_000
+                310_000
               );
             })
           ]);
@@ -489,9 +539,16 @@ export default function Home() {
       }
       if (!recordingSavedOk && sessionId) {
         const cached = await getCachedRecording(sessionId).catch(() => null);
-        if (cached?.chunks.length) {
+        if (cached?.chunks.length && cached.complete) {
           setRecoverableRecording(true);
-          throw new Error("Your recording is still saved on this device but has not uploaded. Recover it from the camera panel, then end the interview again.");
+          throw new Error("Your complete recording is still saved on this device but has not uploaded. Recover it from the camera panel, then end the interview again.");
+        }
+        if (cached?.chunks.length && !cached.complete) {
+          // An interrupted partial cache is intentionally not uploadable. It
+          // must not deadlock report generation behind a recovery action that
+          // will always reject the incomplete recording.
+          setRecoverableRecording(false);
+          setError("Only an incomplete video segment was saved. It cannot be recovered as a full recording; the interview report can still be generated without video.");
         }
       }
       const data = await callApi({ action: "report", sessionId }) as Report;
@@ -522,7 +579,9 @@ export default function Home() {
       const form = new FormData();
       form.append("recording", blob, `mzobs-recovered-${Date.now()}.${extension}`);
       const uploadController = new AbortController();
-      const uploadTimeout = window.setTimeout(() => uploadController.abort(), 45_000);
+      // Allow a bounded 5-minute window for slower candidate uplinks and the
+          // server's bounded private-storage write; do not discard a valid 100 MB upload after 5 minutes.
+          const uploadTimeout = window.setTimeout(() => uploadController.abort(), 300_000);
       let response: Response;
       let data: { error?: string };
       try {
@@ -532,10 +591,10 @@ export default function Home() {
           body: form,
           signal: uploadController.signal
         });
-        data = await response.json();
+        data = await response.json().catch(() => ({} as { error?: string }));
       } catch (uploadError) {
         if (uploadController.signal.aborted) {
-          throw new Error("Recording recovery timed out after 45 seconds. Your local recording segments have been kept; you can retry.");
+          throw new Error("Recording recovery timed out after 5 minutes. Your local recording segments have been kept; you can retry.");
         }
         throw uploadError;
       } finally {
@@ -573,7 +632,16 @@ export default function Home() {
     try {
       const preferredTypes = ["video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm", "video/mp4"];
       const mimeType = preferredTypes.find(type => MediaRecorder.isTypeSupported(type));
-      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+      // Keep a 15-minute interview comfortably below the server's 100 MiB
+      // upload ceiling: 650 kbps video + 96 kbps audio is about 84 MB total.
+      // Browsers may vary their encoder output, so the server limit remains
+      // authoritative; this is a conservative target, not a hard guarantee.
+      const recorderOptions: MediaRecorderOptions = {
+        ...(mimeType ? { mimeType } : {}),
+        videoBitsPerSecond: 650_000,
+        audioBitsPerSecond: 96_000
+      };
+      const recorder = new MediaRecorder(stream, recorderOptions);
       recorderRef.current = recorder;
       const chunks: BlobPart[] = [];
       recordingChunkIndexRef.current = 0;
@@ -610,18 +678,29 @@ export default function Home() {
             throw new Error("Recording stopped after a browser error. The video was not uploaded; recover saved segments or continue without video.");
           }
           const type = recorder.mimeType || "video/webm";
-          if (targetSessionId && !recordingPersistenceFailedRef.current) {
-            await markCachedRecordingComplete(targetSessionId, type);
-          }
           const extension = type.includes("quicktime") ? "mov" : type.includes("mp4") ? "mp4" : "webm";
           const filename = `mzobs-interview-${Date.now()}.${extension}`;
           const blob = new Blob(chunks, { type });
           if (!targetSessionId) throw new Error("Interview session is not available for recording upload.");
           if (blob.size < 1) throw new Error("The browser did not produce a video recording. Please retry.");
+          // Never mark a zero-byte recording complete in IndexedDB: a metadata-
+          // only cache is invalid and would prevent a clean retry on this device.
+          // A local-cache finalization failure must not block the primary server
+          // upload when the complete recording is still available in memory.
+          if (!recordingPersistenceFailedRef.current) {
+            try {
+              await markCachedRecordingComplete(targetSessionId, type);
+            } catch {
+              recordingPersistenceFailedRef.current = true;
+              setError("Local recording backup could not be finalized. The video will still be uploaded, but local recovery may be unavailable if the upload fails.");
+            }
+          }
           const form = new FormData();
           form.append("recording", blob, filename);
           const uploadController = new AbortController();
-          const uploadTimeout = window.setTimeout(() => uploadController.abort(), 45_000);
+          // Allow a bounded 3-minute window for slower candidate uplinks and the
+          // server's bounded private-storage write; do not discard a valid 100 MB upload after 5 minutes.
+          const uploadTimeout = window.setTimeout(() => uploadController.abort(), 300_000);
           let response: Response;
           let data: { error?: string };
           try {
@@ -631,16 +710,17 @@ export default function Home() {
               body: form,
               signal: uploadController.signal
             });
-            data = await response.json();
+            data = await response.json().catch(() => ({} as { error?: string }));
           } catch (uploadError) {
             if (uploadController.signal.aborted) {
-              throw new Error("Recording upload timed out after 45 seconds. Your locally saved segments will be kept for recovery.");
+              throw new Error("Recording upload timed out after 5 minutes. Your locally saved segments will be kept for recovery.");
             }
             throw uploadError;
           } finally {
             window.clearTimeout(uploadTimeout);
           }
           if (!response.ok) throw new Error(data.error || "Recording upload failed.");
+          setError("");
           recordingSavedRef.current = true;
           setRecordingSaved(true);
           setRecoverableRecording(false);
@@ -678,6 +758,10 @@ export default function Home() {
 
     // Never discard transcript entries from a previous voice connection.
     // Retry them with their original IDs before accepting a new live session.
+    // Keep a local transcript snapshot as well as updating React state: state
+    // setters are asynchronous, and the reconnect instructions below must
+    // include every entry recovered during this pass.
+    let reconnectHistory = [...history];
     await transcriptWriteRef.current;
     if (pendingTranscriptRef.current.length > 0) {
       const pendingEntries = [...pendingTranscriptRef.current];
@@ -702,6 +786,10 @@ export default function Home() {
               throw new Error(message);
             }
             pendingTranscriptRef.current = pendingTranscriptRef.current.filter(item => item.clientMessageId !== entry.clientMessageId);
+            // Restore the recovered turn into the visible and future Grok
+            // context; it was deliberately not added while persistence failed.
+            reconnectHistory = [...reconnectHistory, { role: entry.role, content: entry.content }];
+            setHistory(reconnectHistory);
             saved = true;
             break;
           } catch (error) {
@@ -723,7 +811,7 @@ export default function Home() {
     transcriptWriteRef.current = Promise.resolve();
     const instructions = buildRealtimeInterviewInstructions({
       isReconnect,
-      history,
+      history: reconnectHistory,
       candidateName,
       role,
       resume,
@@ -840,9 +928,21 @@ export default function Home() {
       streamRef.current = acquiredStream;
       if (videoRef.current) videoRef.current.srcObject = acquiredStream;
       setCameraOn(true);
-      checkingRecordingBackup = Boolean(targetSessionId);
-      const cached = targetSessionId ? await getCachedRecording(targetSessionId) : null;
-      checkingRecordingBackup = false;
+      let cached = null as Awaited<ReturnType<typeof getCachedRecording>>;
+      if (targetSessionId) {
+        checkingRecordingBackup = true;
+        try {
+          cached = await getCachedRecording(targetSessionId);
+        } catch {
+          // IndexedDB is a recovery aid, not a prerequisite for recording.
+          // Continue with the in-memory MediaRecorder upload when local storage
+          // is blocked or unavailable, while warning that offline recovery may
+          // not be possible if the server upload also fails.
+          setError("Local recording recovery storage is unavailable. Video can still upload, but may not be recoverable if the upload fails.");
+        } finally {
+          checkingRecordingBackup = false;
+        }
+      }
       if (streamRef.current !== acquiredStream || acquiredStream.getTracks().every(track => track.readyState !== "live")) return;
       if (cached?.chunks.length && cached.complete) {
         setRecoverableRecording(true);

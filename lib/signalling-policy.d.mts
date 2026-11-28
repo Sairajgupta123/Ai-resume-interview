@@ -17,3 +17,8 @@ export function isSignalAfterCursor(
   cursorCreatedAt: Date | string,
   cursorId?: string
 ): boolean;
+
+export function isIceCandidateForDescription(
+  candidate: { usernameFragment?: string | null } | null,
+  description: { sdp?: string | null } | null
+): boolean;

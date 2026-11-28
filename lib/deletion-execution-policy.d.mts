@@ -12,3 +12,5 @@ export function anonymizedDeletionTombstone(requestId: string): {
   verificationExpiresAt: null;
   lastErrorCode: null;
 };
+
+export function isInterviewDeletionLocked(interview: { deletionInProgress?: boolean } | null | undefined): boolean;

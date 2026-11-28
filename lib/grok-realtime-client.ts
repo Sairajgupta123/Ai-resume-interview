@@ -3,6 +3,7 @@ import {
   pcm16ToBase64,
   resampleFloat32ToPcm16
 } from "@/lib/grok-voice-audio.mjs";
+import { getFinalRealtimeTranscript, isRetryableRealtimeTokenStatus, waitForRealtimeSession } from "@/lib/realtime-handshake.mjs";
 
 type TranscriptRole = "user" | "assistant";
 
@@ -35,6 +36,7 @@ export class GrokRealtimeClient {
   private playbackCursor = 0;
   private playbackSources = new Set<AudioBufferSourceNode>();
   private closed = false;
+  private connectionGeneration = 0;
   private callbacks: GrokRealtimeCallbacks;
   private sessionId: string;
   private stream: MediaStream;
@@ -70,111 +72,81 @@ export class GrokRealtimeClient {
   async connect() {
     if (this.socket) throw new Error("Grok voice is already initialized.");
     this.closed = false;
+    const generation = ++this.connectionGeneration;
+    const isCurrentConnection = () => generation === this.connectionGeneration && !this.closed;
     this.callbacks.onStatus?.("connecting");
 
-    const tokenResponse = await fetch(`/api/sessions/${encodeURIComponent(this.sessionId)}/voice-session`, {
-      method: "POST",
-      credentials: "same-origin",
-      cache: "no-store",
-      // Bound the credential request so a stalled network cannot leave the
-      // interview UI stuck in "connecting" before WebSocket setup even begins.
-      signal: AbortSignal.timeout(15_000)
-    });
-    const tokenData = await tokenResponse.json();
-    if (!tokenResponse.ok || typeof tokenData.token !== "string") {
-      throw new Error(tokenData.error || "Could not obtain a secure AI voice session.");
-    }
-    if (this.closed) return;
+    let socket: WebSocket | null = null;
+    let lastConnectionError: Error | null = null;
 
-    const socket = new WebSocket(REALTIME_URL, [`xai-client-secret.${tokenData.token}`]);
-    this.socket = socket;
+    // Retry transient token-endpoint failures and provider handshakes with a
+    // fresh short-lived token. Permanent authorization/validation errors fail fast.
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      if (!isCurrentConnection()) return;
+      let attemptSocket: WebSocket | null = null;
+      let retryable = true;
+      try {
+        const tokenResponse = await fetch(`/api/sessions/${encodeURIComponent(this.sessionId)}/voice-session`, {
+          method: "POST",
+          credentials: "same-origin",
+          cache: "no-store",
+          signal: AbortSignal.timeout(15_000)
+        });
+        const tokenData = await tokenResponse.json().catch(() => null) as { token?: unknown; error?: unknown } | null;
+        if (!tokenResponse.ok || typeof tokenData?.token !== "string") {
+          retryable = !tokenResponse.ok && isRetryableRealtimeTokenStatus(tokenResponse.status);
+          throw new Error(typeof tokenData?.error === "string"
+            ? tokenData.error
+            : "Could not obtain a secure AI voice session.");
+        }
+        if (!isCurrentConnection()) return;
 
-    const sessionCreated = new Promise<void>((resolve, reject) => {
-      const cleanup = () => {
-        window.clearTimeout(timeout);
-        socket.removeEventListener("message", onMessage);
-        socket.removeEventListener("close", onClose);
-      };
-      const timeout = window.setTimeout(() => {
-        cleanup();
-        reject(new Error("AI voice session initialization timed out."));
-      }, 15_000);
-      const onMessage = (event: MessageEvent) => {
-        try {
-          const payload = JSON.parse(String(event.data)) as RealtimeEvent;
-          if (payload.type === "session.created") {
-            cleanup();
-            resolve();
-          } else if (payload.type === "error") {
-            cleanup();
-            reject(new Error(payload.error?.message || "AI voice session initialization failed."));
-          }
-        } catch { /* ignore non-JSON events */ }
-      };
-      const onClose = () => {
-        cleanup();
-        reject(new Error("AI voice connection closed during initialization."));
-      };
-      socket.addEventListener("message", onMessage);
-      socket.addEventListener("close", onClose, { once: true });
-    });
-    // Attach after initialization; referencing this promise in its executor hits the temporal dead zone.
-    void sessionCreated.catch(() => undefined);
-
-    try {
-      await new Promise<void>((resolve, reject) => {
-        const cleanup = () => {
-          window.clearTimeout(timeout);
-          socket.removeEventListener("open", onOpen);
-          socket.removeEventListener("error", onError);
-          socket.removeEventListener("close", onClose);
-        };
-        const timeout = window.setTimeout(() => {
-          cleanup();
-          socket.close();
-          reject(new Error("AI voice connection timed out."));
-        }, 15_000);
-        const onOpen = () => {
-          cleanup();
-          resolve();
-        };
-        const onError = () => {
-          cleanup();
-          reject(new Error("Could not connect to the AI voice service."));
-        };
-        const onClose = () => {
-          cleanup();
-          reject(new Error("AI voice connection closed before it was ready."));
-        };
-        socket.addEventListener("open", onOpen, { once: true });
-        socket.addEventListener("error", onError, { once: true });
-        socket.addEventListener("close", onClose, { once: true });
-      });
-      await sessionCreated;
-    } catch (error) {
-      socket.close();
-      this.socket = null;
-      throw error;
+        attemptSocket = new WebSocket(REALTIME_URL, [`xai-client-secret.${tokenData.token}`]);
+        this.socket = attemptSocket;
+        await waitForRealtimeSession(attemptSocket, 15_000);
+        if (!isCurrentConnection() || this.socket !== attemptSocket) {
+          attemptSocket.close();
+          return;
+        }
+        socket = attemptSocket;
+        break;
+      } catch (error) {
+        attemptSocket?.close();
+        if (attemptSocket && this.socket === attemptSocket) this.socket = null;
+        lastConnectionError = error instanceof Error ? error : new Error("Could not connect to the AI voice service.");
+        if (!isCurrentConnection()) return;
+        if (!retryable || attempt >= 2) break;
+        await new Promise(resolve => window.setTimeout(resolve, 300 * (attempt + 1)));
+      }
     }
 
-    if (this.closed) {
+    if (!socket) throw lastConnectionError || new Error("Could not initialize the AI voice connection.");
+
+    if (!isCurrentConnection() || this.socket !== socket) {
       socket.close();
       return;
     }
 
-    socket.addEventListener("message", event => this.handleMessage(event));
+    socket.addEventListener("message", event => {
+      if (isCurrentConnection() && this.socket === socket) this.handleMessage(event);
+    });
     socket.addEventListener("close", () => {
+      if (this.socket !== socket || generation !== this.connectionGeneration) return;
+      this.socket = null;
       this.stopAudioGraph();
       this.callbacks.onStatus?.("closed");
       if (!this.closed) this.callbacks.onError?.("The AI voice connection was closed. You can continue by typing.");
     });
     socket.addEventListener("error", () => {
-      if (!this.closed) this.callbacks.onError?.("The AI voice connection encountered an error.");
+      if (isCurrentConnection() && this.socket === socket) {
+        this.callbacks.onError?.("The AI voice connection encountered an error.");
+      }
     });
 
     try {
       this.audioContext = new AudioContext();
       await this.audioContext.resume();
+      if (!isCurrentConnection() || this.socket !== socket) return;
       const sessionReady = new Promise<void>((resolve, reject) => {
         const cleanup = () => {
           window.clearTimeout(timeout);
@@ -203,24 +175,32 @@ export class GrokRealtimeClient {
         };
         socket.addEventListener("message", onMessage);
         socket.addEventListener("close", onClose, { once: true });
-      });
-      socket.send(JSON.stringify({
-        type: "session.update",
-        session: {
-          instructions: this.instructions,
-          voice: "eve",
-          turn_detection: { type: "server_vad" },
-          audio: {
-            input: {
-              format: { type: "audio/pcm", rate: SAMPLE_RATE },
-              transcription: { model: "grok-transcribe", language_hint: "en" }
-            },
-            output: { format: { type: "audio/pcm", rate: SAMPLE_RATE } }
+        try {
+          if (!isCurrentConnection() || this.socket !== socket || socket.readyState !== WebSocket.OPEN) {
+            throw new Error("AI voice connection closed before session setup.");
           }
+          socket.send(JSON.stringify({
+            type: "session.update",
+            session: {
+              instructions: this.instructions,
+              voice: "eve",
+              turn_detection: { type: "server_vad" },
+              audio: {
+                input: {
+                  format: { type: "audio/pcm", rate: SAMPLE_RATE },
+                  transcription: { model: "grok-transcribe", language_hint: "en" }
+                },
+                output: { format: { type: "audio/pcm", rate: SAMPLE_RATE } }
+              }
+            }
+          }));
+        } catch (error) {
+          cleanup();
+          reject(error instanceof Error ? error : new Error("AI voice session setup failed."));
         }
-      }));
+      });
       await sessionReady;
-      if (this.closed) return;
+      if (!isCurrentConnection() || this.socket !== socket) return;
       this.startAudioGraph();
       if (this.initialMessage.trim()) {
         socket.send(JSON.stringify({
@@ -236,9 +216,12 @@ export class GrokRealtimeClient {
       this.callbacks.onStatus?.("connected");
   
     } catch (error) {
-      this.stopAudioGraph();
+      if (this.socket === socket && generation === this.connectionGeneration) {
+        this.stopAudioGraph();
+        this.socket = null;
+      }
       if (socket.readyState < WebSocket.CLOSING) socket.close();
-      this.socket = null;
+      if (!isCurrentConnection()) return;
       throw error;
     }
   }
@@ -290,18 +273,18 @@ export class GrokRealtimeClient {
       return;
     }
 
-    if (data.type === "conversation.item.input_audio_transcription.completed" && data.transcript?.trim()) {
-      this.callbacks.onTranscript("user", data.transcript.trim());
-      return;
-    }
-    if (data.type === "response.output_audio_transcript.done" && data.transcript?.trim()) {
-      const transcript = data.transcript.trim();
-      if (this.openingTranscriptPending && normalizeTranscript(transcript) === normalizeTranscript(this.initialMessage)) {
+    const finalTranscript = getFinalRealtimeTranscript(data);
+    if (finalTranscript) {
+      if (
+        finalTranscript.role === "assistant" &&
+        this.openingTranscriptPending &&
+        normalizeTranscript(finalTranscript.text) === normalizeTranscript(this.initialMessage)
+      ) {
         this.openingTranscriptPending = false;
         return;
       }
-      this.openingTranscriptPending = false;
-      this.callbacks.onTranscript("assistant", transcript);
+      if (finalTranscript.role === "assistant") this.openingTranscriptPending = false;
+      this.callbacks.onTranscript(finalTranscript.role, finalTranscript.text);
       return;
     }
     if (data.type === "input_audio_buffer.speech_started") {
@@ -364,6 +347,7 @@ export class GrokRealtimeClient {
 
   close() {
     this.closed = true;
+    this.connectionGeneration += 1;
     this.stopAudioGraph();
     if (this.socket && this.socket.readyState < WebSocket.CLOSING) this.socket.close();
     this.socket = null;

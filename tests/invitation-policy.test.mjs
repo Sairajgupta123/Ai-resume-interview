@@ -17,6 +17,12 @@ test("completed interviews cannot use an invitation", () => {
   assert.equal(isCandidateInvitationActive(token, new Date(now + 1000), "completed", now), false);
 });
 
+test("unknown and terminal lifecycle states cannot use a candidate invitation", () => {
+  for (const status of ["completed", "cancelled", "deleted", "", null, undefined]) {
+    assert.equal(isCandidateInvitationActive(token, new Date(now + 1000), status, now), false);
+  }
+});
+
 test("missing, malformed and out-of-range tokens are rejected", () => {
   for (const value of [null, undefined, "", "short", "a".repeat(257), 123]) {
     assert.equal(isCandidateInvitationActive(value, new Date(now + 1000), "invited", now), false);

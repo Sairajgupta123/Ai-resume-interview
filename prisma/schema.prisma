@@ -19,6 +19,7 @@ model Interview {
   overallScore    Int?
   recommendation  String?
   recordingPath   String?
+  deletionInProgress Boolean @default(false)
   candidateEmail  String?
   invitationTokenHash String? @unique
   inviteExpiresAt DateTime?
@@ -91,6 +92,23 @@ model InterviewSignal {
   interview   Interview @relation(fields: [interviewId], references: [id], onDelete: Cascade)
 
   @@index([interviewId, createdAt])
+}
+
+model RecordingCleanupTask {
+  id              String   @id @default(cuid())
+  storedPath      String   @unique
+  reason          String
+  status          String   @default("pending")
+  attempts        Int      @default(0)
+  nextAttemptAt   DateTime @default(now())
+  leaseStartedAt  DateTime?
+  leaseToken      String?  @unique
+  lastErrorCode   String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([status, nextAttemptAt])
+  @@index([leaseStartedAt])
 }
 
 model PrivacyDeletionRequest {

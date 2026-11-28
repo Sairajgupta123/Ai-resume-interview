@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { mkdir, stat, unlink, writeFile } from "node:fs/promises";
+import { mkdir, stat, writeFile } from "node:fs/promises";
 import { createReadStream } from "node:fs";
 import { Readable } from "node:stream";
 import { randomUUID, createHash, createHmac } from "node:crypto";
@@ -10,6 +10,10 @@ import { getCandidateInvitationToken, hasValidCandidateSession } from "@/lib/inv
 import { MAX_RECORDING_BYTES, inspectRecordingUpload, isSafeRecordingFilename } from "@/lib/recording-policy.mjs";
 import { commitRecordingReplacement } from "@/lib/recording-replacement.mjs";
 import { parseByteRange } from "@/lib/recording-range.mjs";
+import { isExpectedRecordingStorageResponse, parseRecordingContentLength } from "@/lib/recording-storage-response.mjs";
+import { deleteStoredInterviewRecording } from "@/lib/deletion-storage.mjs";
+import { enqueueRecordingCleanupTask } from "@/lib/recording-cleanup-queue.mjs";
+import { isInterviewDeletionLocked } from "@/lib/deletion-execution-policy.mjs";
 
 export const runtime = "nodejs";
 
@@ -41,7 +45,7 @@ function s3RequestUrl(endpoint: URL, bucket: string, key: string) {
   return url;
 }
 
-async function s3Request(method: "PUT" | "GET" | "HEAD" | "DELETE", key: string, body?: Buffer, contentType?: string, range?: string) {
+async function s3Request(method: "PUT" | "GET" | "HEAD", key: string, body?: Buffer, contentType?: string, range?: string) {
   const config = remoteStorageConfig();
   if (!config) throw new Error("Private cloud recording storage is not configured.");
   const url = s3RequestUrl(config.endpoint, config.bucket, key);
@@ -64,14 +68,26 @@ async function s3Request(method: "PUT" | "GET" | "HEAD" | "DELETE", key: string,
   headers.authorization = "AWS4-HMAC-SHA256 Credential=" + config.accessKey + "/" + scope + ", SignedHeaders=" + signedHeaders + ", Signature=" + signature;
   // Storage endpoints are external dependencies: fail closed on redirects and
   // cap request time so uploads/playback cannot hold a server worker forever.
-  const response = await fetch(url, {
-    method,
-    headers,
-    body: method === "PUT" ? new Uint8Array(body || Buffer.alloc(0)) : undefined,
-    cache: "no-store",
-    redirect: "error",
-    signal: AbortSignal.timeout(30_000)
-  });
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method,
+      headers,
+      // Node fetch accepts Buffer as a byte body. Keep the existing Buffer
+      // view instead of cloning another full-size Uint8Array for large uploads.
+      body: method === "PUT" ? (body || Buffer.alloc(0)) as unknown as BodyInit : undefined,
+      cache: "no-store",
+      redirect: "error",
+      // A 100 MiB recording can legitimately take longer than 30 seconds on
+      // slower uplinks. Keep playback metadata/range requests short, but allow
+      // bounded time for the upload itself to reach private object storage.
+      signal: AbortSignal.timeout(method === "PUT" ? 120_000 : 30_000)
+    });
+  } catch {
+    // Normalize DNS, TLS, timeout and connection failures so callers return a
+    // retryable 502 rather than misreporting an upstream outage as app failure.
+    throw new Error("Private recording storage request failed.");
+  }
   if (!response.ok) throw new Error("Private recording storage returned " + response.status + ": " + (await response.text()).slice(0, 500));
   return response;
 }
@@ -114,13 +130,14 @@ async function readBoundedRecordingForm(request: NextRequest, maxBytes: number):
   try {
     // Parse only after the complete multipart body has passed the streaming
     // byte limit. This also safely supports runtimes that omit Content-Length.
-    const bodyBytes = new Uint8Array(totalBytes);
-    let offset = 0;
-    for (const chunk of chunks) {
-      bodyBytes.set(chunk, offset);
-      offset += chunk.byteLength;
-    }
-    const body = new Blob([bodyBytes.buffer as ArrayBuffer]);
+    // Build the Blob directly from the bounded chunks instead of allocating
+    // another contiguous 100 MiB Uint8Array first. Blob snapshots its parts, so
+    // release the chunk references before multipart parsing continues.
+    // The runtime accepts Uint8Array parts; the assertion bridges the
+    // TypeScript ArrayBufferLike/BlobPart generic mismatch without copying
+    // every chunk into another full-size set of ArrayBuffers.
+    const body = new Blob(chunks as unknown as BlobPart[]);
+    chunks.length = 0;
     const boundedRequest = new Request(request.url, {
       method: "POST",
       headers: { "Content-Type": contentType },
@@ -168,8 +185,8 @@ function localRecordingPath(storedPath: string) {
 async function recordingSize(storedPath: string) {
   if (isRemoteRecordingPath(storedPath)) {
     const response = await s3Request("HEAD", recordingObjectKey(storedPath));
-    const size = Number(response.headers.get("content-length"));
-    if (!Number.isSafeInteger(size) || size < 0) throw new Error("Recording storage returned invalid metadata.");
+    const size = parseRecordingContentLength(response.headers.get("content-length"));
+    if (size === null) throw new Error("Recording storage returned invalid metadata.");
     return size;
   }
   const metadata = await stat(localRecordingPath(storedPath));
@@ -178,16 +195,9 @@ async function recordingSize(storedPath: string) {
 }
 
 async function deleteRecording(storedPath: string) {
-  if (isRemoteRecordingPath(storedPath)) {
-    await s3Request("DELETE", recordingObjectKey(storedPath));
-    return;
-  }
-  const normalized = storedPath.replace(/\\/g, "/");
-  const filename = normalized.split("/").pop() || "";
-  if (normalized !== "data/recordings/" + filename || !isSafeRecordingFilename(filename)) {
-    throw new Error("Recording storage reference is invalid.");
-  }
-  await unlink(join(process.cwd(), "data", "recordings", filename));
+  // Reuse the same path validation and idempotent deletion implementation used
+  // by the privacy-deletion workflow so replacement cleanup cannot drift.
+  await deleteStoredInterviewRecording(storedPath);
 }
 
 export async function POST(request: NextRequest, context: Context) {
@@ -204,9 +214,12 @@ export async function POST(request: NextRequest, context: Context) {
   try {
     const interview = await db.interview.findUnique({
       where: { id },
-      select: { id: true, recordingPath: true, status: true, consentAcceptedAt: true, startedAt: true }
+      select: { id: true, recordingPath: true, status: true, consentAcceptedAt: true, startedAt: true, deletionInProgress: true }
     });
     if (!interview) return NextResponse.json({ error: "Interview not found." }, { status: 404, headers: privateHeaders });
+    if (isInterviewDeletionLocked(interview)) {
+      return NextResponse.json({ error: "Recording uploads are closed because this interview is being deleted." }, { status: 409, headers: privateHeaders });
+    }
     const completedRecovery = interview.status === "completed" && !interview.recordingPath;
     if (interview.status === "completed" && !completedRecovery) {
       return NextResponse.json({ error: "A recording is already saved or uploads are closed for this interview." }, { status: 409, headers: privateHeaders });
@@ -235,14 +248,41 @@ export async function POST(request: NextRequest, context: Context) {
     const filename = randomUUID() + extension;
     const relativePath = await saveRecording(bytes, mimeType, filename);
     const replacement = await commitRecordingReplacement({
-      commit: () => db.interview.updateMany({
-        // Permit one late recovery after completion only when no recording was
-        // saved before the report closed the interview. The status/path predicate
-        // prevents concurrent retries from replacing an already committed file.
-        where: { id, status: interview.status, recordingPath: interview.recordingPath },
-        data: { recordingPath: relativePath }
+      commit: () => db.$transaction(async tx => {
+        // Commit the new recording reference and durable cleanup intent for the
+        // previous object together. A crash after this transaction cannot lose
+        // the old-object cleanup request.
+        const updated = await tx.interview.updateMany({
+          // Permit one late recovery after completion only when no recording was
+          // saved before the report closed the interview. The status/path predicate
+          // prevents concurrent retries from replacing an already committed file.
+          where: { id, status: interview.status, recordingPath: interview.recordingPath, deletionInProgress: false },
+          data: { recordingPath: relativePath }
+        });
+        if (updated.count === 1 && interview.recordingPath) {
+          await enqueueRecordingCleanupTask(tx, {
+            storedPath: interview.recordingPath,
+            reason: "recording_replaced"
+          });
+        }
+        return updated;
       }),
       cleanupNew: () => deleteRecording(relativePath),
+      cleanupNewPath: relativePath,
+      enqueueCleanup: (storedPath, reason) => enqueueRecordingCleanupTask(db, {
+        storedPath,
+        reason,
+        // If the commit outcome could not be read, give any in-flight database
+        // transaction time to settle before the worker's reference check.
+        now: reason.includes("new-recording-after-commit") ? new Date(Date.now() + 5 * 60 * 1000) : undefined
+      }),
+      // If the DB request times out after committing, a cleanup must not remove
+      // the object now referenced by the interview. If this read also fails,
+      // preserve the object and let later storage reconciliation handle the orphan.
+      isNewRecordingReferenced: async () => Boolean(await db.interview.findFirst({
+        where: { recordingPath: relativePath },
+        select: { id: true }
+      })),
       cleanupPrevious: path => deleteRecording(path),
       previousPath: interview.recordingPath,
       onCleanupError: (cleanupError, stage) => {
@@ -257,7 +297,7 @@ export async function POST(request: NextRequest, context: Context) {
   } catch (error) {
     const message = error instanceof Error ? error.message : "";
     const missingConfiguration = message.includes("Configure S3_ENDPOINT") || message.includes("Private cloud recording storage is not configured");
-    const storageUnavailable = message.includes("Private recording storage returned");
+    const storageUnavailable = message.includes("Private recording storage");
     return NextResponse.json({
       error: missingConfiguration
         ? "Production recording storage is not configured. Contact the hiring team."
@@ -319,7 +359,17 @@ export async function GET(request: NextRequest, context: Context) {
 
     if (remote) {
       const response = await s3Request("GET", recordingObjectKey(storedPath), undefined, undefined, range?.ok ? rangeHeader || undefined : undefined);
-      if (range?.ok && response.status !== 206) throw new Error("Recording storage did not honor the requested byte range.");
+      const expectedContentRange = range?.ok ? "bytes " + start + "-" + end + "/" + size : null;
+      if (!isExpectedRecordingStorageResponse({
+        status: response.status,
+        contentLength: response.headers.get("content-length"),
+        contentRange: response.headers.get("content-range"),
+        expectedStatus: status,
+        expectedLength: length,
+        expectedContentRange
+      })) {
+        throw new Error("Recording storage returned inconsistent playback metadata.");
+      }
       return new NextResponse(response.body, { status, headers: baseHeaders });
     }
 
