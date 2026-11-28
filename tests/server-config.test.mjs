@@ -10,6 +10,8 @@ const validProductionEnv = {
   EMPLOYER_PASSWORD: "a-unique-password-with-strong-length",
   SESSION_SECRET: "a-unique-session-secret-with-more-than-32-characters",
   XAI_API_KEY: "xai-production-key",
+  RESEND_API_KEY: "re_production_key",
+  PRIVACY_FROM_EMAIL: "privacy@example.com",
   S3_ENDPOINT: "https://storage.example.com",
   S3_BUCKET: "private-recordings",
   S3_ACCESS_KEY_ID: "storage-access-key",
@@ -48,6 +50,8 @@ test("production startup reports all missing critical configuration together", (
   assert.ok(errors.some(error => error.includes("EMPLOYER_PASSWORD")));
   assert.ok(errors.some(error => error.includes("SESSION_SECRET")));
   assert.ok(errors.some(error => error.includes("XAI_API_KEY")));
+  assert.ok(errors.some(error => error.includes("RESEND_API_KEY")));
+  assert.ok(errors.some(error => error.includes("PRIVACY_FROM_EMAIL")));
   assert.ok(errors.some(error => error.includes("S3_ENDPOINT")));
   assert.throws(() => assertProductionConfig({ NODE_ENV: "production" }), /Production configuration is incomplete/);
 });
@@ -107,4 +111,12 @@ test("requires a recording cleanup worker secret in production", () => {
     () => assertProductionConfig({ ...validProductionEnv, CRON_SECRET: "" }),
     /CRON_SECRET must be configured/
   );
+});
+
+test("production requires the email provider used by candidate deletion verification", () => {
+  for (const key of ["RESEND_API_KEY", "PRIVACY_FROM_EMAIL"]) {
+    const errors = getProductionConfigErrors({ ...validProductionEnv, [key]: "" });
+    assert.ok(errors.some(error => error.includes(key)), key);
+    assert.throws(() => assertProductionConfig({ ...validProductionEnv, [key]: "" }), new RegExp(key));
+  }
 });
