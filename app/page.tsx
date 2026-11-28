@@ -676,6 +676,7 @@ export default function Home() {
             window.clearTimeout(uploadTimeout);
           }
           if (!response.ok) throw new Error(data.error || "Recording upload failed.");
+          setError("");
           recordingSavedRef.current = true;
           setRecordingSaved(true);
           setRecoverableRecording(false);
