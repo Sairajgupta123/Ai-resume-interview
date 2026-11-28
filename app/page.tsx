@@ -485,7 +485,7 @@ export default function Home() {
             new Promise<boolean>((_, reject) => {
               recordingWaitTimer = window.setTimeout(
                 () => reject(new Error("Recording upload is taking too long. Your interview report has not been generated yet. Wait for the recording status or recover the saved segments, then try again.")),
-                190_000
+                310_000
               );
             })
           ]);
@@ -535,9 +535,9 @@ export default function Home() {
       const form = new FormData();
       form.append("recording", blob, `mzobs-recovered-${Date.now()}.${extension}`);
       const uploadController = new AbortController();
-      // Allow a bounded 3-minute window for slower candidate uplinks and the
+      // Allow a bounded 5-minute window for slower candidate uplinks and the
           // server's bounded private-storage write; do not discard a valid 100 MB upload at 45 seconds.
-          const uploadTimeout = window.setTimeout(() => uploadController.abort(), 180_000);
+          const uploadTimeout = window.setTimeout(() => uploadController.abort(), 300_000);
       let response: Response;
       let data: { error?: string };
       try {
@@ -550,7 +550,7 @@ export default function Home() {
         data = await response.json();
       } catch (uploadError) {
         if (uploadController.signal.aborted) {
-          throw new Error("Recording recovery timed out after 3 minutes. Your local recording segments have been kept; you can retry.");
+          throw new Error("Recording recovery timed out after 5 minutes. Your local recording segments have been kept; you can retry.");
         }
         throw uploadError;
       } finally {
@@ -656,7 +656,7 @@ export default function Home() {
           const uploadController = new AbortController();
           // Allow a bounded 3-minute window for slower candidate uplinks and the
           // server's bounded private-storage write; do not discard a valid 100 MB upload at 45 seconds.
-          const uploadTimeout = window.setTimeout(() => uploadController.abort(), 180_000);
+          const uploadTimeout = window.setTimeout(() => uploadController.abort(), 300_000);
           let response: Response;
           let data: { error?: string };
           try {
@@ -669,7 +669,7 @@ export default function Home() {
             data = await response.json();
           } catch (uploadError) {
             if (uploadController.signal.aborted) {
-              throw new Error("Recording upload timed out after 3 minutes. Your locally saved segments will be kept for recovery.");
+              throw new Error("Recording upload timed out after 5 minutes. Your locally saved segments will be kept for recovery.");
             }
             throw uploadError;
           } finally {
